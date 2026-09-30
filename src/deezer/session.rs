@@ -1,0 +1,104 @@
+//! gw-light transport: cookie jar, CSRF (`api_token`) handling and the raw call.
+
+use super::Result;
+use serde_json::Value;
+use std::time::Duration;
+
+const GATEWAY: &str = "https://www.deezer.com/ajax/gw-light.php";
+const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
+/// api_token value gw-light expects before we have a real one.
+const NO_TOKEN: &str = "null";
+
+pub fn http_agent() -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .user_agent(USER_AGENT)
+        .timeout_connect(Duration::from_secs(10))
+        .timeout_read(Duration::from_secs(30))
+        .build()
+}
+
+/// CSRF token plus every cookie the server set. The token is bound to the whole
+/// cookie set (sid, dzr_uniq_id, bot-protection cookies), not just `sid`.
+pub struct Session {
+    pub api_token: String,
+    cookies: Vec<(String, String)>,
+}
+
+impl Session {
+    pub fn new() -> Self {
+        Self { api_token: NO_TOKEN.into(), cookies: Vec::new() }
+    }
+
+    pub fn reset_token(&mut self) {
+        self.api_token = NO_TOKEN.into();
+    }
+
+    fn cookie_header(&self, arl: &str) -> String {
+        let arl = (!arl.is_empty()).then(|| format!("arl={arl}"));
+        let others = self.cookies.iter().filter(|(k, _)| k != "arl").map(|(k, v)| format!("{k}={v}"));
+        arl.into_iter().chain(others).collect::<Vec<_>>().join("; ")
+    }
+
+    fn store(&mut self, set_cookie: &str) {
+        let Some((name, rest)) = set_cookie.split_once('=') else { return };
+        let name = name.trim();
+        let value = rest.split(';').next().unwrap_or("").trim();
+        let expired = value == "deleted" || set_cookie.to_ascii_lowercase().contains("max-age=0");
+        self.cookies.retain(|(k, _)| k != name);
+        if !expired {
+            self.cookies.push((name.to_string(), value.to_string()));
+        }
+    }
+}
+
+/// One gw-light call. `extra` adds URL query parameters (e.g. `gateway_input`).
+pub fn call(agent: &ureq::Agent, arl: &str, session: &mut Session, method: &str, body: Value, extra: &[(&str, &str)]) -> Result<Value> {
+    let resp = agent
+        .post(GATEWAY)
+        .query("method", method)
+        .query("input", "3")
+        .query("api_version", "1.0")
+        .query("api_token", &session.api_token)
+        .query_pairs(extra.iter().copied())
+        .set("Cookie", &session.cookie_header(arl))
+        .send_json(body)
+        .map_err(|e| format!("{method}: {e}"))?;
+    for c in resp.all("set-cookie") {
+        session.store(c);
+    }
+    let v: Value = resp.into_json().map_err(|e| format!("{method}: {e}"))?;
+    match &v["error"] {
+        Value::Object(o) if !o.is_empty() => Err(format!("{method}: {}", Value::Object(o.clone()))),
+        _ => Ok(v["results"].clone()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::deezer::parse;
+    use serde_json::json;
+
+    #[test]
+    fn cookie_jar_replaces_and_expires() {
+        let mut s = Session::new();
+        s.store("sid=abc; path=/");
+        s.store("dzr_uniq_id=x; path=/");
+        s.store("sid=def; path=/");
+        s.store("account_id=deleted; Max-Age=0");
+        assert_eq!(s.cookie_header("A"), "arl=A; dzr_uniq_id=x; sid=def");
+        assert_eq!(Session::new().cookie_header(""), "");
+    }
+
+    /// Network test: CSRF token from getUserData must be accepted on the next call.
+    #[test]
+    #[ignore]
+    fn session_csrf_roundtrip() {
+        let agent = http_agent();
+        let mut session = Session::new();
+        let data = call(&agent, "", &mut session, "deezer.getUserData", json!({}), &[]).unwrap();
+        session.api_token = parse::text(&data["checkForm"]);
+        let r = call(&agent, "", &mut session, "deezer.pageSearch", json!({"query": "daft punk", "start": 0, "nb": 5}), &[]).unwrap();
+        assert!(!parse::tracks(&r["TRACK"]["data"]).is_empty(), "{r}");
+    }
+}

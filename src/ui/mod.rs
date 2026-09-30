@@ -1269,6 +1269,20 @@ fn columns(left: f32, width: f32) -> Columns {
     }
 }
 
+/// Open the main window and run the app until it closes.
+pub fn run() -> eframe::Result {
+    let viewport = egui::ViewportBuilder::default()
+        .with_title("dust")
+        .with_inner_size([1180.0, 760.0])
+        .with_min_inner_size([760.0, 480.0])
+        .with_icon(std::sync::Arc::new(crate::icon::window_icon()));
+    // Content under a transparent title bar, traffic lights floating over the sidebar.
+    #[cfg(target_os = "macos")]
+    let viewport = viewport.with_fullsize_content_view(true).with_title_shown(false).with_titlebar_shown(false);
+    let options = eframe::NativeOptions { viewport, ..Default::default() };
+    eframe::run_native("dust", options, Box::new(|cc| Ok(Box::new(App::new(cc)))))
+}
+
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
