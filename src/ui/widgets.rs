@@ -29,8 +29,8 @@ fn pos2_(x: f32, y: f32) -> Pos2 {
 
 pub fn icon_button(ui: &mut Ui, icon: Icon, size: f32, color: Color32) -> Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size + 12.0), Sense::click());
-    let c = if resp.hovered() { TEXT } else { color };
-    icons::paint(ui.painter(), Rect::from_center_size(rect.center(), Vec2::splat(size)), icon, c);
+    let tint = if resp.hovered() { c().text } else { color };
+    icons::paint(ui.painter(), Rect::from_center_size(rect.center(), Vec2::splat(size)), icon, tint);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
@@ -38,9 +38,9 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, size: f32, color: Color32) -> Respon
 pub fn play_circle(ui: &mut Ui, playing: bool, size: f32) -> Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
     let scale = if resp.hovered() { 1.06 } else { 1.0 };
-    ui.painter().circle_filled(rect.center(), size / 2.0 * scale, TEXT);
+    ui.painter().circle_filled(rect.center(), size / 2.0 * scale, c().text);
     let icon = if playing { Icon::Pause } else { Icon::Play };
-    icons::paint(ui.painter(), Rect::from_center_size(rect.center(), Vec2::splat(size * 0.42)), icon, BG);
+    icons::paint(ui.painter(), Rect::from_center_size(rect.center(), Vec2::splat(size * 0.42)), icon, c().bg);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
@@ -51,10 +51,10 @@ pub fn pill(ui: &mut Ui, label: &str, icon: Option<Icon>, primary: bool) -> Resp
     let size = vec2(galley.size().x + icon_w + 36.0, 40.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let (bg, fg) = match (primary, resp.hovered()) {
-        (true, false) => (TEXT, BG),
-        (true, true) => (Color32::WHITE, BG),
-        (false, false) => (SURFACE, TEXT),
-        (false, true) => (Color32::from_rgb(0x2a, 0x2a, 0x30), TEXT),
+        (true, false) => (c().text, c().bg),
+        (true, true) => (c().accent, c().bg),
+        (false, false) => (c().surface, c().text),
+        (false, true) => (c().raised, c().text),
     };
     ui.painter().rect_filled(rect, CornerRadius::same(20), bg);
     let mut x = rect.left() + 18.0;
@@ -69,11 +69,11 @@ pub fn pill(ui: &mut Ui, label: &str, icon: Option<Icon>, primary: bool) -> Resp
 pub fn nav_item(ui: &mut Ui, icon: Icon, label: &str, selected: bool) -> Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::click());
     if selected {
-        ui.painter().rect_filled(rect, CornerRadius::same(6), SURFACE);
+        ui.painter().rect_filled(rect, CornerRadius::same(6), c().surface);
     } else if resp.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::same(6), HOVER);
+        ui.painter().rect_filled(rect, CornerRadius::same(6), c().hover);
     }
-    let color = if selected || resp.hovered() { TEXT } else { DIM };
+    let color = if selected || resp.hovered() { c().text } else { c().dim };
     icons::paint(ui.painter(), Rect::from_center_size(egui::pos2(rect.left() + 20.0, rect.center().y), Vec2::splat(17.0)), icon, color);
     let font = if selected { bold(14.0) } else { regular(14.0) };
     text_left(ui.painter(), egui::pos2(rect.left() + 40.0, rect.center().y), label, font, color, rect.width() - 48.0);
@@ -96,11 +96,11 @@ pub fn thin_slider(ui: &mut Ui, value: &mut f32, width: f32, enabled: bool) -> R
     let h = if active { 5.0 } else { 3.0 };
     let track = Rect::from_center_size(rect.center(), vec2(rect.width(), h));
     let p = ui.painter();
-    p.rect_filled(track, CornerRadius::same(3), LINE);
+    p.rect_filled(track, CornerRadius::same(3), c().line);
     let fill = Rect::from_min_max(track.min, egui::pos2(track.left() + track.width() * *value, track.bottom()));
-    p.rect_filled(fill, CornerRadius::same(3), if active { ACCENT } else { TEXT });
+    p.rect_filled(fill, CornerRadius::same(3), if active { c().accent } else { c().text });
     if active {
-        p.circle_filled(egui::pos2(fill.right(), track.center().y), 6.0, TEXT);
+        p.circle_filled(egui::pos2(fill.right(), track.center().y), 6.0, c().text);
     }
     if enabled {
         resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -115,8 +115,8 @@ pub fn cover(ui: &Ui, covers: &mut Covers, url: Option<&str>, rect: Rect, radius
             egui::Image::from_texture((tex, rect.size())).corner_radius(radius).paint_at(ui, rect);
         }
         None => {
-            ui.painter().rect_filled(rect, CornerRadius::same(radius), SURFACE);
-            icons::paint(ui.painter(), Rect::from_center_size(rect.center(), rect.size() * 0.36), Icon::Note, FAINT);
+            ui.painter().rect_filled(rect, CornerRadius::same(radius), c().surface);
+            icons::paint(ui.painter(), Rect::from_center_size(rect.center(), rect.size() * 0.36), Icon::Note, c().faint);
         }
     }
 }

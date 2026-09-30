@@ -5,6 +5,7 @@ mod deezer;
 mod login;
 mod output;
 mod player;
+mod settings;
 mod ui;
 
 use eframe::egui;

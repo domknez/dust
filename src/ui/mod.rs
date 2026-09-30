@@ -103,13 +103,18 @@ pub struct App {
     quality: Quality,
     discovery: Option<Discovery>,
     covers: Covers,
+    theme_mode: theme::Mode,
     _dacp: Option<dacp::Server>,
 }
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let ctx = &cc.egui_ctx;
-        theme::install(ctx);
+        let saved = crate::settings::load();
+        let theme_mode = saved.get("theme").and_then(|k| theme::Mode::from_key(k)).unwrap_or(theme::Mode::System);
+        let quality = saved.get("quality").and_then(|k| Quality::from_key(k)).unwrap_or(Quality::Mp3_320);
+        theme::install_fonts(ctx);
+        theme::apply(ctx, theme_mode.resolve(ctx));
 
         let volume = 0.8;
         let player = PlayerHandle::spawn(ctx.clone(), volume);
@@ -151,9 +156,10 @@ impl App {
             seek_drag: None,
             volume_drag: None,
             unmuted_volume: volume,
-            quality: Quality::Mp3_320,
+            quality,
             discovery,
             covers: Covers::new(ctx),
+            theme_mode,
             _dacp: dacp_server,
         };
         if let Some(arl) = keyring().and_then(|k| k.get_password().ok()) {
@@ -238,15 +244,15 @@ impl App {
     // ------------------------------------------------------------ login
 
     fn login_screen(&mut self, ui: &mut Ui) {
-        egui::CentralPanel::default().frame(egui::Frame::new().fill(SIDEBAR)).show(ui, |ui| {
+        egui::CentralPanel::default().frame(egui::Frame::new().fill(c().sidebar)).show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space((ui.available_height() * 0.3).max(40.0));
                 let (r, _) = ui.allocate_exact_size(vec2(200.0, 64.0), Sense::hover());
-                let g = ui.painter().layout_no_wrap("dust".into(), bold(56.0), TEXT);
+                let g = ui.painter().layout_no_wrap("dust".into(), bold(56.0), c().text);
                 let x = r.center().x - g.size().x / 2.0;
-                ui.painter().galley(pos2(x, r.center().y - g.size().y / 2.0), g.clone(), TEXT);
-                ui.painter().circle_filled(pos2(x + g.size().x + 8.0, r.center().y + 16.0), 6.0, ACCENT);
-                ui.label(egui::RichText::new("Your music, nothing else.").color(DIM).size(15.0));
+                ui.painter().galley(pos2(x, r.center().y - g.size().y / 2.0), g.clone(), c().text);
+                ui.painter().circle_filled(pos2(x + g.size().x + 8.0, r.center().y + 16.0), 6.0, c().accent);
+                ui.label(egui::RichText::new("Your music, nothing else.").color(c().dim).size(15.0));
                 ui.add_space(36.0);
                 if self.login.is_some() {
                     ui.spinner();
@@ -258,7 +264,7 @@ impl App {
                         self.start_browser_login(ui.ctx());
                     }
                     ui.add_space(10.0);
-                    ui.label(egui::RichText::new("Deezer Premium required").color(FAINT).size(12.0));
+                    ui.label(egui::RichText::new("Deezer Premium required").color(c().faint).size(12.0));
                     ui.add_space(18.0);
                     if ui.link(egui::RichText::new("Paste ARL cookie instead").size(13.0)).clicked() {
                         self.show_manual = !self.show_manual;
@@ -277,11 +283,11 @@ impl App {
                         let arl = self.arl.trim().to_string();
                         self.start_login(ui.ctx(), arl);
                     }
-                    ui.label(egui::RichText::new("deezer.com → DevTools → Application → Cookies → arl").color(FAINT).size(12.0));
+                    ui.label(egui::RichText::new("deezer.com → DevTools → Application → Cookies → arl").color(c().faint).size(12.0));
                 }
                 if let Some(e) = &self.login_error {
                     ui.add_space(12.0);
-                    ui.label(egui::RichText::new(e).color(DANGER));
+                    ui.label(egui::RichText::new(e).color(c().danger));
                 }
             });
         });
@@ -294,8 +300,8 @@ impl App {
         ui.add_space(TOP_INSET);
         ui.horizontal(|ui| {
             ui.add_space(8.0);
-            let r = text_left(ui.painter(), ui.cursor().min + vec2(0.0, 16.0), "dust", bold(26.0), TEXT, 200.0);
-            ui.painter().circle_filled(pos2(r.right() + 6.0, r.bottom() - 7.0), 3.5, ACCENT);
+            let r = text_left(ui.painter(), ui.cursor().min + vec2(0.0, 16.0), "dust", bold(26.0), c().text, 200.0);
+            ui.painter().circle_filled(pos2(r.right() + 6.0, r.bottom() - 7.0), 3.5, c().accent);
             ui.allocate_space(vec2(1.0, 32.0));
         });
         ui.add_space(18.0);
@@ -327,14 +333,14 @@ impl App {
                 let selected = self.view == View::Playlist(p.id);
                 let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 48.0), Sense::click());
                 if selected || resp.hovered() {
-                    ui.painter().rect_filled(rect, CornerRadius::same(6), if selected { SURFACE } else { HOVER });
+                    ui.painter().rect_filled(rect, CornerRadius::same(6), if selected { c().surface } else { c().hover });
                 }
                 let img = Rect::from_min_size(rect.min + vec2(6.0, 6.0), Vec2::splat(36.0));
                 widgets::cover(ui, &mut self.covers, playlist_url(p, 80).as_deref(), img, 4);
                 let x = img.right() + 12.0;
                 let w = rect.right() - x - 6.0;
-                text_left(ui.painter(), pos2(x, rect.center().y - 8.0), &p.title, regular(13.5), if selected { TEXT } else { DIM }, w);
-                text_left(ui.painter(), pos2(x, rect.center().y + 9.0), &format!("{} tracks", p.count), regular(11.5), FAINT, w);
+                text_left(ui.painter(), pos2(x, rect.center().y - 8.0), &p.title, regular(13.5), if selected { c().text } else { c().dim }, w);
+                text_left(ui.painter(), pos2(x, rect.center().y + 9.0), &format!("{} tracks", p.count), regular(11.5), c().faint, w);
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                     go = Some(View::Playlist(p.id));
                 }
@@ -348,22 +354,33 @@ impl App {
         ui.add_space(6.0);
         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click());
         if resp.hovered() {
-            ui.painter().rect_filled(rect, CornerRadius::same(6), HOVER);
+            ui.painter().rect_filled(rect, CornerRadius::same(6), c().hover);
         }
         let name = self.client.as_ref().map(|c| c.name().to_string()).unwrap_or_default();
-        let c = pos2(rect.left() + 22.0, rect.center().y);
-        ui.painter().circle_filled(c, 15.0, ACCENT);
+        let avatar = pos2(rect.left() + 22.0, rect.center().y);
+        ui.painter().circle_filled(avatar, 15.0, c().accent);
         let initial = name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
-        ui.painter().text(c, Align2::CENTER_CENTER, initial, bold(14.0), BG);
-        text_left(ui.painter(), pos2(rect.left() + 46.0, rect.center().y - 7.0), &name, bold(13.0), TEXT, rect.width() - 56.0);
-        text_left(ui.painter(), pos2(rect.left() + 46.0, rect.center().y + 9.0), self.quality.label(), regular(11.5), FAINT, rect.width() - 56.0);
+        ui.painter().text(avatar, Align2::CENTER_CENTER, initial, bold(14.0), c().bg);
+        text_left(ui.painter(), pos2(rect.left() + 46.0, rect.center().y - 7.0), &name, bold(13.0), c().text, rect.width() - 56.0);
+        text_left(ui.painter(), pos2(rect.left() + 46.0, rect.center().y + 9.0), self.quality.label(), regular(11.5), c().faint, rect.width() - 56.0);
         egui::Popup::menu(&resp).show(|ui| {
             ui.set_min_width(200.0);
-            ui.label(egui::RichText::new("STREAMING QUALITY").color(FAINT).size(11.0));
+            ui.label(egui::RichText::new("APPEARANCE").color(c().faint).size(11.0));
+            ui.horizontal(|ui| {
+                for m in theme::Mode::ALL {
+                    if ui.selectable_label(self.theme_mode == m, m.label()).clicked() {
+                        self.theme_mode = m;
+                        crate::settings::set("theme", m.key());
+                    }
+                }
+            });
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new("STREAMING QUALITY").color(c().faint).size(11.0));
             for q in Quality::ALL {
                 if ui.selectable_label(self.quality == q, q.label()).clicked() {
                     self.quality = q;
                     self.player.send(Cmd::Quality(q));
+                    crate::settings::set("quality", q.key());
                 }
             }
             ui.separator();
@@ -381,19 +398,19 @@ impl App {
         // Search field + transient error.
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(vec2(360.0f32.min(ui.available_width()), 38.0), Sense::hover());
-            ui.painter().rect_filled(rect, CornerRadius::same(19), SURFACE);
-            icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.left() + 20.0, rect.center().y), Vec2::splat(15.0)), Icon::Search, DIM);
+            ui.painter().rect_filled(rect, CornerRadius::same(19), c().surface);
+            icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.left() + 20.0, rect.center().y), Vec2::splat(15.0)), Icon::Search, c().dim);
             let inner = Rect::from_min_max(pos2(rect.left() + 38.0, rect.top() + 9.0), pos2(rect.right() - 14.0, rect.bottom() - 7.0));
             let edit = ui.put(
                 inner,
-                egui::TextEdit::singleline(&mut self.search).hint_text("Search tracks, artists, albums").frame(egui::Frame::new()).text_color(TEXT),
+                egui::TextEdit::singleline(&mut self.search).hint_text("Search tracks, artists, albums").frame(egui::Frame::new()).text_color(c().text),
             );
             if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                 self.open_view(&ctx, View::Search);
             }
             if let Some(e) = &st.error {
                 ui.add_space(12.0);
-                ui.label(egui::RichText::new(e).color(DANGER).size(12.5));
+                ui.label(egui::RichText::new(e).color(c().danger).size(12.5));
             }
         });
         ui.add_space(20.0);
@@ -409,8 +426,8 @@ impl App {
 
     fn header_info(&self) -> (&'static str, String, Option<String>, Option<(Icon, Color32)>) {
         match self.view {
-            View::Home => ("MIX", "Flow".into(), None, Some((Icon::Refresh, Color32::from_rgb(0x3b, 0x2a, 0x8f)))),
-            View::Loved => ("COLLECTION", "Tracks".into(), None, Some((Icon::Heart, Color32::from_rgb(0x8f, 0x1f, 0x4f)))),
+            View::Home => ("MIX", "Flow".into(), None, Some((Icon::Refresh, c().tile_flow))),
+            View::Loved => ("COLLECTION", "Tracks".into(), None, Some((Icon::Heart, c().tile_loved))),
             View::Playlist(id) => {
                 let p = self.playlists.iter().find(|p| p.id == id);
                 ("PLAYLIST", p.map(|p| p.title.clone()).unwrap_or_default(), p.and_then(|p| playlist_url(p, 400)), None)
@@ -437,9 +454,9 @@ impl App {
             ui.scope_builder(UiBuilder::new().max_rect(head), |ui| {
                 if search {
                     let title = if self.searched.is_empty() { "Search".to_string() } else { format!("“{}”", self.searched) };
-                    text_left(ui.painter(), head.min + vec2(0.0, 22.0), &title, bold(30.0), TEXT, width);
+                    text_left(ui.painter(), head.min + vec2(0.0, 22.0), &title, bold(30.0), c().text, width);
                     if !self.tracks.is_empty() {
-                        text_left(ui.painter(), head.min + vec2(0.0, 54.0), &format!("{n} tracks"), regular(13.0), DIM, width);
+                        text_left(ui.painter(), head.min + vec2(0.0, 54.0), &format!("{n} tracks"), regular(13.0), c().dim, width);
                     }
                 } else {
                     let (kind, title, art, tile) = self.header_info();
@@ -451,11 +468,11 @@ impl App {
                     }
                     let x = art_rect.right() + 28.0;
                     let tw = width - (x - head.left());
-                    text_left(ui.painter(), pos2(x, head.top() + 40.0), kind, bold(11.5), DIM, tw);
-                    text_left(ui.painter(), pos2(x, head.top() + 82.0), &title, bold(40.0), TEXT, tw);
+                    text_left(ui.painter(), pos2(x, head.top() + 40.0), kind, bold(11.5), c().dim, tw);
+                    text_left(ui.painter(), pos2(x, head.top() + 82.0), &title, bold(40.0), c().text, tw);
                     if n > 0 {
                         let meta = format!("{n} tracks · {}", total_duration(&self.tracks));
-                        text_left(ui.painter(), pos2(x, head.top() + 124.0), &meta, regular(13.5), DIM, tw);
+                        text_left(ui.painter(), pos2(x, head.top() + 124.0), &meta, regular(13.5), c().dim, tw);
                     }
                     let buttons = Rect::from_min_size(pos2(x, head.top() + 152.0), vec2(tw, 44.0));
                     ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
@@ -475,13 +492,13 @@ impl App {
                     let y = head.bottom() - 22.0;
                     let cols = columns(head.left(), width);
                     let p = ui.painter();
-                    p.text(pos2(cols.index + 14.0, y), Align2::CENTER_CENTER, "#", bold(11.0), FAINT);
-                    p.text(pos2(cols.title, y), Align2::LEFT_CENTER, "TITLE", bold(11.0), FAINT);
+                    p.text(pos2(cols.index + 14.0, y), Align2::CENTER_CENTER, "#", bold(11.0), c().faint);
+                    p.text(pos2(cols.title, y), Align2::LEFT_CENTER, "TITLE", bold(11.0), c().faint);
                     if let Some(a) = cols.album {
-                        p.text(pos2(a, y), Align2::LEFT_CENTER, "ALBUM", bold(11.0), FAINT);
+                        p.text(pos2(a, y), Align2::LEFT_CENTER, "ALBUM", bold(11.0), c().faint);
                     }
-                    p.text(pos2(cols.time, y), Align2::RIGHT_CENTER, "TIME", bold(11.0), FAINT);
-                    p.hline(head.x_range(), head.bottom() - 4.0, egui::Stroke::new(1.0, LINE));
+                    p.text(pos2(cols.time, y), Align2::RIGHT_CENTER, "TIME", bold(11.0), c().faint);
+                    p.hline(head.x_range(), head.bottom() - 4.0, egui::Stroke::new(1.0, c().line));
                 }
             });
 
@@ -491,7 +508,7 @@ impl App {
                 return;
             }
             if let Some(e) = &self.list_error {
-                text_left(ui.painter(), origin + vec2(0.0, header_h + 24.0), e, regular(14.0), DANGER, width);
+                text_left(ui.painter(), origin + vec2(0.0, header_h + 24.0), e, regular(14.0), c().danger, width);
                 return;
             }
 
@@ -507,27 +524,27 @@ impl App {
                 let hovered = resp.hovered();
                 let p = ui.painter();
                 if hovered {
-                    p.rect_filled(rect, CornerRadius::same(6), HOVER);
+                    p.rect_filled(rect, CornerRadius::same(6), c().hover);
                 }
                 let cy = rect.center().y;
                 let idx = Rect::from_center_size(pos2(cols.index + 14.0, cy), Vec2::splat(14.0));
                 if hovered {
-                    icons::paint(p, idx, if current && playing { Icon::Pause } else { Icon::Play }, TEXT);
+                    icons::paint(p, idx, if current && playing { Icon::Pause } else { Icon::Play }, c().text);
                 } else if current {
                     equalizer(p, idx, playing);
                 } else {
-                    p.text(idx.center(), Align2::CENTER_CENTER, (i + 1).to_string(), regular(13.0), FAINT);
+                    p.text(idx.center(), Align2::CENTER_CENTER, (i + 1).to_string(), regular(13.0), c().faint);
                 }
                 let art = Rect::from_min_size(pos2(cols.art, cy - 20.0), Vec2::splat(40.0));
                 widgets::cover(ui, &mut self.covers, cover_url(t, THUMB).as_deref(), art, 4);
                 let p = ui.painter();
                 let tw = cols.album.unwrap_or(cols.time - 60.0) - cols.title - 16.0;
-                text_left(p, pos2(cols.title, cy - 9.0), &t.title, regular(14.0), if current { ACCENT } else { TEXT }, tw);
-                text_left(p, pos2(cols.title, cy + 10.0), &t.artist, regular(12.5), DIM, tw);
+                text_left(p, pos2(cols.title, cy - 9.0), &t.title, regular(14.0), if current { c().accent } else { c().text }, tw);
+                text_left(p, pos2(cols.title, cy + 10.0), &t.artist, regular(12.5), c().dim, tw);
                 if let Some(a) = cols.album {
-                    text_left(p, pos2(a, cy), &t.album, regular(13.0), DIM, cols.time - a - 70.0);
+                    text_left(p, pos2(a, cy), &t.album, regular(13.0), c().dim, cols.time - a - 70.0);
                 }
-                p.text(pos2(cols.time, cy), Align2::RIGHT_CENTER, mmss(t.duration as f64), regular(13.0), DIM);
+                p.text(pos2(cols.time, cy), Align2::RIGHT_CENTER, mmss(t.duration as f64), regular(13.0), c().dim);
 
                 let clicked_index = resp.clicked() && resp.interact_pointer_pos().is_some_and(|pt| pt.x < cols.art);
                 if resp.double_clicked() || clicked_index {
@@ -555,7 +572,7 @@ impl App {
 
     fn playlist_grid(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
-        text_left(ui.painter(), ui.cursor().min + vec2(0.0, 18.0), "Playlists", bold(30.0), TEXT, 400.0);
+        text_left(ui.painter(), ui.cursor().min + vec2(0.0, 18.0), "Playlists", bold(30.0), c().text, 400.0);
         ui.add_space(52.0);
         let mut open = None;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -571,13 +588,13 @@ impl App {
                         let art = Rect::from_min_size(rect.min, Vec2::splat(card));
                         widgets::cover(ui, &mut self.covers, playlist_url(p, 352).as_deref(), art, 8);
                         if resp.hovered() {
-                            ui.painter().rect_filled(art, CornerRadius::same(8), Color32::from_black_alpha(70));
-                            let c = pos2(art.right() - 30.0, art.bottom() - 30.0);
-                            ui.painter().circle_filled(c, 20.0, TEXT);
-                            icons::paint(ui.painter(), Rect::from_center_size(c, Vec2::splat(16.0)), Icon::Play, BG);
+                            ui.painter().rect_filled(art, CornerRadius::same(8), c().veil);
+                            let knob = pos2(art.right() - 30.0, art.bottom() - 30.0);
+                            ui.painter().circle_filled(knob, 20.0, c().text);
+                            icons::paint(ui.painter(), Rect::from_center_size(knob, Vec2::splat(16.0)), Icon::Play, c().bg);
                         }
-                        text_left(ui.painter(), pos2(rect.left(), art.bottom() + 16.0), &p.title, bold(14.0), TEXT, card);
-                        text_left(ui.painter(), pos2(rect.left(), art.bottom() + 36.0), &format!("{} tracks", p.count), regular(12.5), DIM, card);
+                        text_left(ui.painter(), pos2(rect.left(), art.bottom() + 16.0), &p.title, bold(14.0), c().text, card);
+                        text_left(ui.painter(), pos2(rect.left(), art.bottom() + 36.0), &format!("{} tracks", p.count), regular(12.5), c().dim, card);
                         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                             open = Some(p.id);
                         }
@@ -595,7 +612,7 @@ impl App {
 
     fn player_bar(&mut self, ui: &mut Ui, st: &Status) {
         let full = ui.max_rect();
-        ui.painter().hline(full.x_range(), full.top(), egui::Stroke::new(1.0, LINE));
+        ui.painter().hline(full.x_range(), full.top(), egui::Stroke::new(1.0, c().line));
         let duration = st.track.as_ref().map_or(0.0, |t| t.duration as f64);
         let side = (full.width() * 0.3).min(360.0);
         let left = Rect::from_min_max(full.min, pos2(full.left() + side, full.bottom()));
@@ -608,8 +625,8 @@ impl App {
             widgets::cover(ui, &mut self.covers, cover_url(t, 112).as_deref(), art, 4);
             let x = art.right() + 14.0;
             let w = left.right() - x;
-            text_left(ui.painter(), pos2(x, left.center().y - 9.0), &t.title, bold(14.0), TEXT, w);
-            text_left(ui.painter(), pos2(x, left.center().y + 11.0), &t.artist, regular(12.5), DIM, w);
+            text_left(ui.painter(), pos2(x, left.center().y - 9.0), &t.title, bold(14.0), c().text, w);
+            text_left(ui.painter(), pos2(x, left.center().y + 11.0), &t.artist, regular(12.5), c().dim, w);
         }
         if st.state == State::Loading {
             ui.put(Rect::from_center_size(pos2(left.left() + 28.0, left.center().y), Vec2::splat(56.0)), egui::Spinner::new().size(20.0));
@@ -620,13 +637,13 @@ impl App {
             let controls = Rect::from_center_size(pos2(center.center().x, center.top() + 30.0), vec2(160.0, 40.0));
             ui.scope_builder(UiBuilder::new().max_rect(controls).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
-                if widgets::icon_button(ui, Icon::Prev, 16.0, DIM).clicked() {
+                if widgets::icon_button(ui, Icon::Prev, 16.0, c().dim).clicked() {
                     self.player.send(Cmd::Prev);
                 }
                 if widgets::play_circle(ui, st.state == State::Playing, 38.0).clicked() {
                     self.player.send(Cmd::Toggle);
                 }
-                if widgets::icon_button(ui, Icon::Next, 16.0, DIM).clicked() {
+                if widgets::icon_button(ui, Icon::Next, 16.0, c().dim).clicked() {
                     self.player.send(Cmd::Next);
                 }
             });
@@ -634,8 +651,8 @@ impl App {
             let row = Rect::from_center_size(pos2(center.center().x, center.top() + 64.0), vec2(bar_w, 16.0));
             let pos = self.seek_drag.map(|f| f as f64 * duration).unwrap_or(st.position).min(duration);
             let p = ui.painter();
-            p.text(pos2(row.left(), row.center().y), Align2::RIGHT_CENTER, mmss(pos), regular(11.5), DIM);
-            p.text(pos2(row.right(), row.center().y), Align2::LEFT_CENTER, mmss(duration), regular(11.5), DIM);
+            p.text(pos2(row.left(), row.center().y), Align2::RIGHT_CENTER, mmss(pos), regular(11.5), c().dim);
+            p.text(pos2(row.right(), row.center().y), Align2::LEFT_CENTER, mmss(duration), regular(11.5), c().dim);
             let slider = Rect::from_min_max(pos2(row.left() + 10.0, row.top()), pos2(row.right() - 10.0, row.bottom()));
             ui.scope_builder(UiBuilder::new().max_rect(slider), |ui| {
                 let mut frac = if duration > 0.0 { (pos / duration) as f32 } else { 0.0 };
@@ -663,7 +680,7 @@ impl App {
                 self.volume_drag = None;
             }
             let icon = if vol <= 0.001 { Icon::Mute } else { Icon::Volume };
-            if widgets::icon_button(ui, icon, 18.0, DIM).on_hover_text("Mute").clicked() {
+            if widgets::icon_button(ui, icon, 18.0, c().dim).on_hover_text("Mute").clicked() {
                 if vol > 0.001 {
                     self.unmuted_volume = vol;
                     self.player.send(Cmd::Volume(0.0));
@@ -683,22 +700,22 @@ impl App {
     fn output_button(&mut self, ui: &mut Ui, current: &str) {
         let remote = current != Output::Local.name();
         let label = if remote { current } else { "" };
-        let g = ui.painter().layout_no_wrap(label.to_string(), regular(12.5), ACCENT);
+        let g = ui.painter().layout_no_wrap(label.to_string(), regular(12.5), c().accent);
         let w = 34.0 + if remote { g.size().x.min(140.0) + 8.0 } else { 0.0 };
         let (rect, resp) = ui.allocate_exact_size(vec2(w, 34.0), Sense::click());
         if resp.hovered() {
-            ui.painter().rect_filled(rect, CornerRadius::same(17), HOVER);
+            ui.painter().rect_filled(rect, CornerRadius::same(17), c().hover);
         }
-        let color = if remote { ACCENT } else if resp.hovered() { TEXT } else { DIM };
+        let color = if remote { c().accent } else if resp.hovered() { c().text } else { c().dim };
         icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.left() + 17.0, rect.center().y), Vec2::splat(18.0)), Icon::AirPlay, color);
         if remote {
-            text_left(ui.painter(), pos2(rect.left() + 32.0, rect.center().y), label, regular(12.5), ACCENT, 140.0);
+            text_left(ui.painter(), pos2(rect.left() + 32.0, rect.center().y), label, regular(12.5), c().accent, 140.0);
         }
         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         egui::Popup::menu(&resp).show(|ui| {
             ui.set_min_width(260.0);
             ui.add_space(4.0);
-            ui.label(egui::RichText::new("PLAY ON").color(FAINT).size(11.0));
+            ui.label(egui::RichText::new("PLAY ON").color(c().faint).size(11.0));
             ui.add_space(2.0);
             let mut pick = None;
             if widgets::nav_item(ui, Icon::Computer, Output::Local.name(), !remote).clicked() {
@@ -711,7 +728,7 @@ impl App {
                 }
             }
             if self.discovery.as_ref().is_some_and(|d| d.devices().is_empty()) {
-                ui.label(egui::RichText::new("Looking for AirPlay speakers…").color(FAINT).size(12.0));
+                ui.label(egui::RichText::new("Looking for AirPlay speakers…").color(c().faint).size(12.0));
             }
             if let Some(o) = pick {
                 self.player.send(Cmd::Output(o));
@@ -724,7 +741,7 @@ impl App {
 fn section(ui: &mut Ui, label: &str) {
     ui.add_space(18.0);
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
-    text_left(ui.painter(), pos2(rect.left() + 10.0, rect.center().y), label, bold(11.0), FAINT, rect.width());
+    text_left(ui.painter(), pos2(rect.left() + 10.0, rect.center().y), label, bold(11.0), c().faint, rect.width());
     ui.add_space(4.0);
 }
 
@@ -735,7 +752,7 @@ fn equalizer(p: &egui::Painter, r: Rect, animated: bool) {
         let h = if animated { 0.35 + 0.65 * (0.5 + 0.5 * (t * 7.0 + phase).sin()) } else { 0.5 };
         let x = r.left() + k as f32 * r.width() * 0.38;
         let bar = Rect::from_min_max(pos2(x, r.bottom() - r.height() * h), pos2(x + r.width() * 0.24, r.bottom()));
-        p.rect_filled(bar, CornerRadius::same(1), ACCENT);
+        p.rect_filled(bar, CornerRadius::same(1), c().accent);
     }
     if animated {
         p.ctx().request_repaint_after(Duration::from_millis(80));
@@ -764,6 +781,11 @@ fn columns(left: f32, width: f32) -> Columns {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // Follow the chosen mode (and the OS setting live when on System).
+        let dark = self.theme_mode.resolve(&ctx);
+        if dark != theme::is_dark() {
+            theme::apply(&ctx, dark);
+        }
         self.covers.begin_frame();
         self.poll_tasks(&ctx);
         if self.client.is_none() {
@@ -778,16 +800,16 @@ impl eframe::App for App {
             .exact_size(92.0)
             .resizable(false)
             .show_separator_line(false)
-            .frame(egui::Frame::new().fill(BAR).inner_margin(Margin::symmetric(20, 0)))
+            .frame(egui::Frame::new().fill(c().bar).inner_margin(Margin::symmetric(20, 0)))
             .show(ui, |ui| self.player_bar(ui, &st));
         egui::Panel::left("nav")
             .exact_size(248.0)
             .resizable(false)
             .show_separator_line(false)
-            .frame(egui::Frame::new().fill(SIDEBAR).inner_margin(Margin { left: 12, right: 12, top: 0, bottom: 10 }))
+            .frame(egui::Frame::new().fill(c().sidebar).inner_margin(Margin { left: 12, right: 12, top: 0, bottom: 10 }))
             .show(ui, |ui| self.sidebar(ui));
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(BG).inner_margin(Margin { left: 36, right: 36, top: 0, bottom: 0 }))
+            .frame(egui::Frame::new().fill(c().bg).inner_margin(Margin { left: 36, right: 36, top: 0, bottom: 0 }))
             .show(ui, |ui| self.main_area(ui, &st));
     }
 }

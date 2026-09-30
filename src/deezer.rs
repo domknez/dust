@@ -60,6 +60,18 @@ impl Quality {
         }
     }
 
+    pub fn key(self) -> &'static str {
+        match self {
+            Quality::Mp3_128 => "mp3_128",
+            Quality::Mp3_320 => "mp3_320",
+            Quality::Flac => "flac",
+        }
+    }
+
+    pub fn from_key(k: &str) -> Option<Quality> {
+        Quality::ALL.into_iter().find(|q| q.key() == k)
+    }
+
     /// Requested format and every lower one, best first.
     fn formats(self) -> &'static [&'static str] {
         match self {
