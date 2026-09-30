@@ -71,6 +71,41 @@ fn playlist_url(p: &Playlist, size: u32) -> Option<String> {
     p.picture.as_ref().map(|(kind, md5)| image_url(kind, md5, size))
 }
 
+/// What to do with fetched tracks.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum PlayMode {
+    Now,
+    Next,
+    Queue,
+}
+
+impl PlayMode {
+    fn cmd(self, tracks: Vec<Track>) -> Cmd {
+        match self {
+            PlayMode::Now => Cmd::Play(tracks, 0),
+            PlayMode::Next => Cmd::PlayNext(tracks),
+            PlayMode::Queue => Cmd::Enqueue(tracks),
+        }
+    }
+}
+
+/// Right-click menu offering Play next / Add to queue.
+fn queue_menu(resp: &egui::Response) -> Option<PlayMode> {
+    let mut pick = None;
+    resp.context_menu(|ui| {
+        ui.set_min_width(180.0);
+        if widgets::menu_row(ui, Some(Icon::Play), "Play next", None, false, c().text).clicked() {
+            pick = Some(PlayMode::Next);
+            ui.close();
+        }
+        if widgets::menu_row(ui, Some(Icon::Queue), "Add to queue", None, false, c().text).clicked() {
+            pick = Some(PlayMode::Queue);
+            ui.close();
+        }
+    });
+    pick
+}
+
 /// Where a collection's tracks come from.
 #[derive(Clone, PartialEq, Debug)]
 enum Source {
@@ -150,7 +185,10 @@ pub struct App {
     home: Vec<Section>,
     home_task: Task<Vec<Section>>,
     /// Tracks fetched to play straight from a home card.
-    quick_play: Task<Vec<Track>>,
+    quick_play: Task<(Vec<Track>, PlayMode)>,
+    show_queue: bool,
+    /// Queue row being dragged (index into the queue).
+    queue_drag: Option<usize>,
     seek_drag: Option<f32>,
     volume_drag: Option<f32>,
     unmuted_volume: f32,
@@ -212,6 +250,8 @@ impl App {
             home: Vec::new(),
             home_task: None,
             quick_play: None,
+            show_queue: false,
+            queue_drag: None,
             seek_drag: None,
             volume_drag: None,
             unmuted_volume: volume,
@@ -267,9 +307,9 @@ impl App {
     }
 
     /// Fetch a collection and start playing it without opening it.
-    fn play_source(&mut self, ctx: &egui::Context, source: Source) {
+    fn play_source(&mut self, ctx: &egui::Context, source: Source, mode: PlayMode) {
         let Some(client) = self.client.clone() else { return };
-        self.quick_play = spawn(ctx, move || fetch(&client, &source));
+        self.quick_play = spawn(ctx, move || fetch(&client, &source).map(|t| (t, mode)));
     }
 
     fn poll_tasks(&mut self, ctx: &egui::Context) {
@@ -308,10 +348,10 @@ impl App {
             Some(Err(e)) => self.list_error = Some(e),
             None => {}
         }
-        if let Some(Ok(tracks)) = poll(&mut self.quick_play)
+        if let Some(Ok((tracks, mode))) = poll(&mut self.quick_play)
             && !tracks.is_empty()
         {
-            self.player.send(Cmd::Play(tracks, 0));
+            self.player.send(mode.cmd(tracks));
         }
     }
 
@@ -562,6 +602,7 @@ impl App {
         let header_h = if search { 96.0 } else { 268.0 };
         let n = self.tracks.len();
         let mut play: Option<(usize, bool)> = None;
+        let mut queue_action: Option<(usize, PlayMode)> = None;
 
         egui::ScrollArea::vertical().auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
             let width = ui.available_width();
@@ -671,9 +712,14 @@ impl App {
                         play = Some((i, false));
                     }
                 }
-                resp.on_hover_cursor(egui::CursorIcon::Default);
+                if let Some(mode) = queue_menu(&resp) {
+                    queue_action = Some((i, mode));
+                }
             }
         });
+        if let Some((i, mode)) = queue_action {
+            self.player.send(mode.cmd(vec![self.tracks[i].clone()]));
+        }
 
         if let Some((i, shuffle)) = play {
             let mut queue = self.tracks.clone();
@@ -687,7 +733,7 @@ impl App {
     fn home_view(&mut self, ui: &mut Ui, st: &Status) {
         let ctx = ui.ctx().clone();
         let mut open: Option<Coll> = None;
-        let mut play: Option<Source> = None;
+        let mut play: Option<(Source, PlayMode)> = None;
         let mut flow: Option<Option<String>> = None;
         let mut reload = false;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -732,7 +778,7 @@ impl App {
                             } else if let Some(coll) = Coll::from_item(it) {
                                 match card(ui, &mut self.covers, &coll) {
                                     CardClick::Open => open = Some(coll),
-                                    CardClick::Play => play = Some(coll.source.clone()),
+                                    CardClick::Play(mode) => play = Some((coll.source.clone(), mode)),
                                     CardClick::None => {}
                                 }
                             }
@@ -749,8 +795,8 @@ impl App {
         if let Some(f) = flow {
             self.player.send(Cmd::PlayFlow(f));
         }
-        if let Some(src) = play {
-            self.play_source(&ctx, src);
+        if let Some((src, mode)) = play {
+            self.play_source(&ctx, src, mode);
         }
         if let Some(coll) = open {
             self.open_view(&ctx, View::Collection(Box::new(coll)));
@@ -795,6 +841,114 @@ impl App {
         {
             let view = View::Collection(Box::new(Coll::from_playlist(p)));
             self.open_view(&ctx, view);
+        }
+    }
+
+    // ------------------------------------------------------------ queue
+
+    fn queue_panel(&mut self, ui: &mut Ui, st: &Status) {
+        const QROW: f32 = 52.0;
+        ui.add_space(TOP_INSET);
+        let queue = st.queue.clone();
+        let current = st.index;
+        let has_current = st.track.is_some() && current < queue.len();
+        let upcoming = if queue.is_empty() { 0 } else { queue.len().saturating_sub(current + 1) };
+
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width() - 90.0, 36.0), Sense::hover());
+            text_left(ui.painter(), pos2(r.left() + 4.0, r.center().y), "Queue", bold(20.0), c().text, r.width());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if widgets::icon_button(ui, Icon::Close, 14.0, c().dim).on_hover_text("Close").clicked() {
+                    self.show_queue = false;
+                }
+                if upcoming > 0 && ui.link(egui::RichText::new("Clear").size(13.0)).clicked() {
+                    self.player.send(Cmd::ClearUpcoming);
+                }
+            });
+        });
+        if st.flow.is_some() {
+            text_left(ui.painter(), ui.cursor().min + vec2(4.0, 8.0), "Flow · keeps going", regular(12.0), c().accent, 300.0);
+            ui.add_space(18.0);
+        }
+
+        if !has_current && upcoming == 0 {
+            ui.add_space(40.0);
+            ui.vertical_centered(|ui| {
+                ui.label(egui::RichText::new("Your queue is empty").color(c().dim).size(14.0));
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new("Right-click a track or card → Add to queue").color(c().faint).size(12.0));
+            });
+            return;
+        }
+
+        let mut jump = None;
+        let mut remove = None;
+        if has_current {
+            widgets::caption(ui, "NOW PLAYING");
+            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), QROW), Sense::hover());
+            ui.painter().rect_filled(rect, CornerRadius::same(6), c().hover);
+            queue_row(ui, &mut self.covers, rect, &queue[current], true, true);
+            ui.add_space(10.0);
+        }
+        if upcoming == 0 {
+            return;
+        }
+        widgets::caption(ui, &format!("NEXT UP · {upcoming}"));
+        let first_up = current + 1;
+        let mut drop_at: Option<usize> = None;
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, QROW, upcoming, |ui, range| {
+            for k in range {
+                let i = first_up + k;
+                let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), QROW), Sense::click_and_drag());
+                let dragging = self.queue_drag == Some(i);
+                if resp.hovered() || dragging {
+                    ui.painter().rect_filled(rect, CornerRadius::same(6), c().hover);
+                }
+                let show_remove = resp.hovered() && self.queue_drag.is_none();
+                queue_row(ui, &mut self.covers, rect, &queue[i], false, !show_remove);
+                // Remove button replaces the duration on hover.
+                let x = Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), Vec2::splat(24.0));
+                let over_x = resp.hover_pos().is_some_and(|p| x.contains(p));
+                if show_remove {
+                    ui.painter().rect_filled(x, CornerRadius::same(12), if over_x { c().raised } else { c().hover });
+                    icons::paint(ui.painter(), Rect::from_center_size(x.center(), Vec2::splat(10.0)), Icon::Close, c().dim);
+                }
+                if resp.drag_started() {
+                    self.queue_drag = Some(i);
+                }
+                if resp.clicked() {
+                    if over_x {
+                        remove = Some(i);
+                    } else {
+                        jump = Some(i);
+                    }
+                }
+                // Drop target: the row under the pointer while dragging.
+                if self.queue_drag.is_some()
+                    && let Some(p) = ui.ctx().pointer_interact_pos()
+                    && rect.contains(p)
+                {
+                    drop_at = Some(i);
+                    let y = if self.queue_drag.is_some_and(|d| d < i) { rect.bottom() } else { rect.top() };
+                    ui.painter().hline(rect.x_range(), y, egui::Stroke::new(2.0, c().accent));
+                }
+            }
+        });
+        if let Some(from) = self.queue_drag {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            if ui.input(|i| i.pointer.any_released()) {
+                if let Some(to) = drop_at
+                    && to != from
+                {
+                    self.player.send(Cmd::Move(from, to));
+                }
+                self.queue_drag = None;
+            }
+        }
+        if let Some(i) = remove {
+            self.player.send(Cmd::Remove(i));
+        } else if let Some(i) = jump {
+            self.player.send(Cmd::JumpTo(i));
         }
     }
 
@@ -880,6 +1034,10 @@ impl App {
             }
             ui.add_space(10.0);
             self.output_button(ui, &st.output);
+            let color = if self.show_queue { c().accent } else { c().dim };
+            if widgets::icon_button(ui, Icon::Queue, 18.0, color).on_hover_text("Queue").clicked() {
+                self.show_queue = !self.show_queue;
+            }
         });
 
         if st.state == State::Playing {
@@ -940,10 +1098,24 @@ struct Header {
     round: bool,
 }
 
+/// One track in the queue panel.
+fn queue_row(ui: &Ui, covers: &mut Covers, rect: Rect, t: &Track, current: bool, show_time: bool) {
+    let art = Rect::from_min_size(pos2(rect.left() + 6.0, rect.center().y - 18.0), Vec2::splat(36.0));
+    widgets::cover(ui, covers, cover_url(t, THUMB).as_deref(), art, 4);
+    let x = art.right() + 12.0;
+    let w = rect.right() - x - 52.0;
+    let p = ui.painter();
+    text_left(p, pos2(x, rect.center().y - 8.0), &t.title, regular(13.5), if current { c().accent } else { c().text }, w);
+    text_left(p, pos2(x, rect.center().y + 10.0), &t.artist, regular(12.0), c().dim, w);
+    if show_time {
+        p.text(pos2(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, mmss(t.duration as f64), regular(12.0), c().faint);
+    }
+}
+
 enum CardClick {
     None,
     Open,
-    Play,
+    Play(PlayMode),
 }
 
 /// Home card: artwork (round for artists), title, subtitle; a play button on hover.
@@ -962,8 +1134,11 @@ fn card(ui: &mut Ui, covers: &mut Covers, coll: &Coll) -> CardClick {
         ui.painter().circle_filled(knob, if over_knob { 22.0 } else { 20.0 }, c().text);
         icons::paint(ui.painter(), Rect::from_center_size(knob, Vec2::splat(15.0)), Icon::Play, c().bg);
         if resp.clicked() {
-            click = if over_knob { CardClick::Play } else { CardClick::Open };
+            click = if over_knob { CardClick::Play(PlayMode::Now) } else { CardClick::Open };
         }
+    }
+    if let Some(mode) = queue_menu(&resp) {
+        click = CardClick::Play(mode);
     }
     text_left(ui.painter(), pos2(rect.left(), art.bottom() + 15.0), &coll.title, bold(13.5), c().text, w);
     text_left(ui.painter(), pos2(rect.left(), art.bottom() + 34.0), &coll.subtitle, regular(12.0), c().dim, w);
@@ -1061,6 +1236,14 @@ impl eframe::App for App {
             .show_separator_line(false)
             .frame(egui::Frame::new().fill(c().sidebar).inner_margin(Margin { left: 12, right: 12, top: 0, bottom: 10 }))
             .show(ui, |ui| self.sidebar(ui));
+        if self.show_queue {
+            egui::Panel::right("queue")
+                .exact_size(340.0)
+                .resizable(false)
+                .show_separator_line(false)
+                .frame(egui::Frame::new().fill(c().sidebar).inner_margin(Margin { left: 14, right: 14, top: 0, bottom: 10 }))
+                .show(ui, |ui| self.queue_panel(ui, &st));
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(c().bg).inner_margin(Margin { left: 36, right: 36, top: 0, bottom: 0 }))
             .show(ui, |ui| self.main_area(ui, &st));

@@ -24,6 +24,8 @@ pub enum Icon {
     Moon,
     Check,
     LogOut,
+    Queue,
+    Close,
 }
 
 fn p(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -157,6 +159,17 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             line(p(r, 0.4, 0.5), p(r, 0.88, 0.5));
             line(p(r, 0.72, 0.34), p(r, 0.88, 0.5));
             line(p(r, 0.72, 0.66), p(r, 0.88, 0.5));
+        }
+        Icon::Queue => {
+            for y in [0.24, 0.44, 0.64] {
+                line(p(r, 0.12, y), p(r, 0.62, y));
+            }
+            line(p(r, 0.12, 0.84), p(r, 0.46, 0.84));
+            poly(vec![p(r, 0.66, 0.6), p(r, 0.92, 0.76), p(r, 0.66, 0.92)]);
+        }
+        Icon::Close => {
+            line(p(r, 0.22, 0.22), p(r, 0.78, 0.78));
+            line(p(r, 0.78, 0.22), p(r, 0.22, 0.78));
         }
         Icon::Note => {
             painter.circle_filled(p(r, 0.36, 0.72), w * 0.13, color);

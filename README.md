@@ -28,7 +28,9 @@ Inspired by [SpotLight](https://github.com/dddevid/SpotLight).
   the alternative version Deezer offers, like the web app does
 - **Quality:** MP3 128 / MP3 320 / FLAC (FLAC needs a HiFi plan), streamed and decoded
   on the fly — nothing is written to disk
-- **Seeking** (HTTP range jumps for MP3), shuffle, queue auto-advance
+- **Queue:** see what's next, jump to any track, reorder by dragging, remove, clear;
+  right-click any track or card → *Play next* / *Add to queue*
+- **Seeking** (HTTP range jumps for MP3), shuffle
 - **AirPlay 2 and AirPlay 1** output with automatic discovery — Sonos (incl. Era 100/300),
   HomePod-class receivers, Apple TV, AirPort Express, shairport-sync and most AirPlay speakers
 - **Last.fm scrobbling, history and Flow learning:** dust reports what you listen to
@@ -117,6 +119,8 @@ DUST_DEBUG=1 dust --tone "Living Room"     # ...on an AirPlay speaker, with pack
 - `Space`: play/pause
 - Double-click a track, or click its number: play from there
 - Home cards: click to open, click the round play button to play right away
+- Right-click a track or card: *Play next* / *Add to queue*
+- Queue button (next to AirPlay): open the queue; drag rows to reorder
 
 ## Credits
 
