@@ -19,7 +19,7 @@ pub struct LocalSink {
     resampler: Resampler,
     rate: u32,
     scratch: Vec<f32>,
-    pending: Vec<f32>,
+    resampled: Vec<f32>,
 }
 
 impl LocalSink {
@@ -58,17 +58,13 @@ impl LocalSink {
             resampler: Resampler::new(RATE, rate),
             rate,
             scratch: Vec::new(),
-            pending: Vec::new(),
+            resampled: Vec::new(),
         })
     }
 
-    fn drain_pending(&mut self) {
-        let n = self.pending.len().min(self.producer.slots()) & !1; // whole frames only
-        if n == 0 {
-            return;
-        }
-        if let Ok(chunk) = self.producer.write_chunk_uninit(n) {
-            chunk.fill_from_iter(self.pending.drain(..n));
+    fn push(&mut self, samples: &[f32]) {
+        if let Ok(chunk) = self.producer.write_chunk_uninit(samples.len()) {
+            chunk.fill_from_iter(samples.iter().copied());
         }
     }
 }
@@ -116,23 +112,29 @@ fn build<T: SizedSample + FromSample<f32>>(
 
 impl Sink for LocalSink {
     fn write(&mut self, samples: &[i16]) -> usize {
-        self.drain_pending();
-        if !self.pending.is_empty() {
+        // Worst-case output size after resampling, rounded to whole frames.
+        let needed = ((samples.len() as u64 * self.rate as u64).div_ceil(RATE as u64) as usize + 4) & !1;
+        if self.producer.slots() < needed {
             return 0;
         }
         self.scratch.clear();
         self.scratch.extend(samples.iter().map(|&s| s as f32 / 32768.0));
         if self.resampler.is_identity() {
-            std::mem::swap(&mut self.pending, &mut self.scratch);
+            let scratch = std::mem::take(&mut self.scratch);
+            self.push(&scratch);
+            self.scratch = scratch;
         } else {
-            self.resampler.process(&self.scratch, &mut self.pending);
+            self.resampled.clear();
+            let mut out = std::mem::take(&mut self.resampled);
+            self.resampler.process(&self.scratch, &mut out);
+            self.push(&out);
+            self.resampled = out;
         }
-        self.drain_pending();
         samples.len()
     }
 
     fn pending_frames(&self) -> usize {
-        let queued = self.producer.buffer().capacity() - self.producer.slots() + self.pending.len();
+        let queued = self.producer.buffer().capacity() - self.producer.slots();
         queued / 2 * RATE as usize / self.rate as usize
     }
 
@@ -149,7 +151,6 @@ impl Sink for LocalSink {
     }
 
     fn flush(&mut self) {
-        self.pending.clear();
         self.resampler.reset();
         self.shared.flush.store(true, Ordering::Release);
     }
