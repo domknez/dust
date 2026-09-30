@@ -776,7 +776,13 @@ impl App {
                 let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
                 text_left(ui.painter(), pos2(r.left(), r.center().y), &sec.title, bold(19.0), c().text, r.width());
                 ui.add_space(8.0);
-                egui::ScrollArea::horizontal().id_salt(("home-row", si)).auto_shrink([false, true]).show(ui, |ui| {
+                egui::ScrollArea::horizontal()
+                    .id_salt(("home-row", si))
+                    .auto_shrink([false, true])
+                    // Bar visibility animation on these rows never settled and kept
+                    // the UI redrawing while idle; trackpad/shift-scroll still work.
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = if is_flow { 10.0 } else { 18.0 };
                         for it in items {
@@ -1241,6 +1247,10 @@ fn columns(left: f32, width: f32) -> Columns {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        static DEBUG_REPAINT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *DEBUG_REPAINT.get_or_init(|| std::env::var_os("DUST_DEBUG_REPAINT").is_some()) {
+            eprintln!("frame {}: {:?}", ctx.cumulative_pass_nr(), ctx.repaint_causes());
+        }
         // Follow the chosen mode (and the OS setting live when on System).
         let dark = self.theme_mode.resolve(&ctx);
         if dark != theme::is_dark() {

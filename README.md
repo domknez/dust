@@ -14,8 +14,13 @@ Inspired by [SpotLight](https://github.com/dddevid/SpotLight).
 | | dust | Deezer desktop |
 |---|---|---|
 | Binary | ~8 MB | 300+ MB |
-| Idle memory | ~85 MB (incl. cover art) | 400+ MB |
+| Memory, idle in background | ~85 MB | 400+ MB |
+| Memory, idle and visible | ~155 MB¹ | |
 | Idle CPU | ~0% (UI sleeps when untouched) | |
+
+¹ About half of that is the window's own drawing buffers, which macOS keeps for every
+visible window (they scale with window size on Retina displays); dust itself uses ~70–85 MB,
+including cover art.
 
 ## Features
 
