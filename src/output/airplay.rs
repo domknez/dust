@@ -8,7 +8,7 @@ use mdns_sd::{ServiceDaemon, ServiceEvent};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpStream, UdpSocket};
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -231,6 +231,10 @@ struct Shared {
     seq: AtomicU16,
     rtptime: AtomicU32,
     history: Mutex<VecDeque<(u16, Vec<u8>)>>,
+    // Diagnostics, printed on drop when DUST_DEBUG is set.
+    timing_requests: AtomicU64,
+    resent: AtomicU64,
+    packets: AtomicU64,
 }
 
 pub struct AirPlaySink {
@@ -271,40 +275,12 @@ impl AirPlaySink {
         let control = bind(any)?;
         let timing = bind(any)?;
         let audio = bind(any)?;
-
-        rtsp.request("OPTIONS", Some("*"), &[], None)?;
-        if device.auth_setup {
-            // MFi-SAP handshake: type byte 0x01 + a Curve25519 public key. Receivers
-            // only need it to happen; the reply (their key + cert) is not used for RAOP.
-            let mut body = vec![0x01];
-            body.extend((0..32).map(|_| fastrand::u8(..)));
-            rtsp.request("POST", Some("/auth-setup"), &[], Some(("application/octet-stream", &body)))?;
+        for s in [&control, &timing] {
+            s.set_read_timeout(Some(Duration::from_millis(200))).ok();
         }
-        let ip4 = |ip: IpAddr| if ip.is_ipv4() { "IP4" } else { "IP6" };
-        let sdp = format!(
-            "v=0\r\no=iTunes {sid} 0 IN {} {local_ip}\r\ns=iTunes\r\nc=IN {} {remote_ip}\r\nt=0 0\r\nm=audio 0 RTP/AVP 96\r\na=rtpmap:96 AppleLossless\r\na=fmtp:96 {FRAMES_PER_PACKET} 0 16 40 10 14 2 255 0 0 {RATE}\r\n",
-            ip4(local_ip),
-            ip4(remote_ip)
-        );
-        rtsp.request("ANNOUNCE", None, &[], Some(("application/sdp", sdp.as_bytes())))?;
-        let transport = format!(
-            "RTP/AVP/UDP;unicast;interleaved=0-1;mode=record;control_port={};timing_port={}",
-            control.local_addr().unwrap().port(),
-            timing.local_addr().unwrap().port()
-        );
-        let resp = rtsp.request("SETUP", None, &[("Transport", transport)], None)?;
-        rtsp.session = resp.header("Session").map(|s| s.split(';').next().unwrap_or(s).to_string());
-        let t = resp.header("Transport").ok_or("SETUP: no Transport")?;
-        let server_port = transport_param(t, "server_port").ok_or("SETUP: no server_port")?;
-        let control_port = transport_param(t, "control_port").unwrap_or(server_port + 1);
 
         let seq: u16 = fastrand::u16(..);
         let rtptime: u32 = fastrand::u32(..);
-        rtsp.request("RECORD", None, &[("Range", "npt=0-".into()), ("RTP-Info", format!("seq={seq};rtptime={rtptime}"))], None)?;
-
-        audio.connect(SocketAddr::new(remote_ip, server_port)).map_err(|e| e.to_string())?;
-        let control_dst = SocketAddr::new(remote_ip, control_port);
-
         let shared = Arc::new(Shared {
             running: AtomicBool::new(true),
             playing: AtomicBool::new(true),
@@ -314,16 +290,55 @@ impl AirPlaySink {
             seq: AtomicU16::new(seq),
             rtptime: AtomicU32::new(rtptime),
             history: Mutex::new(VecDeque::with_capacity(HISTORY)),
+            timing_requests: AtomicU64::new(0),
+            resent: AtomicU64::new(0),
+            packets: AtomicU64::new(0),
         });
+        // Receivers sync clocks with us during SETUP, so answer timing requests first.
+        let sh = shared.clone();
+        let timing_port = timing.local_addr().map_err(|e| e.to_string())?.port();
+        let mut threads = vec![spawn("airplay-timing", move || timing_loop(timing, sh))];
+
+        let negotiated = (|| -> Result<(u16, u16), String> {
+            rtsp.request("OPTIONS", Some("*"), &[], None)?;
+            if device.auth_setup {
+                // MFi-SAP handshake: type byte 0x01 + a Curve25519 public key. Receivers
+                // only need it to happen; the reply (their key + cert) is not used for RAOP.
+                let mut body = vec![0x01];
+                body.extend((0..32).map(|_| fastrand::u8(..)));
+                rtsp.request("POST", Some("/auth-setup"), &[], Some(("application/octet-stream", &body)))?;
+            }
+            let ip4 = |ip: IpAddr| if ip.is_ipv4() { "IP4" } else { "IP6" };
+            let sdp = format!(
+                "v=0\r\no=iTunes {sid} 0 IN {} {local_ip}\r\ns=iTunes\r\nc=IN {} {remote_ip}\r\nt=0 0\r\nm=audio 0 RTP/AVP 96\r\na=rtpmap:96 AppleLossless\r\na=fmtp:96 {FRAMES_PER_PACKET} 0 16 40 10 14 2 255 0 0 {RATE}\r\n",
+                ip4(local_ip),
+                ip4(remote_ip)
+            );
+            rtsp.request("ANNOUNCE", None, &[], Some(("application/sdp", sdp.as_bytes())))?;
+            let transport = format!(
+                "RTP/AVP/UDP;unicast;interleaved=0-1;mode=record;control_port={};timing_port={timing_port}",
+                control.local_addr().map_err(|e| e.to_string())?.port(),
+            );
+            let resp = rtsp.request("SETUP", None, &[("Transport", transport)], None)?;
+            rtsp.session = resp.header("Session").map(|s| s.split(';').next().unwrap_or(s).to_string());
+            let t = resp.header("Transport").ok_or("SETUP: no Transport")?;
+            let server_port = transport_param(t, "server_port").ok_or("SETUP: no server_port")?;
+            let control_port = transport_param(t, "control_port").unwrap_or(server_port + 1);
+            rtsp.request("RECORD", None, &[("Range", "npt=0-".into()), ("RTP-Info", format!("seq={seq};rtptime={rtptime}"))], None)?;
+            Ok((server_port, control_port))
+        })();
+        let (server_port, control_port) = match negotiated {
+            Ok(p) => p,
+            Err(e) => {
+                shared.running.store(false, Ordering::Release);
+                return Err(format!("{}: {e}", device.name));
+            }
+        };
+
+        audio.connect(SocketAddr::new(remote_ip, server_port)).map_err(|e| e.to_string())?;
+        let control_dst = SocketAddr::new(remote_ip, control_port);
         // ~1 s of audio between player and network pacing.
         let (producer, consumer) = rtrb::RingBuffer::new(RATE as usize * 2);
-
-        let mut threads = Vec::new();
-        for s in [&control, &timing] {
-            s.set_read_timeout(Some(Duration::from_millis(200))).ok();
-        }
-        let sh = shared.clone();
-        threads.push(spawn("airplay-timing", move || timing_loop(timing, sh)));
         let sh = shared.clone();
         let ctl = control.try_clone().map_err(|e| e.to_string())?;
         threads.push(spawn("airplay-control", move || control_loop(ctl, control_dst, sh)));
@@ -359,6 +374,7 @@ fn timing_loop(sock: UdpSocket, sh: Arc<Shared>) {
         if n < 32 || buf[1] & 0x7f != 0x52 {
             continue;
         }
+        sh.timing_requests.fetch_add(1, Ordering::Relaxed);
         let now = ntp_now().to_be_bytes();
         let mut reply = [0u8; 32];
         reply[..4].copy_from_slice(&[0x80, 0xd3, 0x00, 0x07]);
@@ -388,6 +404,7 @@ fn control_loop(sock: UdpSocket, dst: SocketAddr, sh: Arc<Shared>) {
                 out.extend_from_slice(&want.to_be_bytes());
                 out.extend_from_slice(pkt);
                 let _ = sock.send_to(&out, dst);
+                sh.resent.fetch_add(1, Ordering::Relaxed);
             }
         }
     }
@@ -460,7 +477,10 @@ fn audio_loop(audio: UdpSocket, control: UdpSocket, control_dst: SocketAddr, mut
         pkt.extend_from_slice(&ts.to_be_bytes());
         pkt.extend_from_slice(&ssrc.to_be_bytes());
         pkt.extend_from_slice(&alac_frame(&frame));
-        let _ = audio.send(&pkt);
+        if let Err(e) = audio.send(&pkt) {
+            eprintln!("dust: airplay send: {e}");
+        }
+        sh.packets.fetch_add(1, Ordering::Relaxed);
         {
             let mut h = sh.history.lock().unwrap();
             if h.len() == HISTORY {
@@ -532,6 +552,15 @@ impl Drop for AirPlaySink {
         self.shared.running.store(false, Ordering::Release);
         for t in self.threads.drain(..) {
             let _ = t.join();
+        }
+        if std::env::var_os("DUST_DEBUG").is_some() {
+            let sh = &self.shared;
+            eprintln!(
+                "airplay: {} packets sent, {} timing requests answered, {} packets retransmitted",
+                sh.packets.load(Ordering::Relaxed),
+                sh.timing_requests.load(Ordering::Relaxed),
+                sh.resent.load(Ordering::Relaxed)
+            );
         }
     }
 }
