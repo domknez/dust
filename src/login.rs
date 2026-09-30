@@ -6,6 +6,8 @@
 use std::process::{Command, Stdio};
 
 pub const ARG: &str = "--login";
+const SAFARI_UA: &str =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
 const PREFIX: &str = "arl=";
 
 /// Spawn the login window and block until the user signs in or closes it.
@@ -45,7 +47,13 @@ pub fn run_window() {
         .build(&event_loop)
         .expect("login window");
     // Incognito: the session lives only in dust's keychain entry, not in a webview profile.
-    let builder = WebViewBuilder::new().with_url(URL).with_incognito(true);
+    let mut builder = WebViewBuilder::new().with_url(URL).with_incognito(true);
+    // Embedded WebKit omits "Version/.. Safari/.." from its user agent and Deezer's web
+    // app then refuses to run ("browser not supported"). Present as the Safari it is.
+    // WebView2 on Windows already sends a full Edge user agent.
+    if !cfg!(windows) {
+        builder = builder.with_user_agent(SAFARI_UA);
+    }
     #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd")))]
     let webview = builder.build(&window).expect("webview");
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))]
