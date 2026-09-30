@@ -2,7 +2,9 @@
 name = "dust"
 version = "0.1.0"
 edition = "2024"
-description = "Ultra-lightweight Deezer client with AirPlay output"
+description = "Free and open source, ultra-lightweight Deezer desktop client with AirPlay 2 output"
+license = "MIT"
+repository = "https://github.com/domknez/dust"
 
 [dependencies]
 blowfish = "0.9"
