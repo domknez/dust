@@ -408,6 +408,9 @@ impl Player {
                 }
             }
             Cmd::Output(o) => {
+                if std::env::var_os("DUST_DEBUG").is_some() {
+                    eprintln!("dust: output -> {} (volume {:.2})", o.name(), self.volume);
+                }
                 let pos = self.position();
                 self.sink = None; // tear down first: may be the same device
                 self.output = o;

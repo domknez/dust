@@ -199,6 +199,10 @@ pub struct App {
     covers: Covers,
     theme_mode: theme::Mode,
     report_listens: bool,
+    /// Last volume written to settings.
+    saved_volume: f32,
+    /// Speaker (by name) to reselect once discovery finds it.
+    restore_output: Option<String>,
     _dacp: Option<dacp::Server>,
 }
 
@@ -212,7 +216,8 @@ impl App {
         theme::install_fonts(ctx);
         theme::apply(ctx, theme_mode.resolve(ctx));
 
-        let volume = 0.8;
+        let volume = saved.get("volume").and_then(|v| v.parse::<f32>().ok()).map_or(0.5, |v| v.clamp(0.0, 1.0));
+        let restore_output = saved.get("output").filter(|o| !o.is_empty()).cloned();
         let player = PlayerHandle::spawn(ctx.clone(), volume);
         let repaint = ctx.clone();
         let discovery = Discovery::start(move || repaint.request_repaint())
@@ -262,6 +267,8 @@ impl App {
             covers: Covers::new(ctx),
             theme_mode,
             report_listens,
+            saved_volume: volume,
+            restore_output,
             _dacp: dacp_server,
         };
         if let Some(arl) = keyring().and_then(|k| k.get_password().ok()) {
@@ -1047,6 +1054,23 @@ impl App {
         }
     }
 
+    /// Save volume once it settles (not on every slider step) and reselect the
+    /// remembered speaker as soon as it shows up on the network.
+    fn persist_playback_settings(&mut self, st: &Status) {
+        if self.volume_drag.is_none() && (st.volume - self.saved_volume).abs() > 0.001 {
+            self.saved_volume = st.volume;
+            crate::settings::set("volume", &format!("{:.3}", st.volume));
+        }
+        if let Some(name) = &self.restore_output
+            && let Some(d) = self.discovery.as_ref().and_then(|disc| disc.devices().into_iter().find(|d| &d.name == name))
+        {
+            if d.supported && !d.password {
+                self.player.send(Cmd::Output(Output::AirPlay(d)));
+            }
+            self.restore_output = None;
+        }
+    }
+
     fn output_button(&mut self, ui: &mut Ui, current: &str) {
         let remote = current != Output::Local.name();
         let label = if remote { current } else { "" };
@@ -1081,6 +1105,12 @@ impl App {
                 ui.label(egui::RichText::new("Looking for AirPlay speakers…").color(c().faint).size(12.0));
             }
             if let Some(o) = pick {
+                let remembered = match &o {
+                    Output::Local => String::new(),
+                    Output::AirPlay(d) => d.name.clone(),
+                };
+                crate::settings::set("output", &remembered);
+                self.restore_output = None;
                 self.player.send(Cmd::Output(o));
                 ui.close();
             }
@@ -1226,6 +1256,7 @@ impl eframe::App for App {
             self.player.send(Cmd::Toggle);
         }
         let st = self.player.status();
+        self.persist_playback_settings(&st);
         egui::Panel::bottom("player")
             .exact_size(92.0)
             .resizable(false)

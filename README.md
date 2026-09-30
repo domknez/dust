@@ -77,6 +77,10 @@ Click your name at the bottom of the sidebar:
 - **Streaming quality:** MP3 128, MP3 320 or FLAC
 - **Share listening with Deezer:** history, Flow and Last.fm scrobbling (on by default)
 
+dust also remembers your **volume** and your **speaker**: the last AirPlay speaker you
+picked is selected again automatically once it appears on the network (it only connects
+when you press play).
+
 Choices are saved in `settings.conf` in your config directory
 (`~/Library/Application Support/dust` on macOS, `%APPDATA%\dust` on Windows,
 `~/.config/dust` on Linux).
