@@ -68,8 +68,11 @@ pub fn run_window() {
         match event {
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => *flow = ControlFlow::Exit,
             Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
-                let cookies = webview.cookies_for_url("https://www.deezer.com").unwrap_or_default();
-                if let Some(arl) = cookies.iter().find(|c| c.name() == "arl" && !c.value().is_empty()) {
+                // Not cookies_for_url(): it wants an exact domain match, but arl lives on
+                // ".deezer.com" while the page is www.deezer.com.
+                let cookies = webview.cookies().unwrap_or_default();
+                let is_deezer = |c: &wry::cookie::Cookie| c.domain().is_some_and(|d| d.trim_start_matches('.').ends_with("deezer.com"));
+                if let Some(arl) = cookies.iter().find(|c| c.name() == "arl" && !c.value().is_empty() && is_deezer(c)) {
                     let mut out = std::io::stdout().lock();
                     let _ = writeln!(out, "{PREFIX}{}", arl.value());
                     let _ = out.flush();
