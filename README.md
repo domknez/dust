@@ -30,9 +30,17 @@ Linux needs ALSA and D-Bus headers: `sudo apt install libasound2-dev libdbus-1-d
 
 ## Log in
 
-dust signs in with your browser session's `arl` cookie (Deezer Premium required):
-open deezer.com while logged in → DevTools → Application → Cookies → copy `arl`.
-The value is stored in your OS keychain; "Log out" removes it.
+Click **Log in with Deezer**: a small window shows deezer.com's own login page (OS
+webview, incognito). Once you are signed in, dust picks up the session and closes it.
+The session token (`arl` cookie) goes to your OS keychain; "Log out" removes it.
+Deezer Premium required.
+
+Fallback: "Paste ARL cookie instead" takes the `arl` value from a logged-in browser
+(DevTools → Application → Cookies). Treat it like a password; "Log out of all devices"
+in Deezer's account settings revokes it.
+
+Linux builds need `libwebkit2gtk-4.1-dev` for the login window, or build without it:
+`cargo build --release --no-default-features`.
 
 ## AirPlay
 
