@@ -274,10 +274,10 @@ impl Player {
                 if self.stream.is_some() {
                     self.ensure_sink();
                     self.seek(pos);
-                    if !self.playing {
-                        if let Some(s) = self.sink.as_mut() {
-                            s.pause();
-                        }
+                    if !self.playing
+                        && let Some(s) = self.sink.as_mut()
+                    {
+                        s.pause();
                     }
                 }
             }

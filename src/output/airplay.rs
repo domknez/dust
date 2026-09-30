@@ -221,7 +221,7 @@ fn transport_param(t: &str, key: &str) -> Option<u16> {
 
 fn ntp_now() -> u64 {
     let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-    ((d.as_secs() + 2_208_988_800) << 32) | ((d.subsec_nanos() as u64) << 32) / 1_000_000_000
+    ((d.as_secs() + 2_208_988_800) << 32) | (((d.subsec_nanos() as u64) << 32) / 1_000_000_000)
 }
 
 struct BitWriter {
@@ -232,7 +232,7 @@ struct BitWriter {
 impl BitWriter {
     fn put(&mut self, value: u32, n: u32) {
         for i in (0..n).rev() {
-            if self.bits % 8 == 0 {
+            if self.bits.is_multiple_of(8) {
                 self.buf.push(0);
             }
             if (value >> i) & 1 == 1 {

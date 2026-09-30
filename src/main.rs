@@ -1,4 +1,6 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
+// Fixed-size chunk loops read clearer than as_chunks here.
+#![allow(clippy::chunks_exact_to_as_chunks)]
 
 mod deezer;
 #[cfg(feature = "login-window")]

@@ -203,10 +203,10 @@ impl App {
     fn poll_tasks(&mut self, ctx: &egui::Context) {
         match poll(&mut self.login) {
             Some(Ok(client)) => {
-                if std::mem::take(&mut self.remember) {
-                    if let Some(k) = keyring() {
-                        let _ = k.set_password(client.arl());
-                    }
+                if std::mem::take(&mut self.remember)
+                    && let Some(k) = keyring()
+                {
+                    let _ = k.set_password(client.arl());
                 }
                 self.arl.clear();
                 self.player.send(Cmd::Client(client.clone()));
@@ -796,7 +796,7 @@ fn columns(left: f32, width: f32) -> Columns {
         index: left + 8.0,
         art: left + 48.0,
         title,
-        album: (width > 640.0).then(|| left + width * 0.58),
+        album: (width > 640.0).then_some(left + width * 0.58),
         time: left + width - 16.0,
     }
 }

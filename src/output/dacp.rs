@@ -60,7 +60,7 @@ pub fn start(on_command: impl Fn(Remote) + Send + 'static) -> Result<Server, Str
     let listener = TcpListener::bind("0.0.0.0:0").map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let daemon = ServiceDaemon::new().map_err(|e| e.to_string())?;
-    let host = format!("dust-{}.local.", &id()[..8].to_ascii_lowercase());
+    let host = format!("dust-{}.local.", id()[..8].to_ascii_lowercase());
     let props = [("txtvers", "1"), ("Ver", "131075"), ("DbId", id()), ("OSsi", "0x1F5")];
     let info = ServiceInfo::new("_dacp._tcp.local.", &format!("iTunes_Ctrl_{}", id()), &host, "", port, &props[..])
         .map_err(|e| e.to_string())?
@@ -90,7 +90,7 @@ fn handle(stream: TcpStream, on_command: &impl Fn(Remote)) {
             return;
         }
         let mut line = String::new();
-        while reader.read_line(&mut line).unwrap_or(0) > 0 && line.trim_end().len() > 0 {
+        while reader.read_line(&mut line).unwrap_or(0) > 0 && !line.trim_end().is_empty() {
             line.clear();
         }
         let path = request.split_whitespace().nth(1).unwrap_or("");

@@ -404,7 +404,7 @@ impl<R: Read> StripeReader<R> {
                 Err(e) => return Err(e),
             }
         }
-        if self.len == CHUNK && self.chunk_index % 3 == 0 {
+        if self.len == CHUNK && self.chunk_index.is_multiple_of(3) {
             let mut prev = [0u8, 1, 2, 3, 4, 5, 6, 7];
             for block in self.buf.chunks_exact_mut(8) {
                 let ct: [u8; 8] = block.try_into().unwrap();
