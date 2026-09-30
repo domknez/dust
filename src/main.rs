@@ -71,11 +71,72 @@ fn tone(target: Option<String>) {
     println!("done");
 }
 
+/// `dust --debug-home`: print the home page structure for the stored session
+/// (section titles, layouts, item types/ids; no tokens).
+fn debug_home() {
+    let arl = keyring::Entry::new("dust", "arl").and_then(|k| k.get_password()).expect("no stored session; log in first");
+    let client = deezer::Deezer::login(&arl).expect("login");
+    for sec in client.home().expect("home") {
+        println!("\n## {} [{}] ({} items)", sec.title, sec.layout, sec.items.len());
+        for it in sec.items.iter().take(8) {
+            println!("  - {}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
+        }
+        if let Some(it) = sec.items.iter().find(|i| i.kind == "flow" || i.kind == "smarttracklist") {
+            let keys: Vec<&String> = it.data.as_object().map(|o| o.keys().collect()).unwrap_or_default();
+            println!("    data keys of {}: {:?}", it.kind, keys);
+            println!("    data: {}", it.data.to_string().chars().take(400).collect::<String>());
+        }
+    }
+}
+
+/// `dust --debug-tracks <flow|mix|album|artist|playlist> <id>`: list what a home item plays.
+fn debug_tracks(kind: String, id: String) {
+    let arl = keyring::Entry::new("dust", "arl").and_then(|k| k.get_password()).expect("no stored session; log in first");
+    let client = deezer::Deezer::login(&arl).expect("login");
+    let tracks = match kind.as_str() {
+        "flow" => client.flow_mood(Some(&id).filter(|i| !i.is_empty() && *i != "default").map(|s| s.as_str())),
+        "mix" => client.mix(&id),
+        "album" => client.album(&id),
+        "artist" => client.artist_top(&id),
+        _ => client.playlist(id.parse().unwrap_or(0)),
+    };
+    match tracks {
+        Ok(t) => {
+            println!("{} tracks", t.len());
+            t.iter().take(5).for_each(|t| println!("  {} – {}", t.artist, t.title));
+        }
+        Err(e) => println!("error: {e}"),
+    }
+}
+
 fn main() -> eframe::Result {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("--tone") => {
             tone(args.next());
+            return Ok(());
+        }
+        Some("--debug-tracks") => {
+            debug_tracks(args.next().unwrap_or_default(), args.next().unwrap_or_default());
+            return Ok(());
+        }
+        Some("--debug-stream") => {
+            let arl = keyring::Entry::new("dust", "arl").and_then(|k| k.get_password()).expect("no stored session");
+            let client = deezer::Deezer::login(&arl).expect("login");
+            let tracks = client.playlist(args.next().and_then(|a| a.parse().ok()).unwrap_or(0)).expect("playlist");
+            for t in tracks.iter().take(args.next().and_then(|a| a.parse().ok()).unwrap_or(10)) {
+                let r = client.stream_url(t, deezer::Quality::Mp3_320);
+                let how = match &r {
+                    Ok((_, f, id)) if *id != t.id => format!("OK via fallback {id} ({f:?})"),
+                    Ok((_, f, _)) => format!("OK ({f:?})"),
+                    Err(e) => format!("FAIL {e} (fallback: {:?})", t.fallback.as_ref().map(|f| f.0)),
+                };
+                println!("{:<50} {}", format!("{} – {}", t.artist, t.title), how);
+            }
+            return Ok(());
+        }
+        Some("--debug-home") => {
+            debug_home();
             return Ok(());
         }
         #[cfg(feature = "login-window")]
