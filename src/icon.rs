@@ -2,17 +2,20 @@
 
 use eframe::egui;
 
-const ICON_256: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon-256.rgba"));
-const ICON_64: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon-64.rgba"));
+#[cfg(target_os = "macos")]
+const WINDOW_ICON: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon-256-macos.rgba"));
+#[cfg(not(target_os = "macos"))]
+const WINDOW_ICON: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon-256.rgba"));
+const LOGO: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon-256.rgba"));
 
-/// Window / Dock / taskbar icon.
+/// Window / Dock / taskbar icon. On macOS it carries Apple's icon-grid margin so it
+/// matches other apps in the Dock and Cmd-Tab.
 pub fn window_icon() -> egui::IconData {
-    egui::IconData { rgba: ICON_256.to_vec(), width: 256, height: 256 }
+    egui::IconData { rgba: WINDOW_ICON.to_vec(), width: 256, height: 256 }
 }
 
-/// In-app logo: `large` for the login screen, otherwise the small variant.
-pub fn texture(ctx: &egui::Context, large: bool) -> egui::TextureHandle {
-    let (rgba, size, name) = if large { (ICON_256, 256, "dust-logo-256") } else { (ICON_64, 64, "dust-logo-64") };
-    let image = egui::ColorImage::from_rgba_unmultiplied([size, size], rgba);
-    ctx.load_texture(name, image, egui::TextureOptions::LINEAR)
+/// Large logo for the login screen.
+pub fn logo_texture(ctx: &egui::Context) -> egui::TextureHandle {
+    let image = egui::ColorImage::from_rgba_unmultiplied([256, 256], LOGO);
+    ctx.load_texture("dust-logo", image, egui::TextureOptions::LINEAR)
 }
