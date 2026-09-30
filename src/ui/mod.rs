@@ -93,7 +93,9 @@ impl PlayMode {
 fn queue_menu(resp: &egui::Response) -> Option<PlayMode> {
     let mut pick = None;
     resp.context_menu(|ui| {
-        ui.set_min_width(180.0);
+        // Menu rows fill the available width; cap it or the menu spans the window.
+        ui.set_min_width(190.0);
+        ui.set_max_width(190.0);
         if widgets::menu_row(ui, Some(Icon::Play), "Play next", None, false, c().text).clicked() {
             pick = Some(PlayMode::Next);
             ui.close();
