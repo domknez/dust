@@ -14,12 +14,18 @@ Inspired by [SpotLight](https://github.com/dddevid/SpotLight).
 | | dust | Deezer desktop |
 |---|---|---|
 | Binary | ~8 MB | 300+ MB |
-| Idle memory | ~80 MB (incl. cover art cache) | 400+ MB |
+| Idle memory | ~85 MB (incl. cover art) | 400+ MB |
 | Idle CPU | ~0% (UI sleeps when untouched) | |
 
 ## Features
 
-- **Music:** your Flow, Loved tracks, playlists (list and grid), search
+- **Home like Deezer's:** your personalised recommendations — Flow and its moods
+  (Chill, Focus, Workout, Party, ...), daily mixes, recently played, new releases,
+  artists and albums picked for you
+- **Endless Flow:** keeps going like on Deezer, fetching more as you listen
+- **Music:** Loved tracks, playlists (list and grid), albums, artist top tracks, search
+- **Plays more of the catalogue:** when a track isn't licensed in your region, dust uses
+  the alternative version Deezer offers, like the web app does
 - **Quality:** MP3 128 / MP3 320 / FLAC (FLAC needs a HiFi plan), streamed and decoded
   on the fly — nothing is written to disk
 - **Seeking** (HTTP range jumps for MP3), shuffle, queue auto-advance
@@ -98,6 +104,7 @@ DUST_DEBUG=1 dust --tone "Living Room"     # ...on an AirPlay speaker, with pack
 
 - `Space`: play/pause
 - Double-click a track, or click its number: play from there
+- Home cards: click to open, click the round play button to play right away
 
 ## Credits
 
