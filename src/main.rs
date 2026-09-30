@@ -9,12 +9,23 @@ mod ui;
 
 use eframe::egui;
 
-/// `dust --tone [airplay device name]`: play a short 440 Hz tone to check an output.
+/// `dust --tone [airplay device name | ip:port]`: play a short 440 Hz tone to check an output.
 fn tone(target: Option<String>) {
     use output::Sink;
     use std::time::{Duration, Instant};
     let mut sink: Box<dyn Sink> = match target {
         None => Box::new(output::local::LocalSink::new(0.5).expect("local output")),
+        Some(addr) if addr.parse::<std::net::SocketAddr>().is_ok() => {
+            let device = output::airplay::Device {
+                id: addr.clone(),
+                name: addr.clone(),
+                addrs: vec![addr.parse().unwrap()],
+                supported: true,
+                password: false,
+                auth_setup: false,
+            };
+            Box::new(output::airplay::AirPlaySink::connect(&device, 0.3).expect("AirPlay connect"))
+        }
         Some(name) => {
             let discovery = output::airplay::Discovery::start(|| {}).expect("mDNS");
             let deadline = Instant::now() + Duration::from_secs(5);
@@ -29,6 +40,9 @@ fn tone(target: Option<String>) {
             Box::new(output::airplay::AirPlaySink::connect(&device, 0.3).expect("AirPlay connect"))
         }
     };
+    if std::env::var_os("DUST_TONE_FLUSH").is_some() {
+        sink.flush(); // what the player does right after switching output (seek)
+    }
     let rate = output::RATE as f32;
     let mut n = 0u32;
     let total = output::RATE * 4;

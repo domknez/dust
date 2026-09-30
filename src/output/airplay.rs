@@ -235,6 +235,7 @@ struct Shared {
     timing_requests: AtomicU64,
     resent: AtomicU64,
     packets: AtomicU64,
+    audible: AtomicU64,
 }
 
 pub struct AirPlaySink {
@@ -293,6 +294,7 @@ impl AirPlaySink {
             timing_requests: AtomicU64::new(0),
             resent: AtomicU64::new(0),
             packets: AtomicU64::new(0),
+            audible: AtomicU64::new(0),
         });
         // Receivers sync clocks with us during SETUP, so answer timing requests first.
         let sh = shared.clone();
@@ -481,6 +483,9 @@ fn audio_loop(audio: UdpSocket, control: UdpSocket, control_dst: SocketAddr, mut
             eprintln!("dust: airplay send: {e}");
         }
         sh.packets.fetch_add(1, Ordering::Relaxed);
+        if frame.iter().any(|&s| s != 0) {
+            sh.audible.fetch_add(1, Ordering::Relaxed);
+        }
         {
             let mut h = sh.history.lock().unwrap();
             if h.len() == HISTORY {
@@ -556,8 +561,9 @@ impl Drop for AirPlaySink {
         if std::env::var_os("DUST_DEBUG").is_some() {
             let sh = &self.shared;
             eprintln!(
-                "airplay: {} packets sent, {} timing requests answered, {} packets retransmitted",
+                "airplay: {} packets sent ({} audible), {} timing requests answered, {} packets retransmitted",
                 sh.packets.load(Ordering::Relaxed),
+                sh.audible.load(Ordering::Relaxed),
                 sh.timing_requests.load(Ordering::Relaxed),
                 sh.resent.load(Ordering::Relaxed)
             );
@@ -586,6 +592,31 @@ mod tests {
         assert_eq!(bits(23, 16), 0x1234);
         assert_eq!(bits(39, 16), 0xffff);
         assert_eq!(bits(23 + 352 * 32, 3), 7);
+    }
+
+    /// Decode our escape frames with a real ALAC decoder.
+    #[test]
+    fn alac_decodes() {
+        use symphonia::core::audio::SampleBuffer;
+        use symphonia::core::codecs::{CODEC_TYPE_ALAC, CodecParameters, DecoderOptions};
+        use symphonia::core::formats::Packet;
+        // ALACSpecificConfig matching our SDP fmtp line.
+        let mut cookie = Vec::new();
+        cookie.extend(352u32.to_be_bytes());
+        cookie.extend([0, 16, 40, 10, 14, 2]);
+        cookie.extend(255u16.to_be_bytes());
+        cookie.extend(0u32.to_be_bytes());
+        cookie.extend(0u32.to_be_bytes());
+        cookie.extend(44100u32.to_be_bytes());
+        let mut params = CodecParameters::new();
+        params.for_codec(CODEC_TYPE_ALAC).with_extra_data(cookie.into_boxed_slice()).with_sample_rate(44100);
+        let mut dec = symphonia::default::get_codecs().make(&params, &DecoderOptions::default()).unwrap();
+        let input: Vec<i16> = (0..FRAMES_PER_PACKET * 2).map(|i| ((i as f32 * 0.05).sin() * 8000.0) as i16).collect();
+        let pkt = Packet::new_from_slice(0, 0, 352, &alac_frame(&input));
+        let buf = dec.decode(&pkt).unwrap();
+        let mut out = SampleBuffer::<i16>::new(buf.capacity() as u64, *buf.spec());
+        out.copy_interleaved_ref(buf);
+        assert_eq!(out.samples(), &input[..]);
     }
 
     #[test]
