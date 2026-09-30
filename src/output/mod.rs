@@ -1,6 +1,4 @@
 pub mod airplay;
-pub mod ap2;
-pub mod dacp;
 pub mod local;
 
 /// Every sink consumes interleaved stereo i16 at this rate.

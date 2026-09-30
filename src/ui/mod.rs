@@ -8,7 +8,7 @@ mod widgets;
 
 use crate::deezer::{Deezer, Item, Playlist, Quality, Section, Track, image_url};
 use crate::output::airplay::Discovery;
-use crate::output::dacp::{self, Remote};
+use crate::output::airplay::dacp::{self, Remote};
 use crate::player::{Cmd, Output, PlayerHandle, State, Status};
 use covers::Covers;
 use eframe::egui::{self, Align2, Color32, CornerRadius, Key, Margin, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
