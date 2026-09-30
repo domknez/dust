@@ -352,6 +352,34 @@ impl Deezer {
         Ok(parse_tracks(&r["data"]))
     }
 
+    /// Tell Deezer a track started (feeds history and "recently played").
+    pub fn log_listen_start(&self, song_id: u64) -> Result<()> {
+        self.call("log.listen", json!({"next_media": {"media": {"id": song_id, "type": "song"}}})).map(|_| ())
+    }
+
+    /// Report a finished (or skipped) listen. Deezer uses these for history, Flow and
+    /// — if the account is linked — Last.fm scrobbling.
+    pub fn log_listen(&self, l: &Listen) -> Result<()> {
+        let format = match l.format {
+            Format::Flac => "FLAC",
+            Format::Mp3(128) => "MP3_128",
+            Format::Mp3(_) => "MP3_320",
+        };
+        let params = json!({
+            "media": {"id": l.song_id, "type": "song", "format": format},
+            "type": 1,
+            "stat": {"seek": u8::from(l.skipped), "pause": 0, "sync": 0, "next": l.skipped},
+            "lt": l.listened_secs,
+            "ctxt": {"t": "search_page", "id": l.song_id},
+            "dev": {"v": "10020230525142740", "t": 0},
+            "ls": [],
+            "ts_listen": l.started_unix,
+            "is_shuffle": false,
+            "stream_id": l.stream_id,
+        });
+        self.call("log.listen", json!({"params": params})).map(|_| ())
+    }
+
     /// Fresh track token, used when a cached one was rejected.
     fn refresh_token(&self, id: u64) -> Result<String> {
         let r = self.call("song.getListData", json!({"sng_ids": [id]}))?;
@@ -417,6 +445,18 @@ impl Deezer {
         let reader = StripeReader::new(resp.into_reader(), track_id, offset / CHUNK as u64);
         Ok((Box::new(reader), offset))
     }
+}
+
+/// One listen, as reported to Deezer.
+#[derive(Clone, Debug)]
+pub struct Listen {
+    pub song_id: u64,
+    pub format: Format,
+    pub started_unix: u64,
+    pub listened_secs: u64,
+    /// Ended before the track did (skip/seek), as opposed to playing through.
+    pub skipped: bool,
+    pub stream_id: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

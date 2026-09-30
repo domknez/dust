@@ -1,7 +1,7 @@
 //! Playback engine. Runs on its own thread, owns the queue so playback continues
 //! while the UI sleeps, and streams decrypted audio straight into the active sink.
 
-use crate::deezer::{Deezer, Format, Quality, Track};
+use crate::deezer::{Deezer, Format, Listen, Quality, Track};
 use crate::output::airplay::{AirPlaySink, Device};
 use crate::output::local::LocalSink;
 use crate::output::{RATE, Sink};
@@ -48,6 +48,8 @@ pub enum Cmd {
     Pause,
     Output(Output),
     Quality(Quality),
+    /// Report listens to Deezer (history, Flow, Last.fm scrobbling).
+    ReportListens(bool),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -90,6 +92,8 @@ impl PlayerHandle {
             quality: Quality::Mp3_320,
             queue: Vec::new(),
             flow: None,
+            listen: None,
+            report_listens: true,
             index: 0,
             sink: None,
             output: Output::Local,
@@ -134,6 +138,22 @@ struct Stream {
     eof: bool,
 }
 
+struct ListenState {
+    listen: Listen,
+    listened: Duration,
+    duration: u32,
+    seeked: bool,
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+fn stream_uuid() -> String {
+    let h = format!("{:016x}{:016x}", fastrand::u64(..), fastrand::u64(..));
+    format!("{}-{}-4{}-a{}-{}", &h[..8], &h[8..12], &h[13..16], &h[17..20], &h[20..32])
+}
+
 struct Player {
     rx: Receiver<Cmd>,
     status: Arc<Mutex<Status>>,
@@ -141,6 +161,9 @@ struct Player {
     client: Option<Deezer>,
     quality: Quality,
     queue: Vec<Track>,
+    /// Listen in progress, reported to Deezer when the track is replaced or ends.
+    listen: Option<ListenState>,
+    report_listens: bool,
     /// Some(config) while playing endless Flow: the queue refills itself.
     flow: Option<Option<String>>,
     index: usize,
@@ -159,7 +182,16 @@ struct Player {
 
 impl Player {
     fn run(mut self) {
+        let mut tick = Instant::now();
+        let mut was_playing = false;
         while self.alive {
+            // Count listened time only across intervals where audio was playing.
+            let now = Instant::now();
+            if was_playing && let Some(l) = self.listen.as_mut() {
+                l.listened += now - tick;
+            }
+            tick = now;
+            was_playing = self.playing && self.stream.is_some();
             let busy = self.playing && self.stream.is_some();
             if busy {
                 match self.rx.try_recv() {
@@ -225,6 +257,7 @@ impl Player {
         match cmd {
             Cmd::Client(c) => self.client = Some(c),
             Cmd::Quality(q) => self.quality = q,
+            Cmd::ReportListens(on) => self.report_listens = on,
             Cmd::PlayFlow(config) => {
                 self.flow = Some(config);
                 self.queue.clear();
@@ -350,6 +383,7 @@ impl Player {
     }
 
     fn start_track(&mut self, at: f64) {
+        self.finish_listen();
         self.stream = None;
         self.pending.clear();
         self.playing = true;
@@ -365,6 +399,7 @@ impl Player {
             match self.open(&track, at) {
                 Ok(s) => {
                     self.stream = Some(s);
+                    self.begin_listen(track.duration);
                     return;
                 }
                 Err(e) => {
@@ -386,7 +421,51 @@ impl Player {
         open_stream(client, url, format, song_id, at)
     }
 
+    fn begin_listen(&mut self, duration: u32) {
+        let Some(s) = &self.stream else { return };
+        let listen = Listen {
+            song_id: s.song_id,
+            format: s.format_kind,
+            started_unix: unix_now(),
+            listened_secs: 0,
+            skipped: false,
+            stream_id: stream_uuid(),
+        };
+        if self.report_listens
+            && let Some(client) = self.client.clone()
+        {
+            let id = listen.song_id;
+            std::thread::spawn(move || {
+                let _ = client.log_listen_start(id);
+            });
+        }
+        self.listen = Some(ListenState { listen, listened: Duration::ZERO, duration, seeked: false });
+    }
+
+    /// Report the current listen (if any) and clear it.
+    fn finish_listen(&mut self) {
+        let Some(state) = self.listen.take() else { return };
+        let secs = state.listened.as_secs();
+        if !self.report_listens || secs == 0 {
+            return;
+        }
+        let Some(client) = self.client.clone() else { return };
+        let mut listen = state.listen;
+        listen.listened_secs = secs;
+        listen.skipped = state.seeked || secs + 3 < state.duration as u64;
+        std::thread::spawn(move || {
+            if let Err(e) = client.log_listen(&listen) {
+                eprintln!("dust: listen report failed: {e}");
+            } else if std::env::var_os("DUST_DEBUG").is_some() {
+                eprintln!("dust: reported listen of {} ({} s, skipped: {})", listen.song_id, listen.listened_secs, listen.skipped);
+            }
+        });
+    }
+
     fn seek(&mut self, t: f64) {
+        if let Some(l) = self.listen.as_mut() {
+            l.seeked = true;
+        }
         let Some(s) = self.stream.as_mut() else { return };
         let t = t.max(0.0);
         self.pending.clear();
@@ -441,14 +520,19 @@ impl Player {
                     self.index += 1;
                     let track = self.queue[self.index].clone();
                     // Keep the sink running (no flush) for a tight transition.
+                    self.finish_listen();
                     match self.open(&track, 0.0) {
-                        Ok(s) => self.stream = Some(s),
+                        Ok(s) => {
+                            self.stream = Some(s);
+                            self.begin_listen(track.duration);
+                        }
                         Err(e) => {
                             self.error(format!("{} – {}: {e}", track.artist, track.title));
                             self.start_track(0.0);
                         }
                     }
                 } else {
+                    self.finish_listen();
                     self.stream = None;
                     self.playing = false;
                 }
