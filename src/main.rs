@@ -46,6 +46,7 @@ fn tone(target: Option<String>) {
         std::thread::sleep(Duration::from_millis(20));
     }
     std::thread::sleep(Duration::from_millis(sink.latency_frames() as u64 * 1000 / output::RATE as u64));
+    drop(sink);
     println!("done");
 }
 
