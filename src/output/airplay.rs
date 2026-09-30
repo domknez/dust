@@ -1,0 +1,568 @@
+//! AirPlay (RAOP v1) sender: RTSP control, RTP/UDP audio as uncompressed ALAC,
+//! NTP-style timing replies, sync packets and retransmits. No encryption, so it
+//! targets receivers advertising `et=0` (AirPort Express, Apple TV, most AirPlay
+//! speakers, shairport-sync, macOS "AirPlay Receiver").
+
+use super::{RATE, Sink};
+use mdns_sd::{ServiceDaemon, ServiceEvent};
+use std::collections::VecDeque;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{IpAddr, SocketAddr, TcpStream, UdpSocket};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+const FRAMES_PER_PACKET: usize = 352;
+/// Receiver-side buffer we ask for (2 s), expressed in frames.
+const LATENCY: u32 = 88_200;
+/// How far ahead of real time we push audio.
+const LEAD: u64 = RATE as u64 / 10;
+const HISTORY: usize = 1024;
+
+// ---------------------------------------------------------------- discovery
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Device {
+    pub id: String,
+    pub name: String,
+    /// Every advertised IPv4 address; multi-homed hosts list bridges/VPNs too.
+    pub addrs: Vec<SocketAddr>,
+    /// Receiver accepts unencrypted audio.
+    pub supported: bool,
+    pub password: bool,
+    /// Receiver expects the MFi-SAP `auth-setup` handshake (et=4).
+    pub auth_setup: bool,
+}
+
+pub struct Discovery {
+    devices: Arc<Mutex<Vec<Device>>>,
+    _daemon: ServiceDaemon,
+}
+
+impl Discovery {
+    pub fn start(on_change: impl Fn() + Send + 'static) -> Result<Self, String> {
+        let daemon = ServiceDaemon::new().map_err(|e| e.to_string())?;
+        let rx = daemon.browse("_raop._tcp.local.").map_err(|e| e.to_string())?;
+        let devices = Arc::new(Mutex::new(Vec::<Device>::new()));
+        let list = devices.clone();
+        std::thread::Builder::new()
+            .name("airplay-discovery".into())
+            .spawn(move || {
+                while let Ok(event) = rx.recv() {
+                    let mut list = list.lock().unwrap();
+                    match event {
+                        ServiceEvent::ServiceResolved(info) => {
+                            let mut addrs: Vec<SocketAddr> =
+                                info.get_addresses_v4().into_iter().map(|ip| SocketAddr::new(IpAddr::V4(*ip), info.get_port())).collect();
+                            if addrs.is_empty() {
+                                continue;
+                            }
+                            addrs.sort_by_key(|a| (a.ip().is_loopback(), a.ip().to_string().ends_with(".0"), *a));
+                            let full = info.get_fullname().to_string();
+                            let label = full.split("._raop").next().unwrap_or(&full);
+                            let name = label.split_once('@').map_or(label, |(_, n)| n).to_string();
+                            let et = info.get_property_val_str("et").unwrap_or("0");
+                            let device = Device {
+                                name,
+                                addrs,
+                                supported: et.split(',').any(|e| e.trim() == "0"),
+                                auth_setup: et.split(',').any(|e| e.trim() == "4"),
+                                password: info.get_property_val_str("pw").is_some_and(|p| p == "true"),
+                                id: full,
+                            };
+                            match list.iter_mut().find(|d| d.id == device.id) {
+                                Some(d) if *d == device => continue,
+                                Some(d) => *d = device,
+                                None => list.push(device),
+                            }
+                            list.sort_by(|a, b| a.name.cmp(&b.name));
+                        }
+                        ServiceEvent::ServiceRemoved(_, full) => list.retain(|d| d.id != full),
+                        _ => continue,
+                    }
+                    drop(list);
+                    on_change();
+                }
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(Self { devices, _daemon: daemon })
+    }
+
+    pub fn devices(&self) -> Vec<Device> {
+        self.devices.lock().unwrap().clone()
+    }
+}
+
+// ---------------------------------------------------------------- RTSP
+
+struct Rtsp {
+    writer: TcpStream,
+    reader: BufReader<TcpStream>,
+    cseq: u32,
+    url: String,
+    session: Option<String>,
+    instance: String,
+    active_remote: String,
+}
+
+struct Response {
+    status: u16,
+    headers: Vec<(String, String)>,
+}
+
+impl Response {
+    fn header(&self, name: &str) -> Option<&str> {
+        self.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
+    }
+}
+
+impl Rtsp {
+    fn request(&mut self, method: &str, uri: Option<&str>, headers: &[(&str, String)], body: Option<(&str, &[u8])>) -> Result<Response, String> {
+        self.cseq += 1;
+        let mut req = format!(
+            "{method} {} RTSP/1.0\r\nCSeq: {}\r\nUser-Agent: iTunes/11.0.4 (Windows; N)\r\nClient-Instance: {}\r\nDACP-ID: {}\r\nActive-Remote: {}\r\n",
+            uri.unwrap_or(&self.url),
+            self.cseq,
+            self.instance,
+            self.instance,
+            self.active_remote
+        );
+        if let Some(s) = &self.session {
+            req += &format!("Session: {s}\r\n");
+        }
+        for (k, v) in headers {
+            req += &format!("{k}: {v}\r\n");
+        }
+        if let Some((ct, b)) = body {
+            req += &format!("Content-Type: {ct}\r\nContent-Length: {}\r\n", b.len());
+        }
+        req += "\r\n";
+        let mut bytes = req.into_bytes();
+        if let Some((_, b)) = body {
+            bytes.extend_from_slice(b);
+        }
+        self.writer.write_all(&bytes).map_err(|e| format!("{method}: {e}"))?;
+
+        let mut line = String::new();
+        self.reader.read_line(&mut line).map_err(|e| format!("{method}: {e}"))?;
+        let status = line.split_whitespace().nth(1).and_then(|s| s.parse().ok()).ok_or_else(|| format!("{method}: bad response {line:?}"))?;
+        let mut headers = Vec::new();
+        loop {
+            line.clear();
+            self.reader.read_line(&mut line).map_err(|e| format!("{method}: {e}"))?;
+            let l = line.trim_end();
+            if l.is_empty() {
+                break;
+            }
+            if let Some((k, v)) = l.split_once(':') {
+                headers.push((k.trim().to_string(), v.trim().to_string()));
+            }
+        }
+        let resp = Response { status, headers };
+        if let Some(len) = resp.header("Content-Length").and_then(|l| l.parse::<usize>().ok()) {
+            let mut body = vec![0; len];
+            self.reader.read_exact(&mut body).map_err(|e| format!("{method}: {e}"))?;
+        }
+        match resp.status {
+            200 => Ok(resp),
+            401 => Err("AirPlay device requires a password (not supported)".into()),
+            s => Err(format!("{method} failed: RTSP {s}")),
+        }
+    }
+}
+
+fn transport_param(t: &str, key: &str) -> Option<u16> {
+    t.split(';').find_map(|p| p.strip_prefix(key)?.strip_prefix('=')?.parse().ok())
+}
+
+// ---------------------------------------------------------------- wire formats
+
+fn ntp_now() -> u64 {
+    let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    ((d.as_secs() + 2_208_988_800) << 32) | ((d.subsec_nanos() as u64) << 32) / 1_000_000_000
+}
+
+struct BitWriter {
+    buf: Vec<u8>,
+    bits: u32,
+}
+
+impl BitWriter {
+    fn put(&mut self, value: u32, n: u32) {
+        for i in (0..n).rev() {
+            if self.bits % 8 == 0 {
+                self.buf.push(0);
+            }
+            if (value >> i) & 1 == 1 {
+                *self.buf.last_mut().unwrap() |= 0x80 >> (self.bits % 8);
+            }
+            self.bits += 1;
+        }
+    }
+}
+
+/// One ALAC frame using the "escape" (uncompressed) path: CPE header, raw 16-bit
+/// interleaved samples, END tag. Every ALAC decoder accepts this.
+fn alac_frame(samples: &[i16]) -> Vec<u8> {
+    debug_assert_eq!(samples.len(), FRAMES_PER_PACKET * 2);
+    let mut w = BitWriter { buf: Vec::with_capacity(FRAMES_PER_PACKET * 4 + 4), bits: 0 };
+    w.put(1, 3); // ID_CPE (stereo pair)
+    w.put(0, 4); // element instance
+    w.put(0, 12); // unused
+    w.put(0, 1); // partial frame: no, always 352 frames
+    w.put(0, 2); // bytes shifted
+    w.put(1, 1); // escape flag: uncompressed
+    for &s in samples {
+        w.put(s as u16 as u32, 16);
+    }
+    w.put(7, 3); // ID_END
+    w.buf
+}
+
+// ---------------------------------------------------------------- sink
+
+struct Shared {
+    running: AtomicBool,
+    playing: AtomicBool,
+    restart: AtomicBool,
+    drain: AtomicBool,
+    idle: AtomicBool,
+    seq: AtomicU16,
+    rtptime: AtomicU32,
+    history: Mutex<VecDeque<(u16, Vec<u8>)>>,
+}
+
+pub struct AirPlaySink {
+    rtsp: Rtsp,
+    shared: Arc<Shared>,
+    producer: rtrb::Producer<i16>,
+    threads: Vec<JoinHandle<()>>,
+}
+
+impl AirPlaySink {
+    pub fn connect(device: &Device, volume: f32) -> Result<Self, String> {
+        if !device.supported {
+            return Err(format!("{} requires encrypted AirPlay (not supported)", device.name));
+        }
+        let mut last_err = String::from("no address");
+        let stream = device
+            .addrs
+            .iter()
+            .find_map(|a| TcpStream::connect_timeout(a, Duration::from_secs(2)).map_err(|e| last_err = e.to_string()).ok())
+            .ok_or_else(|| format!("{}: {last_err}", device.name))?;
+        stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
+        stream.set_nodelay(true).ok();
+        let local_ip = stream.local_addr().map_err(|e| e.to_string())?.ip();
+        let remote_ip = stream.peer_addr().map_err(|e| e.to_string())?.ip();
+        let sid = fastrand::u32(..);
+        let mut rtsp = Rtsp {
+            reader: BufReader::new(stream.try_clone().map_err(|e| e.to_string())?),
+            writer: stream,
+            cseq: 0,
+            url: format!("rtsp://{local_ip}/{sid}"),
+            session: None,
+            instance: format!("{:016X}", fastrand::u64(..)),
+            active_remote: fastrand::u32(..).to_string(),
+        };
+
+        let bind = |ip: IpAddr| UdpSocket::bind(SocketAddr::new(ip, 0)).map_err(|e| e.to_string());
+        let any: IpAddr = if local_ip.is_ipv4() { [0, 0, 0, 0].into() } else { std::net::Ipv6Addr::UNSPECIFIED.into() };
+        let control = bind(any)?;
+        let timing = bind(any)?;
+        let audio = bind(any)?;
+
+        rtsp.request("OPTIONS", Some("*"), &[], None)?;
+        if device.auth_setup {
+            // MFi-SAP handshake: type byte 0x01 + a Curve25519 public key. Receivers
+            // only need it to happen; the reply (their key + cert) is not used for RAOP.
+            let mut body = vec![0x01];
+            body.extend((0..32).map(|_| fastrand::u8(..)));
+            rtsp.request("POST", Some("/auth-setup"), &[], Some(("application/octet-stream", &body)))?;
+        }
+        let ip4 = |ip: IpAddr| if ip.is_ipv4() { "IP4" } else { "IP6" };
+        let sdp = format!(
+            "v=0\r\no=iTunes {sid} 0 IN {} {local_ip}\r\ns=iTunes\r\nc=IN {} {remote_ip}\r\nt=0 0\r\nm=audio 0 RTP/AVP 96\r\na=rtpmap:96 AppleLossless\r\na=fmtp:96 {FRAMES_PER_PACKET} 0 16 40 10 14 2 255 0 0 {RATE}\r\n",
+            ip4(local_ip),
+            ip4(remote_ip)
+        );
+        rtsp.request("ANNOUNCE", None, &[], Some(("application/sdp", sdp.as_bytes())))?;
+        let transport = format!(
+            "RTP/AVP/UDP;unicast;interleaved=0-1;mode=record;control_port={};timing_port={}",
+            control.local_addr().unwrap().port(),
+            timing.local_addr().unwrap().port()
+        );
+        let resp = rtsp.request("SETUP", None, &[("Transport", transport)], None)?;
+        rtsp.session = resp.header("Session").map(|s| s.split(';').next().unwrap_or(s).to_string());
+        let t = resp.header("Transport").ok_or("SETUP: no Transport")?;
+        let server_port = transport_param(t, "server_port").ok_or("SETUP: no server_port")?;
+        let control_port = transport_param(t, "control_port").unwrap_or(server_port + 1);
+
+        let seq: u16 = fastrand::u16(..);
+        let rtptime: u32 = fastrand::u32(..);
+        rtsp.request("RECORD", None, &[("Range", "npt=0-".into()), ("RTP-Info", format!("seq={seq};rtptime={rtptime}"))], None)?;
+
+        audio.connect(SocketAddr::new(remote_ip, server_port)).map_err(|e| e.to_string())?;
+        let control_dst = SocketAddr::new(remote_ip, control_port);
+
+        let shared = Arc::new(Shared {
+            running: AtomicBool::new(true),
+            playing: AtomicBool::new(true),
+            restart: AtomicBool::new(true),
+            drain: AtomicBool::new(false),
+            idle: AtomicBool::new(false),
+            seq: AtomicU16::new(seq),
+            rtptime: AtomicU32::new(rtptime),
+            history: Mutex::new(VecDeque::with_capacity(HISTORY)),
+        });
+        // ~1 s of audio between player and network pacing.
+        let (producer, consumer) = rtrb::RingBuffer::new(RATE as usize * 2);
+
+        let mut threads = Vec::new();
+        for s in [&control, &timing] {
+            s.set_read_timeout(Some(Duration::from_millis(200))).ok();
+        }
+        let sh = shared.clone();
+        threads.push(spawn("airplay-timing", move || timing_loop(timing, sh)));
+        let sh = shared.clone();
+        let ctl = control.try_clone().map_err(|e| e.to_string())?;
+        threads.push(spawn("airplay-control", move || control_loop(ctl, control_dst, sh)));
+        let sh = shared.clone();
+        threads.push(spawn("airplay-audio", move || audio_loop(audio, control, control_dst, consumer, sh)));
+
+        let mut sink = Self { rtsp, shared, producer, threads };
+        sink.set_volume(volume);
+        Ok(sink)
+    }
+
+    /// Stop the audio thread and drop the receiver's buffer.
+    fn halt(&mut self) {
+        self.shared.playing.store(false, Ordering::Release);
+        let deadline = Instant::now() + Duration::from_millis(200);
+        while !self.shared.idle.load(Ordering::Acquire) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let seq = self.shared.seq.load(Ordering::Acquire);
+        let rtptime = self.shared.rtptime.load(Ordering::Acquire);
+        let _ = self.rtsp.request("FLUSH", None, &[("RTP-Info", format!("seq={seq};rtptime={rtptime}"))], None);
+    }
+}
+
+fn spawn(name: &str, f: impl FnOnce() + Send + 'static) -> JoinHandle<()> {
+    std::thread::Builder::new().name(name.into()).spawn(f).expect("spawn thread")
+}
+
+fn timing_loop(sock: UdpSocket, sh: Arc<Shared>) {
+    let mut buf = [0u8; 128];
+    while sh.running.load(Ordering::Relaxed) {
+        let Ok((n, from)) = sock.recv_from(&mut buf) else { continue };
+        if n < 32 || buf[1] & 0x7f != 0x52 {
+            continue;
+        }
+        let now = ntp_now().to_be_bytes();
+        let mut reply = [0u8; 32];
+        reply[..4].copy_from_slice(&[0x80, 0xd3, 0x00, 0x07]);
+        reply[8..16].copy_from_slice(&buf[24..32]); // their transmit time -> our origin
+        reply[16..24].copy_from_slice(&now);
+        reply[24..32].copy_from_slice(&now);
+        let _ = sock.send_to(&reply, from);
+    }
+}
+
+fn control_loop(sock: UdpSocket, dst: SocketAddr, sh: Arc<Shared>) {
+    let mut buf = [0u8; 64];
+    while sh.running.load(Ordering::Relaxed) {
+        let Ok((n, _)) = sock.recv_from(&mut buf) else { continue };
+        // Retransmit request: 0x80 0xd5 <seq> <first missing> <count>
+        if n < 8 || buf[1] & 0x7f != 0x55 {
+            continue;
+        }
+        let first = u16::from_be_bytes([buf[4], buf[5]]);
+        let count = u16::from_be_bytes([buf[6], buf[7]]);
+        let history = sh.history.lock().unwrap();
+        for i in 0..count {
+            let want = first.wrapping_add(i);
+            if let Some((_, pkt)) = history.iter().find(|(s, _)| *s == want) {
+                let mut out = Vec::with_capacity(pkt.len() + 4);
+                out.extend_from_slice(&[0x80, 0xd6]);
+                out.extend_from_slice(&want.to_be_bytes());
+                out.extend_from_slice(pkt);
+                let _ = sock.send_to(&out, dst);
+            }
+        }
+    }
+}
+
+fn send_sync(sock: &UdpSocket, dst: SocketAddr, now_rtp: u32, first: bool) {
+    let mut p = [0u8; 20];
+    p[..4].copy_from_slice(&[if first { 0x90 } else { 0x80 }, 0xd4, 0x00, 0x07]);
+    p[4..8].copy_from_slice(&now_rtp.wrapping_sub(LATENCY).to_be_bytes());
+    p[8..16].copy_from_slice(&ntp_now().to_be_bytes());
+    p[16..20].copy_from_slice(&now_rtp.to_be_bytes());
+    let _ = sock.send_to(&p, dst);
+}
+
+fn audio_loop(audio: UdpSocket, control: UdpSocket, control_dst: SocketAddr, mut consumer: rtrb::Consumer<i16>, sh: Arc<Shared>) {
+    let ssrc = fastrand::u32(..);
+    let mut frame = vec![0i16; FRAMES_PER_PACKET * 2];
+    let mut start = Instant::now();
+    let mut start_rtp = 0u32;
+    let mut sent: u64 = 0;
+    let mut next_sync: u64 = 0;
+    let mut first = true;
+    while sh.running.load(Ordering::Relaxed) {
+        if sh.drain.swap(false, Ordering::AcqRel) {
+            let n = consumer.slots();
+            if let Ok(c) = consumer.read_chunk(n) {
+                c.commit_all();
+            }
+        }
+        if !sh.playing.load(Ordering::Acquire) {
+            sh.idle.store(true, Ordering::Release);
+            std::thread::sleep(Duration::from_millis(5));
+            continue;
+        }
+        sh.idle.store(false, Ordering::Release);
+        if sh.restart.swap(false, Ordering::AcqRel) {
+            start = Instant::now();
+            start_rtp = sh.rtptime.load(Ordering::Acquire);
+            sent = 0;
+            next_sync = 0;
+            first = true;
+        }
+        let elapsed = (start.elapsed().as_secs_f64() * RATE as f64) as u64;
+        if elapsed >= next_sync {
+            send_sync(&control, control_dst, start_rtp.wrapping_add(elapsed as u32), first);
+            next_sync = elapsed + RATE as u64;
+        }
+        if sent >= elapsed + LEAD {
+            std::thread::sleep(Duration::from_millis(2));
+            continue;
+        }
+        // Take a whole packet if available; pad with silence on underrun.
+        let avail = consumer.slots().min(frame.len()) & !1;
+        match consumer.read_chunk(avail) {
+            Ok(chunk) => {
+                let (a, b) = chunk.as_slices();
+                frame[..a.len()].copy_from_slice(a);
+                frame[a.len()..a.len() + b.len()].copy_from_slice(b);
+                chunk.commit_all();
+            }
+            Err(_) => unreachable!("slots checked"),
+        }
+        frame[avail..].fill(0);
+
+        let seq = sh.seq.load(Ordering::Acquire);
+        let ts = sh.rtptime.load(Ordering::Acquire);
+        let mut pkt = Vec::with_capacity(12 + FRAMES_PER_PACKET * 4 + 4);
+        pkt.extend_from_slice(&[0x80, if first { 0xe0 } else { 0x60 }]);
+        pkt.extend_from_slice(&seq.to_be_bytes());
+        pkt.extend_from_slice(&ts.to_be_bytes());
+        pkt.extend_from_slice(&ssrc.to_be_bytes());
+        pkt.extend_from_slice(&alac_frame(&frame));
+        let _ = audio.send(&pkt);
+        {
+            let mut h = sh.history.lock().unwrap();
+            if h.len() == HISTORY {
+                h.pop_front();
+            }
+            h.push_back((seq, pkt));
+        }
+        first = false;
+        sent += FRAMES_PER_PACKET as u64;
+        sh.seq.store(seq.wrapping_add(1), Ordering::Release);
+        sh.rtptime.store(ts.wrapping_add(FRAMES_PER_PACKET as u32), Ordering::Release);
+    }
+}
+
+impl Sink for AirPlaySink {
+    fn write(&mut self, samples: &[i16]) -> usize {
+        if self.producer.slots() < samples.len() {
+            return 0;
+        }
+        if let Ok(chunk) = self.producer.write_chunk_uninit(samples.len()) {
+            chunk.fill_from_iter(samples.iter().copied());
+        }
+        samples.len()
+    }
+
+    fn pending_frames(&self) -> usize {
+        (self.producer.buffer().capacity() - self.producer.slots()) / 2
+    }
+
+    fn latency_frames(&self) -> usize {
+        LATENCY as usize + LEAD as usize
+    }
+
+    fn pause(&mut self) {
+        self.halt();
+    }
+
+    fn resume(&mut self) {
+        self.shared.restart.store(true, Ordering::Release);
+        self.shared.playing.store(true, Ordering::Release);
+    }
+
+    fn flush(&mut self) {
+        let was_playing = self.shared.playing.load(Ordering::Acquire);
+        self.halt();
+        self.shared.drain.store(true, Ordering::Release);
+        // Wait for the audio thread to drain so pending_frames() is accurate.
+        let deadline = Instant::now() + Duration::from_millis(100);
+        while self.shared.drain.load(Ordering::Acquire) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        if was_playing {
+            self.resume();
+        }
+    }
+
+    fn set_volume(&mut self, volume: f32) {
+        // AirPlay volume: -30.0 (quiet) ..= 0.0 dB, -144 = mute.
+        let db = if volume <= 0.001 { -144.0 } else { -30.0 + 30.0 * volume.clamp(0.0, 1.0) };
+        let body = format!("volume: {db:.6}\r\n");
+        let _ = self.rtsp.request("SET_PARAMETER", None, &[], Some(("text/parameters", body.as_bytes())));
+    }
+}
+
+impl Drop for AirPlaySink {
+    fn drop(&mut self) {
+        self.shared.playing.store(false, Ordering::Release);
+        let _ = self.rtsp.request("TEARDOWN", None, &[], None);
+        self.shared.running.store(false, Ordering::Release);
+        for t in self.threads.drain(..) {
+            let _ = t.join();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alac_layout() {
+        let mut s = vec![0i16; FRAMES_PER_PACKET * 2];
+        s[0] = 0x1234;
+        s[1] = -1;
+        let f = alac_frame(&s);
+        // 23 header bits + 352*32 sample bits + 3 end bits = 11290 bits -> 1412 bytes
+        assert_eq!(f.len(), 1412);
+        // header: 001 0000 000000000000 0 00 1 -> first 23 bits
+        assert_eq!(f[0], 0b0010_0000);
+        assert_eq!(f[1], 0);
+        assert_eq!(f[2] & 0b1111_1110, 0b0000_0010);
+        // first sample 0x1234 starts at bit 23
+        let bits = |from: usize, n: usize| (from..from + n).fold(0u32, |acc, b| (acc << 1) | ((f[b / 8] >> (7 - b % 8)) & 1) as u32);
+        assert_eq!(bits(23, 16), 0x1234);
+        assert_eq!(bits(39, 16), 0xffff);
+        assert_eq!(bits(23 + 352 * 32, 3), 7);
+    }
+
+    #[test]
+    fn transport_parse() {
+        let t = "RTP/AVP/UDP;unicast;mode=record;server_port=53561;control_port=63379;timing_port=50607";
+        assert_eq!(transport_param(t, "server_port"), Some(53561));
+        assert_eq!(transport_param(t, "control_port"), Some(63379));
+    }
+}
