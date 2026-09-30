@@ -110,6 +110,10 @@ pub fn thin_slider(ui: &mut Ui, value: &mut f32, width: f32, enabled: bool) -> R
 
 /// Rounded cover image, or a subtle placeholder while it loads.
 pub fn cover(ui: &Ui, covers: &mut Covers, url: Option<&str>, rect: Rect, radius: u8) {
+    // Off-screen artwork is neither fetched nor kept alive, so the LRU can evict it.
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
     match url.and_then(|u| covers.get(u)) {
         Some(tex) => {
             egui::Image::from_texture((tex, rect.size())).corner_radius(radius).paint_at(ui, rect);

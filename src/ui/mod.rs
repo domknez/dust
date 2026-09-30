@@ -6,7 +6,7 @@ mod icons;
 mod theme;
 mod widgets;
 
-use crate::deezer::{Deezer, Playlist, Quality, Track, image_url};
+use crate::deezer::{Deezer, Item, Playlist, Quality, Section, Track, image_url};
 use crate::output::airplay::Discovery;
 use crate::output::dacp::{self, Remote};
 use crate::player::{Cmd, Output, PlayerHandle, State, Status};
@@ -71,13 +71,63 @@ fn playlist_url(p: &Playlist, size: u32) -> Option<String> {
     p.picture.as_ref().map(|(kind, md5)| image_url(kind, md5, size))
 }
 
-#[derive(Clone, Copy, PartialEq)]
+/// Where a collection's tracks come from.
+#[derive(Clone, PartialEq, Debug)]
+enum Source {
+    Playlist(u64),
+    Album(String),
+    Artist(String),
+    Mix(String),
+}
+
+/// A track collection opened from the sidebar or the home page.
+#[derive(Clone, PartialEq, Debug)]
+struct Coll {
+    source: Source,
+    kind: &'static str,
+    title: String,
+    subtitle: String,
+    picture: Option<(String, String)>,
+}
+
+impl Coll {
+    fn from_playlist(p: &Playlist) -> Self {
+        Coll { source: Source::Playlist(p.id), kind: "PLAYLIST", title: p.title.clone(), subtitle: String::new(), picture: p.picture.clone() }
+    }
+
+    /// None for item types we don't open (flows play directly; channels, shows, ...).
+    fn from_item(it: &Item) -> Option<Self> {
+        let (source, kind) = match it.kind.as_str() {
+            "playlist" => (Source::Playlist(it.id.parse().ok()?), "PLAYLIST"),
+            "album" => (Source::Album(it.id.clone()), "ALBUM"),
+            "artist" => (Source::Artist(it.id.clone()), "ARTIST · TOP TRACKS"),
+            "smarttracklist" => (Source::Mix(it.id.clone()), "MIX"),
+            _ => return None,
+        };
+        Some(Coll { source, kind, title: it.title.clone(), subtitle: it.subtitle.clone(), picture: it.picture.clone() })
+    }
+
+    fn round(&self) -> bool {
+        matches!(self.source, Source::Artist(_))
+    }
+}
+
+fn fetch(client: &Deezer, source: &Source) -> Result<Vec<Track>, String> {
+    match source {
+        Source::Playlist(id) => client.playlist(*id),
+        Source::Album(id) => client.album(id),
+        Source::Artist(id) => client.artist_top(id),
+        Source::Mix(id) => client.mix(id),
+    }
+}
+
+#[derive(Clone, PartialEq)]
 enum View {
     Home,
     Search,
     Loved,
     Playlists,
-    Playlist(u64),
+    Collection(Box<Coll>),
 }
 
 pub struct App {
@@ -97,6 +147,10 @@ pub struct App {
     list_error: Option<String>,
     playlists: Vec<Playlist>,
     playlists_task: Task<Vec<Playlist>>,
+    home: Vec<Section>,
+    home_task: Task<Vec<Section>>,
+    /// Tracks fetched to play straight from a home card.
+    quick_play: Task<Vec<Track>>,
     seek_drag: Option<f32>,
     volume_drag: Option<f32>,
     unmuted_volume: f32,
@@ -153,6 +207,9 @@ impl App {
             list_error: None,
             playlists: Vec::new(),
             playlists_task: None,
+            home: Vec::new(),
+            home_task: None,
+            quick_play: None,
             seek_drag: None,
             volume_drag: None,
             unmuted_volume: volume,
@@ -183,21 +240,33 @@ impl App {
 
     fn open_view(&mut self, ctx: &egui::Context, view: View) {
         let Some(client) = self.client.clone() else { return };
-        self.view = view;
+        self.view = view.clone();
         self.list_error = None;
+        if view == View::Home {
+            // Cached; the refresh button clears it to force a reload.
+            if self.home.is_empty() && self.home_task.is_none() {
+                self.home_task = spawn(ctx, move || client.home());
+            }
+            return;
+        }
         self.tracks.clear();
         self.tracks_task = match view {
-            View::Playlists => None,
+            View::Home | View::Playlists => None,
             View::Search if self.search.trim().is_empty() => None,
             View::Search => {
                 let q = self.search.trim().to_string();
                 self.searched = q.clone();
                 spawn(ctx, move || client.search(&q))
             }
-            View::Home => spawn(ctx, move || client.flow()),
             View::Loved => spawn(ctx, move || client.loved()),
-            View::Playlist(id) => spawn(ctx, move || client.playlist(id)),
+            View::Collection(c) => spawn(ctx, move || fetch(&client, &c.source)),
         };
+    }
+
+    /// Fetch a collection and start playing it without opening it.
+    fn play_source(&mut self, ctx: &egui::Context, source: Source) {
+        let Some(client) = self.client.clone() else { return };
+        self.quick_play = spawn(ctx, move || fetch(&client, &source));
     }
 
     fn poll_tasks(&mut self, ctx: &egui::Context) {
@@ -229,6 +298,16 @@ impl App {
         }
         if let Some(Ok(p)) = poll(&mut self.playlists_task) {
             self.playlists = p;
+        }
+        match poll(&mut self.home_task) {
+            Some(Ok(h)) => self.home = h,
+            Some(Err(e)) => self.list_error = Some(e),
+            None => {}
+        }
+        if let Some(Ok(tracks)) = poll(&mut self.quick_play)
+            && !tracks.is_empty()
+        {
+            self.player.send(Cmd::Play(tracks, 0));
         }
     }
 
@@ -330,7 +409,7 @@ impl App {
                 ui.spinner();
             }
             for p in &self.playlists {
-                let selected = self.view == View::Playlist(p.id);
+                let selected = matches!(&self.view, View::Collection(c) if c.source == Source::Playlist(p.id));
                 let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 48.0), Sense::click());
                 if selected || resp.hovered() {
                     ui.painter().rect_filled(rect, CornerRadius::same(6), if selected { c().surface } else { c().hover });
@@ -342,7 +421,7 @@ impl App {
                 text_left(ui.painter(), pos2(x, rect.center().y - 8.0), &p.title, regular(13.5), if selected { c().text } else { c().dim }, w);
                 text_left(ui.painter(), pos2(x, rect.center().y + 9.0), &format!("{} tracks", p.count), regular(11.5), c().faint, w);
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                    go = Some(View::Playlist(p.id));
+                    go = Some(View::Collection(Box::new(Coll::from_playlist(p))));
                 }
             }
         });
@@ -442,30 +521,35 @@ impl App {
             self.playlist_grid(ui);
             return;
         }
+        if self.view == View::Home {
+            self.home_view(ui, st);
+            return;
+        }
         let playing_id = st.track.as_ref().map(|t| t.id);
         let playing = st.state == State::Playing;
         self.track_view(ui, playing_id, playing);
     }
 
-    fn header_info(&self) -> (&'static str, String, Option<String>, Option<(Icon, Color32)>) {
-        match self.view {
-            View::Home => ("MIX", "Flow".into(), None, Some((Icon::Refresh, c().tile_flow))),
-            View::Loved => ("COLLECTION", "Tracks".into(), None, Some((Icon::Heart, c().tile_loved))),
-            View::Playlist(id) => {
-                let p = self.playlists.iter().find(|p| p.id == id);
-                ("PLAYLIST", p.map(|p| p.title.clone()).unwrap_or_default(), p.and_then(|p| playlist_url(p, 400)), None)
-            }
-            View::Search | View::Playlists => ("", String::new(), None, None),
+    fn header_info(&self) -> Header {
+        match &self.view {
+            View::Loved => Header { kind: "COLLECTION", title: "Tracks".into(), tile: Some((Icon::Heart, c().tile_loved)), ..Default::default() },
+            View::Collection(coll) => Header {
+                kind: coll.kind,
+                title: coll.title.clone(),
+                subtitle: coll.subtitle.clone(),
+                art: coll.picture.as_ref().map(|(k, m)| image_url(k, m, 400)),
+                tile: None,
+                round: coll.round(),
+            },
+            View::Home | View::Search | View::Playlists => Header::default(),
         }
     }
 
     fn track_view(&mut self, ui: &mut Ui, playing_id: Option<u64>, playing: bool) {
-        let ctx = ui.ctx().clone();
         let search = self.view == View::Search;
         let header_h = if search { 96.0 } else { 268.0 };
         let n = self.tracks.len();
         let mut play: Option<(usize, bool)> = None;
-        let mut refresh = false;
 
         egui::ScrollArea::vertical().auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
             let width = ui.available_width();
@@ -482,10 +566,10 @@ impl App {
                         text_left(ui.painter(), head.min + vec2(0.0, 54.0), &format!("{n} tracks"), regular(13.0), c().dim, width);
                     }
                 } else {
-                    let (kind, title, art, tile) = self.header_info();
+                    let Header { kind, title, subtitle, art, tile, round } = self.header_info();
                     let art_rect = Rect::from_min_size(head.min, Vec2::splat(200.0));
                     match (art, tile) {
-                        (Some(url), _) => widgets::cover(ui, &mut self.covers, Some(&url), art_rect, 8),
+                        (Some(url), _) => widgets::cover(ui, &mut self.covers, Some(&url), art_rect, if round { 100 } else { 8 }),
                         (None, Some((icon, color))) => widgets::tile(ui, art_rect, icon, color, 8),
                         _ => widgets::cover(ui, &mut self.covers, None, art_rect, 8),
                     }
@@ -493,10 +577,11 @@ impl App {
                     let tw = width - (x - head.left());
                     text_left(ui.painter(), pos2(x, head.top() + 40.0), kind, bold(11.5), c().dim, tw);
                     text_left(ui.painter(), pos2(x, head.top() + 82.0), &title, bold(40.0), c().text, tw);
-                    if n > 0 {
-                        let meta = format!("{n} tracks · {}", total_duration(&self.tracks));
-                        text_left(ui.painter(), pos2(x, head.top() + 124.0), &meta, regular(13.5), c().dim, tw);
+                    let mut meta = if n > 0 { format!("{n} tracks · {}", total_duration(&self.tracks)) } else { String::new() };
+                    if !subtitle.is_empty() {
+                        meta = if meta.is_empty() { subtitle } else { format!("{subtitle}  ·  {meta}") };
                     }
+                    text_left(ui.painter(), pos2(x, head.top() + 124.0), &meta, regular(13.5), c().dim, tw);
                     let buttons = Rect::from_min_size(pos2(x, head.top() + 152.0), vec2(tw, 44.0));
                     ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
                         if n > 0 && widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {
@@ -504,9 +589,6 @@ impl App {
                         }
                         if n > 1 && widgets::pill(ui, "Shuffle", Some(Icon::Shuffle), false).clicked() {
                             play = Some((0, true));
-                        }
-                        if self.view == View::Home && widgets::pill(ui, "New mix", Some(Icon::Refresh), false).clicked() {
-                            refresh = true;
                         }
                     });
                 }
@@ -581,15 +663,85 @@ impl App {
             }
         });
 
-        if refresh {
-            self.open_view(&ctx, View::Home);
-        }
         if let Some((i, shuffle)) = play {
             let mut queue = self.tracks.clone();
             if shuffle {
                 fastrand::shuffle(&mut queue);
             }
             self.player.send(Cmd::Play(queue, i));
+        }
+    }
+
+    fn home_view(&mut self, ui: &mut Ui, st: &Status) {
+        let ctx = ui.ctx().clone();
+        let mut open: Option<Coll> = None;
+        let mut play: Option<Source> = None;
+        let mut flow: Option<Option<String>> = None;
+        let mut reload = false;
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let (r, _) = ui.allocate_exact_size(vec2(96.0, 44.0), Sense::hover());
+                text_left(ui.painter(), pos2(r.left(), r.center().y), "Home", bold(30.0), c().text, r.width());
+                if widgets::icon_button(ui, Icon::Refresh, 16.0, c().dim).on_hover_text("Refresh recommendations").clicked() {
+                    reload = true;
+                }
+            });
+            if self.home.is_empty() {
+                if self.home_task.is_some() {
+                    ui.add_space(24.0);
+                    ui.add(egui::Spinner::new().size(22.0));
+                } else if let Some(e) = &self.list_error {
+                    ui.label(egui::RichText::new(e).color(c().danger));
+                }
+                return;
+            }
+            // Flow first, as on Deezer.
+            let mut order: Vec<usize> = (0..self.home.len()).collect();
+            order.sort_by_key(|&i| !self.home[i].items.iter().any(|it| it.kind == "flow"));
+            for si in order {
+                let sec = &self.home[si];
+                let is_flow = sec.items.iter().all(|it| it.kind == "flow");
+                let items: Vec<&Item> = sec.items.iter().filter(|it| it.kind == "flow" || Coll::from_item(it).is_some()).collect();
+                if items.is_empty() {
+                    continue;
+                }
+                ui.add_space(22.0);
+                let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
+                text_left(ui.painter(), pos2(r.left(), r.center().y), &sec.title, bold(19.0), c().text, r.width());
+                ui.add_space(8.0);
+                egui::ScrollArea::horizontal().id_salt(("home-row", si)).auto_shrink([false, true]).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = if is_flow { 22.0 } else { 18.0 };
+                        for it in items {
+                            if is_flow {
+                                if let Some(f) = flow_card(ui, &mut self.covers, it, st.flow.as_deref() == Some(it.id.as_str())) {
+                                    flow = Some(f);
+                                }
+                            } else if let Some(coll) = Coll::from_item(it) {
+                                match card(ui, &mut self.covers, &coll) {
+                                    CardClick::Open => open = Some(coll),
+                                    CardClick::Play => play = Some(coll.source.clone()),
+                                    CardClick::None => {}
+                                }
+                            }
+                        }
+                    });
+                });
+            }
+            ui.add_space(24.0);
+        });
+        if reload {
+            self.home.clear();
+            self.open_view(&ctx, View::Home);
+        }
+        if let Some(f) = flow {
+            self.player.send(Cmd::PlayFlow(f));
+        }
+        if let Some(src) = play {
+            self.play_source(&ctx, src);
+        }
+        if let Some(coll) = open {
+            self.open_view(&ctx, View::Collection(Box::new(coll)));
         }
     }
 
@@ -626,8 +778,11 @@ impl App {
                 ui.add_space(18.0);
             }
         });
-        if let Some(id) = open {
-            self.open_view(&ctx, View::Playlist(id));
+        if let Some(id) = open
+            && let Some(p) = self.playlists.iter().find(|p| p.id == id)
+        {
+            let view = View::Collection(Box::new(Coll::from_playlist(p)));
+            self.open_view(&ctx, view);
         }
     }
 
@@ -759,6 +914,67 @@ impl App {
             }
         });
     }
+}
+
+/// Collection header content.
+#[derive(Default)]
+struct Header {
+    kind: &'static str,
+    title: String,
+    subtitle: String,
+    art: Option<String>,
+    /// Placeholder tile when there is no artwork.
+    tile: Option<(Icon, Color32)>,
+    round: bool,
+}
+
+enum CardClick {
+    None,
+    Open,
+    Play,
+}
+
+/// Home card: artwork (round for artists), title, subtitle; a play button on hover.
+fn card(ui: &mut Ui, covers: &mut Covers, coll: &Coll) -> CardClick {
+    let w = 168.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, w + 50.0), Sense::click());
+    let art = Rect::from_min_size(rect.min, Vec2::splat(w));
+    let radius = if coll.round() { 84 } else { 8 };
+    let url = coll.picture.as_ref().map(|(k, m)| image_url(k, m, 336));
+    widgets::cover(ui, covers, url.as_deref(), art, radius);
+    let mut click = CardClick::None;
+    if resp.hovered() {
+        ui.painter().rect_filled(art, CornerRadius::same(radius), c().veil);
+        let knob = pos2(art.right() - 28.0, art.bottom() - 28.0);
+        let over_knob = resp.hover_pos().is_some_and(|p| p.distance(knob) < 22.0);
+        ui.painter().circle_filled(knob, if over_knob { 22.0 } else { 20.0 }, c().text);
+        icons::paint(ui.painter(), Rect::from_center_size(knob, Vec2::splat(15.0)), Icon::Play, c().bg);
+        if resp.clicked() {
+            click = if over_knob { CardClick::Play } else { CardClick::Open };
+        }
+    }
+    text_left(ui.painter(), pos2(rect.left(), art.bottom() + 15.0), &coll.title, bold(13.5), c().text, w);
+    text_left(ui.painter(), pos2(rect.left(), art.bottom() + 34.0), &coll.subtitle, regular(12.0), c().dim, w);
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    click
+}
+
+/// Round Flow mood tile; returns the flow config to play when clicked.
+fn flow_card(ui: &mut Ui, covers: &mut Covers, it: &Item, active: bool) -> Option<Option<String>> {
+    let d = 116.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(d, d + 34.0), Sense::click());
+    let art = Rect::from_min_size(rect.min, Vec2::splat(d));
+    let url = it.picture.as_ref().map(|(k, m)| image_url(k, m, 240));
+    widgets::cover(ui, covers, url.as_deref(), art, 58);
+    if active || resp.hovered() {
+        let color = if active { c().accent } else { c().text.gamma_multiply(0.6) };
+        ui.painter().circle_stroke(art.center(), d / 2.0 + 3.0, egui::Stroke::new(2.5, color));
+    }
+    let g = widgets::line(ui.painter(), &it.title, if active { bold(13.0) } else { regular(13.0) }, if active { c().accent } else { c().text }, d + 10.0);
+    let pos = pos2(art.center().x - g.size().x / 2.0, art.bottom() + 12.0);
+    ui.painter().galley(pos, g, c().text);
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    resp.clicked().then(|| (it.id != "default").then(|| it.id.clone()))
 }
 
 fn section(ui: &mut Ui, label: &str) {

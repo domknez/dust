@@ -20,8 +20,7 @@ pub struct Palette {
     /// Hover/pressed fills for secondary buttons.
     pub raised: Color32,
     pub pressed: Color32,
-    /// Collection tiles without artwork (Flow, Tracks).
-    pub tile_flow: Color32,
+    /// Tile for the Loved collection, which has no artwork.
     pub tile_loved: Color32,
     /// Veil drawn over artwork on hover.
     pub veil: Color32,
@@ -45,7 +44,6 @@ pub static DARK: Palette = Palette {
     danger: rgb(0xf0, 0x7a, 0x7a),
     raised: rgb(0x36, 0x36, 0x3d),
     pressed: rgb(0x40, 0x40, 0x48),
-    tile_flow: rgb(0x4a, 0x3d, 0x96),
     tile_loved: rgb(0x92, 0x3a, 0x60),
     veil: Color32::from_black_alpha(60),
 };
@@ -64,7 +62,6 @@ pub static LIGHT: Palette = Palette {
     danger: rgb(0xc4, 0x40, 0x40),
     raised: rgb(0xcf, 0xcf, 0xd6),
     pressed: rgb(0xc4, 0xc4, 0xcc),
-    tile_flow: rgb(0x6a, 0x5c, 0xc0),
     tile_loved: rgb(0xc0, 0x55, 0x80),
     veil: Color32::from_black_alpha(40),
 };
