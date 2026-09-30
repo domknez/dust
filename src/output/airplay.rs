@@ -314,7 +314,7 @@ impl AirPlaySink {
             cseq: 0,
             url: format!("rtsp://{local_ip}/{sid}"),
             session: None,
-            instance: format!("{:016X}", fastrand::u64(..)),
+            instance: super::dacp::id().to_string(),
             active_remote: fastrand::u32(..).to_string(),
         };
 

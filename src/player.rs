@@ -41,6 +41,9 @@ pub enum Cmd {
     Prev,
     Seek(f64),
     Volume(f32),
+    VolumeStep(f32),
+    Resume,
+    Pause,
     Output(Output),
     Quality(Quality),
 }
@@ -59,6 +62,7 @@ pub struct Status {
     pub state: State,
     pub track: Option<Track>,
     pub position: f64,
+    pub volume: f32,
     pub output: String,
     pub error: Option<String>,
 }
@@ -72,7 +76,7 @@ pub struct PlayerHandle {
 impl PlayerHandle {
     pub fn spawn(ctx: egui::Context, volume: f32) -> Self {
         let (tx, rx) = mpsc::channel();
-        let status = Arc::new(Mutex::new(Status { output: Output::Local.name().into(), ..Default::default() }));
+        let status = Arc::new(Mutex::new(Status { output: Output::Local.name().into(), volume, ..Default::default() }));
         let shared = status.clone();
         let make = move || Player {
             rx,
@@ -194,6 +198,7 @@ impl Player {
             (Some(_), false) => State::Paused,
         };
         st.output = self.output.name().to_string();
+        st.volume = self.volume;
         drop(st);
         if repaint {
             self.ctx.request_repaint();
@@ -215,6 +220,10 @@ impl Player {
                 self.index = index;
                 self.start_track(0.0);
             }
+            Cmd::Resume if self.playing || self.stream.is_none() => {}
+            Cmd::Pause if !self.playing => {}
+            Cmd::Resume | Cmd::Pause => self.handle(Cmd::Toggle),
+            Cmd::VolumeStep(d) => self.handle(Cmd::Volume((self.volume + d).clamp(0.0, 1.0))),
             Cmd::Toggle => {
                 if self.stream.is_none() {
                     if !self.queue.is_empty() {
