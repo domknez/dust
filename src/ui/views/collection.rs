@@ -1,0 +1,225 @@
+//! Track lists: search results, Loved tracks and opened collections. A header
+//! (artwork, title, Play/Shuffle) scrolls with a virtualised track table.
+
+use crate::player::Cmd;
+use crate::ui::app::App;
+use crate::ui::format::{cover_url, mmss, total_duration};
+use crate::ui::state::{PlayMode, View};
+use crate::ui::style::icons::{self, Icon};
+use crate::ui::style::{colors, metrics, radius, typography as ty};
+use crate::ui::widgets::{self, text_left};
+use crate::deezer::image_url;
+use eframe::egui::{self, Align2, Color32, CornerRadius, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
+
+const SEARCH_HEADER: f32 = 96.0;
+const COLLECTION_HEADER: f32 = 268.0;
+/// Below this width the album column is hidden.
+const ALBUM_COLUMN_MIN_WIDTH: f32 = 640.0;
+
+/// Collection header content.
+#[derive(Default)]
+struct Header {
+    kind: &'static str,
+    title: String,
+    subtitle: String,
+    art: Option<String>,
+    /// Placeholder tile when there is no artwork.
+    tile: Option<(Icon, Color32)>,
+    round: bool,
+}
+
+/// Actions picked in the table this frame.
+#[derive(Default)]
+struct Picked {
+    play: Option<(usize, bool)>,
+    queue: Option<(usize, PlayMode)>,
+}
+
+/// X positions of the table columns.
+struct Columns {
+    index: f32,
+    art: f32,
+    title: f32,
+    album: Option<f32>,
+    time: f32,
+}
+
+impl Columns {
+    fn new(left: f32, width: f32) -> Self {
+        Columns {
+            index: left + 8.0,
+            art: left + 48.0,
+            title: left + 104.0,
+            album: (width > ALBUM_COLUMN_MIN_WIDTH).then_some(left + width * 0.58),
+            time: left + width - 16.0,
+        }
+    }
+}
+
+impl App {
+    pub(in crate::ui) fn collection_page(&mut self, ui: &mut Ui, playing_id: Option<u64>, playing: bool) {
+        let header_height = if self.view == View::Search { SEARCH_HEADER } else { COLLECTION_HEADER };
+        let count = self.tracks.len();
+        let mut picked = Picked::default();
+
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
+            let width = ui.available_width();
+            ui.set_height(header_height + count as f32 * metrics::TRACK_ROW + 24.0);
+            let origin = ui.max_rect().min;
+            let head = Rect::from_min_size(origin, vec2(width, header_height));
+            ui.scope_builder(UiBuilder::new().max_rect(head), |ui| {
+                if self.view == View::Search {
+                    self.search_header(ui, head);
+                } else {
+                    self.collection_header(ui, head, &mut picked);
+                }
+                if count > 0 {
+                    column_captions(ui, head);
+                }
+            });
+
+            let below_header = Rect::from_min_size(origin + vec2(0.0, header_height + 24.0), vec2(width, 40.0));
+            if self.tracks_task.is_some() {
+                ui.put(below_header, egui::Spinner::new().size(22.0));
+                return;
+            }
+            if let Some(e) = &self.list_error {
+                text_left(ui.painter(), below_header.min, e, ty::TITLE, colors().danger, width);
+                return;
+            }
+            // Only rows in the viewport are laid out and painted.
+            let first = ((viewport.top() - header_height) / metrics::TRACK_ROW).floor().max(0.0) as usize;
+            let last = (((viewport.bottom() - header_height) / metrics::TRACK_ROW).ceil().max(0.0) as usize).min(count);
+            let columns = Columns::new(origin.x, width);
+            for i in first..last {
+                let rect = Rect::from_min_size(origin + vec2(0.0, header_height + i as f32 * metrics::TRACK_ROW), vec2(width, metrics::TRACK_ROW));
+                self.track_row(ui, i, rect, &columns, playing_id, playing, &mut picked);
+            }
+        });
+
+        if let Some((i, mode)) = picked.queue {
+            self.player.send(mode.command(vec![self.tracks[i].clone()]));
+        }
+        if let Some((i, shuffle)) = picked.play {
+            let mut queue = self.tracks.clone();
+            if shuffle {
+                fastrand::shuffle(&mut queue);
+            }
+            self.player.send(Cmd::Play(queue, i));
+        }
+    }
+
+    fn header(&self) -> Header {
+        match &self.view {
+            View::Loved => Header { kind: "COLLECTION", title: "Tracks".into(), tile: Some((Icon::Heart, colors().tile_loved)), ..Default::default() },
+            View::Collection(coll) => Header {
+                kind: coll.kind,
+                title: coll.title.clone(),
+                subtitle: coll.subtitle.clone(),
+                art: coll.picture.as_ref().map(|(k, m)| image_url(k, m, metrics::HEADER_PX)),
+                tile: None,
+                round: coll.round(),
+            },
+            View::Home | View::Search | View::Playlists => Header::default(),
+        }
+    }
+
+    fn search_header(&self, ui: &Ui, head: Rect) {
+        let title = if self.searched.is_empty() { "Search".to_string() } else { format!("“{}”", self.searched) };
+        text_left(ui.painter(), head.min + vec2(0.0, 22.0), &title, ty::PAGE_TITLE, colors().text, head.width());
+        if !self.tracks.is_empty() {
+            text_left(ui.painter(), head.min + vec2(0.0, 54.0), &format!("{} tracks", self.tracks.len()), ty::BODY, colors().dim, head.width());
+        }
+    }
+
+    fn collection_header(&mut self, ui: &mut Ui, head: Rect, picked: &mut Picked) {
+        let p = colors();
+        let Header { kind, title, subtitle, art, tile, round } = self.header();
+        let art_rect = Rect::from_min_size(head.min, Vec2::splat(metrics::HEADER_ART));
+        let corner = if round { (metrics::HEADER_ART / 2.0) as u8 } else { radius::CARD };
+        match (art, tile) {
+            (Some(url), _) => widgets::cover(ui, &mut self.covers, Some(&url), art_rect, corner),
+            (None, Some((icon, color))) => widgets::tile(ui, art_rect, icon, color, radius::CARD),
+            _ => widgets::cover(ui, &mut self.covers, None, art_rect, radius::CARD),
+        }
+        let x = art_rect.right() + 28.0;
+        let width = head.right() - x;
+        text_left(ui.painter(), pos2(x, head.top() + 40.0), kind, ty::CAPTION.strong(), p.dim, width);
+        text_left(ui.painter(), pos2(x, head.top() + 82.0), &title, ty::HERO, p.text, width);
+        let count = self.tracks.len();
+        let stats = (count > 0).then(|| format!("{count} tracks · {}", total_duration(&self.tracks)));
+        let meta = match (subtitle.is_empty(), stats) {
+            (true, Some(stats)) => stats,
+            (false, Some(stats)) => format!("{subtitle}  ·  {stats}"),
+            (_, None) => subtitle,
+        };
+        text_left(ui.painter(), pos2(x, head.top() + 124.0), &meta, ty::ITEM, p.dim, width);
+        let buttons = Rect::from_min_size(pos2(x, head.top() + 152.0), vec2(width, 44.0));
+        ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
+            if count > 0 && widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {
+                picked.play = Some((0, false));
+            }
+            if count > 1 && widgets::pill(ui, "Shuffle", Some(Icon::Shuffle), false).clicked() {
+                picked.play = Some((0, true));
+            }
+        });
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn track_row(&mut self, ui: &mut Ui, i: usize, rect: Rect, columns: &Columns, playing_id: Option<u64>, playing: bool, picked: &mut Picked) {
+        let p = colors();
+        let resp = ui.interact(rect, ui.id().with(("row", i)), Sense::click());
+        let track = &self.tracks[i];
+        let current = playing_id == Some(track.id);
+        let hovered = resp.hovered();
+        if hovered {
+            ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.hover);
+        }
+        let cy = rect.center().y;
+        let index = Rect::from_center_size(pos2(columns.index + 14.0, cy), Vec2::splat(14.0));
+        if hovered {
+            icons::paint(ui.painter(), index, if current && playing { Icon::Pause } else { Icon::Play }, p.text);
+        } else if current {
+            widgets::equalizer(ui.painter(), index, playing);
+        } else {
+            ui.painter().text(index.center(), Align2::CENTER_CENTER, (i + 1).to_string(), ty::BODY.font(), p.faint);
+        }
+        let art = Rect::from_min_size(pos2(columns.art, cy - metrics::TRACK_ART / 2.0), Vec2::splat(metrics::TRACK_ART));
+        widgets::cover(ui, &mut self.covers, cover_url(track, metrics::THUMB_PX).as_deref(), art, radius::THUMB);
+        let painter = ui.painter();
+        let title_width = columns.album.unwrap_or(columns.time - 60.0) - columns.title - 16.0;
+        text_left(painter, pos2(columns.title, cy - 9.0), &track.title, ty::TITLE, if current { p.accent } else { p.text }, title_width);
+        text_left(painter, pos2(columns.title, cy + 10.0), &track.artist, ty::SECONDARY, p.dim, title_width);
+        if let Some(album) = columns.album {
+            text_left(painter, pos2(album, cy), &track.album, ty::BODY, p.dim, columns.time - album - 70.0);
+        }
+        painter.text(pos2(columns.time, cy), Align2::RIGHT_CENTER, mmss(track.duration as f64), ty::BODY.font(), p.dim);
+
+        // Double-click a row, or click its number, to play from there.
+        let clicked_number = resp.clicked() && resp.interact_pointer_pos().is_some_and(|pt| pt.x < columns.art);
+        if resp.double_clicked() || clicked_number {
+            if current && clicked_number {
+                self.player.send(Cmd::Toggle);
+            } else {
+                picked.play = Some((i, false));
+            }
+        }
+        if let Some(mode) = widgets::queue_menu(&resp) {
+            picked.queue = Some((i, mode));
+        }
+    }
+}
+
+fn column_captions(ui: &Ui, head: Rect) {
+    let y = head.bottom() - 22.0;
+    let columns = Columns::new(head.left(), head.width());
+    let (font, color) = (ty::OVERLINE.font(), colors().faint);
+    let painter = ui.painter();
+    painter.text(pos2(columns.index + 14.0, y), Align2::CENTER_CENTER, "#", font.clone(), color);
+    painter.text(pos2(columns.title, y), Align2::LEFT_CENTER, "TITLE", font.clone(), color);
+    if let Some(album) = columns.album {
+        painter.text(pos2(album, y), Align2::LEFT_CENTER, "ALBUM", font.clone(), color);
+    }
+    painter.text(pos2(columns.time, y), Align2::RIGHT_CENTER, "TIME", font, color);
+    painter.hline(head.x_range(), head.bottom() - 4.0, egui::Stroke::new(1.0, colors().line));
+}
