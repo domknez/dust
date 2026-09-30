@@ -26,6 +26,10 @@ cargo build --release
 ./target/release/dust
 ```
 
+On macOS, run `scripts/dev-cert.sh` once and build with `scripts/build.sh`: it signs
+builds with a local "dust dev" identity so Keychain stops asking for access after every
+rebuild. (Published releases should be signed with an Apple Developer ID instead.)
+
 Linux needs ALSA and D-Bus headers: `sudo apt install libasound2-dev libdbus-1-dev pkg-config`.
 
 ## Log in
