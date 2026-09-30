@@ -4,9 +4,10 @@
 use std::fs::File;
 use std::path::Path;
 
-/// Apple's icon grid: the artwork spans 824 of 1024 px, the rest is transparent margin.
-/// Without it the Dock / Cmd-Tab icon looks larger than every other app's.
-const MACOS_ART_FRACTION: f32 = 824.0 / 1024.0;
+/// macOS icons leave a transparent margin around the artwork; without it the Dock /
+/// Cmd-Tab icon looks larger than every other app's. Apple's template says 824/1024;
+/// measured against current Dock icons, ~836/1024 lines up exactly.
+const MACOS_ART_FRACTION: f32 = 836.0 / 1024.0;
 
 fn decode(src: &str) -> (Vec<u8>, usize) {
     println!("cargo:rerun-if-changed={src}");

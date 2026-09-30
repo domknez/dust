@@ -69,12 +69,15 @@ pub fn pill(ui: &mut Ui, label: &str, icon: Option<Icon>, primary: bool) -> Resp
 pub fn nav_item(ui: &mut Ui, icon: Icon, label: &str, selected: bool) -> Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::click());
     if selected {
-        ui.painter().rect_filled(rect, CornerRadius::same(6), c().surface);
+        ui.painter().rect_filled(rect, CornerRadius::same(8), c().surface);
+        let bar = Rect::from_center_size(egui::pos2(rect.left() + 1.5, rect.center().y), vec2(3.0, 16.0));
+        ui.painter().rect_filled(bar, CornerRadius::same(2), c().accent);
     } else if resp.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::same(6), c().hover);
+        ui.painter().rect_filled(rect, CornerRadius::same(8), c().hover);
     }
     let color = if selected || resp.hovered() { c().text } else { c().dim };
-    icons::paint(ui.painter(), Rect::from_center_size(egui::pos2(rect.left() + 20.0, rect.center().y), Vec2::splat(17.0)), icon, color);
+    let icon_color = if selected { c().accent } else { color };
+    icons::paint(ui.painter(), Rect::from_center_size(egui::pos2(rect.left() + 20.0, rect.center().y), Vec2::splat(17.0)), icon, icon_color);
     let font = if selected { bold(14.0) } else { regular(14.0) };
     text_left(ui.painter(), egui::pos2(rect.left() + 40.0, rect.center().y), label, font, color, rect.width() - 48.0);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)

@@ -432,8 +432,9 @@ impl App {
     fn sidebar(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
         ui.add_space(TOP_INSET);
-        let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::hover());
-        text_left(ui.painter(), pos2(row.left() + 8.0, row.center().y), "dust", bold(26.0), c().text, 160.0);
+        let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 38.0), Sense::hover());
+        let word = text_left(ui.painter(), pos2(row.left() + 8.0, row.center().y + 2.0), "dust", bold(28.0), c().text, 160.0);
+        dust_particles(ui.painter(), pos2(word.right() - 3.0, word.top() + 6.0));
         ui.add_space(18.0);
 
         let mut go = None;
@@ -480,19 +481,23 @@ impl App {
             self.open_view(&ctx, v);
         }
 
+        // Soft fade where the playlist list meets the account card.
+        let edge = ui.cursor().min.y;
+        let fade = Rect::from_min_max(pos2(ui.max_rect().left(), edge - 28.0), pos2(ui.max_rect().right(), edge));
+        fade_to(ui.painter(), fade, c().sidebar);
+
         // Account / settings menu.
         ui.add_space(6.0);
-        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click());
-        if resp.hovered() {
-            ui.painter().rect_filled(rect, CornerRadius::same(6), c().hover);
-        }
+        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 52.0), Sense::click());
+        ui.painter().rect_filled(rect, CornerRadius::same(10), if resp.hovered() { c().raised } else { c().surface });
+        icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), Vec2::splat(12.0)), Icon::Chevrons, c().faint);
         let name = self.client.as_ref().map(|c| c.name().to_string()).unwrap_or_default();
-        let avatar = pos2(rect.left() + 22.0, rect.center().y);
-        ui.painter().circle_filled(avatar, 15.0, c().accent);
+        let avatar = pos2(rect.left() + 24.0, rect.center().y);
+        ui.painter().circle_filled(avatar, 16.0, c().accent);
         let initial = name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
         ui.painter().text(avatar, Align2::CENTER_CENTER, initial, bold(14.0), c().bg);
-        text_left(ui.painter(), pos2(rect.left() + 46.0, rect.center().y - 7.0), &name, bold(13.0), c().text, rect.width() - 56.0);
-        text_left(ui.painter(), pos2(rect.left() + 46.0, rect.center().y + 9.0), self.quality.label(), regular(11.5), c().faint, rect.width() - 56.0);
+        text_left(ui.painter(), pos2(rect.left() + 50.0, rect.center().y - 8.0), &name, bold(13.5), c().text, rect.width() - 80.0);
+        text_left(ui.painter(), pos2(rect.left() + 50.0, rect.center().y + 9.0), self.quality.label(), regular(11.5), c().faint, rect.width() - 80.0);
         let menu_frame = widgets::popover_frame(ui);
         egui::Popup::menu(&resp).width(272.0).gap(8.0).frame(menu_frame).show(|ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
@@ -1200,6 +1205,28 @@ fn flow_card(ui: &mut Ui, covers: &mut Covers, it: &Item, active: bool) -> Optio
     ui.painter().galley(pos, g, c().text);
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     resp.clicked().then(|| (it.id != "default").then(|| it.id.clone()))
+}
+
+/// A few brand-blue specks drifting up and right, echoing the particles in the icon.
+fn dust_particles(p: &egui::Painter, origin: egui::Pos2) {
+    const SPECKS: [(f32, f32, f32, f32); 7] =
+        [(0.0, 0.0, 2.4, 1.0), (5.0, -4.0, 1.8, 0.85), (9.0, -1.0, 1.4, 0.7), (11.0, -8.0, 1.6, 0.6), (15.0, -4.5, 1.1, 0.5), (18.0, -10.0, 1.0, 0.4), (21.0, -6.0, 0.8, 0.3)];
+    for (dx, dy, r, a) in SPECKS {
+        p.circle_filled(origin + vec2(dx, dy), r, c().accent.gamma_multiply(a));
+    }
+}
+
+/// Vertical fade from transparent to `color`, drawn over content above the rect's bottom.
+fn fade_to(p: &egui::Painter, rect: Rect, color: Color32) {
+    let mut mesh = egui::Mesh::default();
+    let clear = color.gamma_multiply(0.0);
+    mesh.colored_vertex(rect.left_top(), clear);
+    mesh.colored_vertex(rect.right_top(), clear);
+    mesh.colored_vertex(rect.right_bottom(), color);
+    mesh.colored_vertex(rect.left_bottom(), color);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    p.add(mesh);
 }
 
 fn section(ui: &mut Ui, label: &str) {

@@ -26,6 +26,8 @@ pub enum Icon {
     LogOut,
     Queue,
     Close,
+    /// Small up/down chevrons: "opens a menu".
+    Chevrons,
 }
 
 fn p(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -170,6 +172,11 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
         Icon::Close => {
             line(p(r, 0.22, 0.22), p(r, 0.78, 0.78));
             line(p(r, 0.78, 0.22), p(r, 0.22, 0.78));
+        }
+        Icon::Chevrons => {
+            let s = Stroke::new(stroke.width, color);
+            painter.add(Shape::line(vec![p(r, 0.28, 0.4), p(r, 0.5, 0.2), p(r, 0.72, 0.4)], s));
+            painter.add(Shape::line(vec![p(r, 0.28, 0.6), p(r, 0.5, 0.8), p(r, 0.72, 0.6)], s));
         }
         Icon::Note => {
             painter.circle_filled(p(r, 0.36, 0.72), w * 0.13, color);
