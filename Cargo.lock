@@ -1091,6 +1091,7 @@ dependencies = [
  "cpal",
  "eframe",
  "fastrand",
+ "if-addrs",
  "keyring",
  "md-5",
  "mdns-sd",

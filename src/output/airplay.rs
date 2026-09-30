@@ -46,6 +46,8 @@ impl Discovery {
         let rx = daemon.browse("_raop._tcp.local.").map_err(|e| e.to_string())?;
         let devices = Arc::new(Mutex::new(Vec::<Device>::new()));
         let list = devices.clone();
+        let local_ips: Vec<IpAddr> =
+            if_addrs::get_if_addrs().map(|v| v.into_iter().map(|i| i.ip()).collect()).unwrap_or_default();
         std::thread::Builder::new()
             .name("airplay-discovery".into())
             .spawn(move || {
@@ -55,7 +57,8 @@ impl Discovery {
                         ServiceEvent::ServiceResolved(info) => {
                             let mut addrs: Vec<SocketAddr> =
                                 info.get_addresses_v4().into_iter().map(|ip| SocketAddr::new(IpAddr::V4(*ip), info.get_port())).collect();
-                            if addrs.is_empty() {
+                            // Skip ourselves (e.g. macOS "AirPlay Receiver" on this machine).
+                            if addrs.is_empty() || addrs.iter().any(|a| local_ips.contains(&a.ip())) {
                                 continue;
                             }
                             addrs.sort_by_key(|a| (a.ip().is_loopback(), a.ip().to_string().ends_with(".0"), *a));
