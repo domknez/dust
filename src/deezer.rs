@@ -61,9 +61,41 @@ impl Quality {
     }
 }
 
+/// gw-light session: CSRF token plus every cookie the server set. The token is bound
+/// to the whole cookie set (sid, dzr_uniq_id, bot-protection cookies), not just `sid`.
 struct Session {
     api_token: String,
-    sid: Option<String>,
+    cookies: Vec<(String, String)>,
+}
+
+impl Session {
+    fn new() -> Self {
+        Self { api_token: "null".into(), cookies: Vec::new() }
+    }
+
+    fn header(&self, arl: &str) -> String {
+        let mut h = String::new();
+        if !arl.is_empty() {
+            h = format!("arl={arl}");
+        }
+        for (k, v) in self.cookies.iter().filter(|(k, _)| k != "arl") {
+            if !h.is_empty() {
+                h.push_str("; ");
+            }
+            h.push_str(&format!("{k}={v}"));
+        }
+        h
+    }
+
+    fn store(&mut self, set_cookie: &str) {
+        let Some((name, rest)) = set_cookie.split_once('=') else { return };
+        let value = rest.split(';').next().unwrap_or("").trim();
+        let expired = value == "deleted" || set_cookie.to_ascii_lowercase().contains("max-age=0");
+        self.cookies.retain(|(k, _)| k != name.trim());
+        if !expired {
+            self.cookies.push((name.trim().to_string(), value.to_string()));
+        }
+    }
 }
 
 struct Inner {
@@ -135,7 +167,7 @@ impl Deezer {
     pub fn login(arl: &str) -> Result<Deezer> {
         let arl = arl.trim().to_string();
         let agent = agent();
-        let mut session = Session { api_token: "null".into(), sid: None };
+        let mut session = Session::new();
         let data = gw_call(&agent, &arl, &mut session, "deezer.getUserData", json!({}))?;
         let user = &data["USER"];
         let user_id = n(&user["USER_ID"]);
@@ -277,11 +309,7 @@ pub enum Format {
 }
 
 fn gw_call(agent: &ureq::Agent, arl: &str, session: &mut Session, method: &str, body: Value) -> Result<Value> {
-    let mut cookie = format!("arl={arl}");
-    if let Some(sid) = &session.sid {
-        cookie.push_str("; sid=");
-        cookie.push_str(sid);
-    }
+    let cookie = session.header(arl);
     let resp = agent
         .post(GW)
         .query("method", method)
@@ -292,9 +320,7 @@ fn gw_call(agent: &ureq::Agent, arl: &str, session: &mut Session, method: &str, 
         .send_json(body)
         .map_err(|e| format!("{method}: {e}"))?;
     for c in resp.all("set-cookie") {
-        if let Some(v) = c.strip_prefix("sid=") {
-            session.sid = v.split(';').next().map(str::to_string);
-        }
+        session.store(c);
     }
     let v: Value = resp.into_json().map_err(|e| format!("{method}: {e}"))?;
     match &v["error"] {
@@ -380,6 +406,19 @@ impl<R: Read> Read for StripeReader<R> {
 mod tests {
     use super::*;
     use blowfish::cipher::BlockEncrypt;
+
+    /// Network test: CSRF token from getUserData must be accepted on the next call.
+    #[test]
+    #[ignore]
+    fn session_csrf_roundtrip() {
+        let agent = agent();
+        let mut session = Session::new();
+        let data = gw_call(&agent, "", &mut session, "deezer.getUserData", json!({})).unwrap();
+        session.api_token = s(&data["checkForm"]);
+        let r = gw_call(&agent, "", &mut session, "deezer.pageSearch", json!({"query": "daft punk", "start": 0, "nb": 5}));
+        let r = r.unwrap();
+        assert!(!parse_tracks(&r["TRACK"]["data"]).is_empty(), "{r}");
+    }
 
     #[test]
     fn stripe_roundtrip() {

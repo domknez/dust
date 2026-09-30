@@ -16,7 +16,7 @@ rtrb = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 symphonia = { version = "0.5", default-features = false, features = ["flac", "mp3"] }
-ureq = { version = "2", features = ["json", "cookies"] }
+ureq = { version = "2", features = ["json"] }
 
 [profile.release]
 opt-level = 3
