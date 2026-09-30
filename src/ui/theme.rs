@@ -1,5 +1,6 @@
 //! Colours, type and egui style. Two soft palettes — a charcoal dark and a grey
 //! light — deliberately avoiding pure black and pure white, which are harsh on the eyes.
+//! The accent is the blue from the app icon.
 
 use eframe::egui::{self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle, Visuals};
 use std::sync::Arc;
@@ -40,7 +41,8 @@ pub static DARK: Palette = Palette {
     text: rgb(0xe8, 0xe8, 0xec),
     dim: rgb(0xa4, 0xa4, 0xae),
     faint: rgb(0x77, 0x77, 0x81),
-    accent: rgb(0x4f, 0xd6, 0xcc),
+    // Brand blue from the app icon (#3D8BFF), lifted slightly for text on charcoal.
+    accent: rgb(0x5a, 0x9c, 0xff),
     danger: rgb(0xf0, 0x7a, 0x7a),
     raised: rgb(0x36, 0x36, 0x3d),
     pressed: rgb(0x40, 0x40, 0x48),
@@ -58,7 +60,8 @@ pub static LIGHT: Palette = Palette {
     text: rgb(0x1f, 0x1f, 0x24),
     dim: rgb(0x56, 0x56, 0x60),
     faint: rgb(0x84, 0x84, 0x8e),
-    accent: rgb(0x10, 0x8c, 0x85),
+    // Deeper brand blue for contrast on the grey background.
+    accent: rgb(0x24, 0x5e, 0xbd),
     danger: rgb(0xc4, 0x40, 0x40),
     raised: rgb(0xcf, 0xcf, 0xd6),
     pressed: rgb(0xc4, 0xc4, 0xcc),
