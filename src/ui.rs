@@ -57,6 +57,9 @@ pub struct App {
     client: Option<Deezer>,
     arl: String,
     login: Task<Deezer>,
+    /// Store the ARL in the keychain once the pending login succeeds.
+    remember: bool,
+    show_manual: bool,
     login_error: Option<String>,
     view: View,
     search: String,
@@ -89,6 +92,8 @@ impl App {
             client: None,
             arl: String::new(),
             login: None,
+            remember: false,
+            show_manual: false,
             login_error: None,
             view: View::Search,
             search: String::new(),
@@ -103,14 +108,22 @@ impl App {
             discovery,
         };
         if let Some(arl) = keyring().and_then(|k| k.get_password().ok()) {
-            app.start_login(ctx, arl);
+            app.login = spawn(ctx, move || Deezer::login(&arl));
         }
         app
     }
 
     fn start_login(&mut self, ctx: &egui::Context, arl: String) {
         self.login_error = None;
+        self.remember = true;
         self.login = spawn(ctx, move || Deezer::login(&arl));
+    }
+
+    #[cfg(feature = "login-window")]
+    fn start_browser_login(&mut self, ctx: &egui::Context) {
+        self.login_error = None;
+        self.remember = true;
+        self.login = spawn(ctx, || Deezer::login(&crate::login::obtain_arl()?));
     }
 
     fn open_view(&mut self, ctx: &egui::Context, view: View) {
@@ -133,12 +146,12 @@ impl App {
     fn poll_tasks(&mut self, ctx: &egui::Context) {
         match poll(&mut self.login) {
             Some(Ok(client)) => {
-                if !self.arl.is_empty() {
+                if std::mem::take(&mut self.remember) {
                     if let Some(k) = keyring() {
-                        let _ = k.set_password(self.arl.trim());
+                        let _ = k.set_password(client.arl());
                     }
-                    self.arl.clear();
                 }
+                self.arl.clear();
                 self.player.send(Cmd::Client(client.clone()));
                 self.player.send(Cmd::Quality(self.quality));
                 let c = client.clone();
@@ -146,7 +159,10 @@ impl App {
                 self.client = Some(client);
                 self.open_view(ctx, View::Flow);
             }
-            Some(Err(e)) => self.login_error = Some(e),
+            Some(Err(e)) => {
+                self.remember = false;
+                self.login_error = Some(e);
+            }
             None => {}
         }
         match poll(&mut self.tracks_task) {
@@ -170,19 +186,37 @@ impl App {
                     ui.spinner();
                     return;
                 }
-                ui.label("Paste your Deezer ARL cookie (Premium account):");
-                let edit = ui.add(egui::TextEdit::singleline(&mut self.arl).password(true).desired_width(360.0));
-                let go = ui.button("Log in").clicked() || (edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
-                if go && !self.arl.trim().is_empty() {
-                    let arl = self.arl.trim().to_string();
-                    self.start_login(ui.ctx(), arl);
+                #[cfg(feature = "login-window")]
+                {
+                    let button = egui::Button::new(RichText::new("Log in with Deezer").size(16.0).color(Color32::WHITE)).fill(ACCENT);
+                    if ui.add_sized([220.0, 36.0], button).clicked() {
+                        self.start_browser_login(ui.ctx());
+                    }
+                    ui.add_space(4.0);
+                    ui.small("Deezer Premium required");
+                    ui.add_space(12.0);
+                    if ui.link("Paste ARL cookie instead").clicked() {
+                        self.show_manual = !self.show_manual;
+                    }
+                }
+                #[cfg(not(feature = "login-window"))]
+                {
+                    self.show_manual = true;
+                }
+                if self.show_manual {
+                    ui.add_space(8.0);
+                    let edit = ui.add(egui::TextEdit::singleline(&mut self.arl).password(true).hint_text("arl").desired_width(360.0));
+                    let go = ui.button("Log in").clicked() || (edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
+                    if go && !self.arl.trim().is_empty() {
+                        let arl = self.arl.trim().to_string();
+                        self.start_login(ui.ctx(), arl);
+                    }
+                    ui.small("deezer.com → DevTools → Application → Cookies → arl");
                 }
                 if let Some(e) = &self.login_error {
                     ui.add_space(8.0);
                     ui.colored_label(Color32::LIGHT_RED, e);
                 }
-                ui.add_space(16.0);
-                ui.small("deezer.com → DevTools → Application → Cookies → arl");
             });
         });
     }

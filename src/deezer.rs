@@ -190,6 +190,10 @@ impl Deezer {
         })))
     }
 
+    pub fn arl(&self) -> &str {
+        &self.0.arl
+    }
+
     pub fn name(&self) -> &str {
         &self.0.name
     }

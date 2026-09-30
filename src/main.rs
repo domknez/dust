@@ -1,6 +1,8 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod deezer;
+#[cfg(feature = "login-window")]
+mod login;
 mod output;
 mod player;
 mod ui;
@@ -52,9 +54,17 @@ fn tone(target: Option<String>) {
 
 fn main() -> eframe::Result {
     let mut args = std::env::args().skip(1);
-    if args.next().as_deref() == Some("--tone") {
-        tone(args.next());
-        return Ok(());
+    match args.next().as_deref() {
+        Some("--tone") => {
+            tone(args.next());
+            return Ok(());
+        }
+        #[cfg(feature = "login-window")]
+        Some(login::ARG) => {
+            login::run_window();
+            return Ok(());
+        }
+        _ => {}
     }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
