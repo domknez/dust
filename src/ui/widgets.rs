@@ -126,3 +126,80 @@ pub fn tile(ui: &Ui, rect: Rect, icon: Icon, color: Color32, radius: u8) {
     ui.painter().rect_filled(rect, CornerRadius::same(radius), color);
     icons::paint(ui.painter(), Rect::from_center_size(rect.center(), rect.size() * 0.34), icon, Color32::from_white_alpha(235));
 }
+
+/// Segmented control filling the available width; returns the clicked index.
+pub fn segmented(ui: &mut Ui, items: &[(Icon, &str)], selected: usize) -> Option<usize> {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::hover());
+    ui.painter().rect_filled(rect, CornerRadius::same(9), c().bg);
+    let seg_w = (rect.width() - 6.0) / items.len() as f32;
+    let mut clicked = None;
+    for (i, (icon, label)) in items.iter().enumerate() {
+        let seg = Rect::from_min_size(egui::pos2(rect.left() + 3.0 + i as f32 * seg_w, rect.top() + 3.0), vec2(seg_w, rect.height() - 6.0));
+        let resp = ui.interact(seg, ui.id().with(("segment", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let on = i == selected;
+        if on {
+            ui.painter().rect_filled(seg, CornerRadius::same(7), c().raised);
+        }
+        let color = if on || resp.hovered() { c().text } else { c().dim };
+        let font = if on { bold(12.5) } else { regular(12.5) };
+        let g = ui.painter().layout_no_wrap(label.to_string(), font, color);
+        let total = 14.0 + 6.0 + g.size().x;
+        let x = seg.center().x - total / 2.0;
+        icons::paint(ui.painter(), Rect::from_center_size(egui::pos2(x + 7.0, seg.center().y), Vec2::splat(14.0)), *icon, color);
+        ui.painter().galley(egui::pos2(x + 20.0, seg.center().y - g.size().y / 2.0), g, color);
+        if resp.clicked() {
+            clicked = Some(i);
+        }
+    }
+    clicked
+}
+
+/// Menu entry: optional icon, title, optional subtitle, check mark when selected.
+pub fn menu_row(ui: &mut Ui, icon: Option<Icon>, title: &str, subtitle: Option<&str>, checked: bool, color: Color32) -> Response {
+    let h = if subtitle.is_some() { 46.0 } else { 36.0 };
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), h), Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, CornerRadius::same(7), c().raised);
+    }
+    let mut x = rect.left() + 10.0;
+    if let Some(i) = icon {
+        icons::paint(ui.painter(), Rect::from_center_size(egui::pos2(x + 8.0, rect.center().y), Vec2::splat(16.0)), i, color);
+        x += 28.0;
+    }
+    let w = rect.right() - x - 34.0;
+    match subtitle {
+        Some(sub) => {
+            text_left(ui.painter(), egui::pos2(x, rect.center().y - 8.0), title, if checked { bold(13.5) } else { regular(13.5) }, color, w);
+            text_left(ui.painter(), egui::pos2(x, rect.center().y + 10.0), sub, regular(11.5), c().faint, w);
+        }
+        None => {
+            text_left(ui.painter(), egui::pos2(x, rect.center().y), title, regular(13.5), color, w);
+        }
+    }
+    if checked {
+        icons::paint(ui.painter(), Rect::from_center_size(egui::pos2(rect.right() - 18.0, rect.center().y), Vec2::splat(14.0)), Icon::Check, c().accent);
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Small caps section caption inside menus.
+pub fn caption(ui: &mut Ui, text: &str) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
+    text_left(ui.painter(), egui::pos2(rect.left() + 4.0, rect.center().y), text, bold(11.0), c().faint, rect.width());
+}
+
+/// Hairline divider with vertical breathing room.
+pub fn divider(ui: &mut Ui) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 13.0), Sense::hover());
+    ui.painter().hline(rect.x_range(), rect.center().y, egui::Stroke::new(1.0, c().line));
+}
+
+/// Frame for our popovers.
+pub fn popover_frame(ui: &Ui) -> egui::Frame {
+    egui::Frame::new()
+        .fill(c().surface)
+        .stroke(egui::Stroke::new(1.0, c().line))
+        .corner_radius(CornerRadius::same(12))
+        .inner_margin(egui::Margin::same(10))
+        .shadow(ui.visuals().popup_shadow)
+}

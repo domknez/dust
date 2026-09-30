@@ -363,29 +363,52 @@ impl App {
         ui.painter().text(avatar, Align2::CENTER_CENTER, initial, bold(14.0), c().bg);
         text_left(ui.painter(), pos2(rect.left() + 46.0, rect.center().y - 7.0), &name, bold(13.0), c().text, rect.width() - 56.0);
         text_left(ui.painter(), pos2(rect.left() + 46.0, rect.center().y + 9.0), self.quality.label(), regular(11.5), c().faint, rect.width() - 56.0);
-        egui::Popup::menu(&resp).show(|ui| {
-            ui.set_min_width(200.0);
-            ui.label(egui::RichText::new("APPEARANCE").color(c().faint).size(11.0));
-            ui.horizontal(|ui| {
-                for m in theme::Mode::ALL {
-                    if ui.selectable_label(self.theme_mode == m, m.label()).clicked() {
-                        self.theme_mode = m;
-                        crate::settings::set("theme", m.key());
-                    }
-                }
+        let menu_frame = widgets::popover_frame(ui);
+        egui::Popup::menu(&resp).width(272.0).gap(8.0).frame(menu_frame).show(|ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            // Account header.
+            let (head, _) = ui.allocate_exact_size(vec2(ui.available_width(), 48.0), Sense::hover());
+            let avatar = pos2(head.left() + 22.0, head.center().y);
+            ui.painter().circle_filled(avatar, 17.0, c().accent);
+            let initial = name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
+            ui.painter().text(avatar, Align2::CENTER_CENTER, initial, bold(15.0), c().bg);
+            text_left(ui.painter(), pos2(head.left() + 48.0, head.center().y - 8.0), &name, bold(14.0), c().text, head.width() - 56.0);
+            text_left(ui.painter(), pos2(head.left() + 48.0, head.center().y + 10.0), "Deezer account", regular(12.0), c().faint, head.width() - 56.0);
+            widgets::divider(ui);
+
+            widgets::caption(ui, "APPEARANCE");
+            let modes = theme::Mode::ALL.map(|m| {
+                let icon = match m {
+                    theme::Mode::System => Icon::Computer,
+                    theme::Mode::Dark => Icon::Moon,
+                    theme::Mode::Light => Icon::Sun,
+                };
+                (icon, m.label())
             });
-            ui.add_space(6.0);
-            ui.label(egui::RichText::new("STREAMING QUALITY").color(c().faint).size(11.0));
+            let current = theme::Mode::ALL.iter().position(|m| *m == self.theme_mode).unwrap_or(0);
+            if let Some(i) = widgets::segmented(ui, &modes, current) {
+                self.theme_mode = theme::Mode::ALL[i];
+                crate::settings::set("theme", self.theme_mode.key());
+            }
+            ui.add_space(8.0);
+
+            widgets::caption(ui, "STREAMING QUALITY");
             for q in Quality::ALL {
-                if ui.selectable_label(self.quality == q, q.label()).clicked() {
+                let sub = match q {
+                    Quality::Mp3_128 => "Saves data",
+                    Quality::Mp3_320 => "High quality",
+                    Quality::Flac => "Lossless · needs a HiFi plan",
+                };
+                if widgets::menu_row(ui, None, q.label(), Some(sub), self.quality == q, c().text).clicked() {
                     self.quality = q;
                     self.player.send(Cmd::Quality(q));
                     crate::settings::set("quality", q.key());
                 }
             }
-            ui.separator();
-            if ui.button("Log out").clicked() {
+            widgets::divider(ui);
+            if widgets::menu_row(ui, Some(Icon::LogOut), "Log out", None, false, c().danger).clicked() {
                 self.logout();
+                ui.close();
             }
         });
     }

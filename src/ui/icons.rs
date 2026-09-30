@@ -20,6 +20,10 @@ pub enum Icon {
     Grid,
     Refresh,
     Note,
+    Sun,
+    Moon,
+    Check,
+    LogOut,
 }
 
 fn p(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -29,6 +33,24 @@ fn p(r: Rect, x: f32, y: f32) -> Pos2 {
 fn arc(center: Pos2, radius: f32, from: f32, to: f32) -> Vec<Pos2> {
     let n = 16;
     (0..=n).map(|i| from + (to - from) * i as f32 / n as f32).map(|a| center + vec2(a.cos(), a.sin()) * radius).collect()
+}
+
+/// Crescent outline: a disc of radius `big` minus a disc offset towards the upper right.
+/// Returns the outer arc followed by the inner (bite) arc, as one closed outline.
+fn crescent(center: Pos2, big: f32) -> Vec<Pos2> {
+    let small = big * 0.82;
+    let theta = -PI / 4.0; // direction of the bite
+    let d = big * 0.62; // distance between the two centres
+    let dir = vec2(theta.cos(), theta.sin());
+    let bite = center + dir * d;
+    // Intersection points, measured from each centre.
+    let x = (d * d + big * big - small * small) / (2.0 * d);
+    let alpha = (x / big).clamp(-1.0, 1.0).acos();
+    let beta = ((x - d) / small).clamp(-1.0, 1.0).acos();
+    let mut pts = arc(center, big, theta + alpha, theta + 2.0 * PI - alpha);
+    pts.extend(arc(bite, small, theta - beta, theta + beta).into_iter().skip(1));
+    pts.pop();
+    pts
 }
 
 pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
@@ -113,10 +135,52 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             let tip = c + vec2((-FRAC_PI_2 + 0.5_f32).cos(), (-FRAC_PI_2 + 0.5_f32).sin()) * w * 0.32;
             poly(vec![tip + vec2(-w * 0.16, -w * 0.08), tip + vec2(w * 0.1, -w * 0.1), tip + vec2(-w * 0.02, w * 0.14)]);
         }
+        Icon::Sun => {
+            let c = p(r, 0.5, 0.5);
+            painter.circle_filled(c, w * 0.17, color);
+            for k in 0..8 {
+                let a = k as f32 * PI / 4.0;
+                let d = vec2(a.cos(), a.sin());
+                line(c + d * w * 0.3, c + d * w * 0.42);
+            }
+        }
+        Icon::Moon => {
+            // Concave, so outlined rather than filled (egui fills convex shapes only).
+            painter.add(Shape::closed_line(crescent(p(r, 0.5, 0.5), w * 0.36), stroke));
+        }
+        Icon::Check => {
+            painter.add(Shape::line(vec![p(r, 0.18, 0.52), p(r, 0.4, 0.74), p(r, 0.84, 0.28)], stroke));
+        }
+        Icon::LogOut => {
+            let s = Stroke::new(stroke.width, color);
+            painter.add(Shape::line(vec![p(r, 0.5, 0.14), p(r, 0.16, 0.14), p(r, 0.16, 0.86), p(r, 0.5, 0.86)], s));
+            line(p(r, 0.4, 0.5), p(r, 0.88, 0.5));
+            line(p(r, 0.72, 0.34), p(r, 0.88, 0.5));
+            line(p(r, 0.72, 0.66), p(r, 0.88, 0.5));
+        }
         Icon::Note => {
             painter.circle_filled(p(r, 0.36, 0.72), w * 0.13, color);
             line(p(r, 0.47, 0.72), p(r, 0.47, 0.2));
             line(p(r, 0.47, 0.2), p(r, 0.74, 0.28));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn crescent_outline_closes() {
+        let c = pos2(0.0, 0.0);
+        let pts = crescent(c, 10.0);
+        let outer_end = pts[16];
+        let inner_start = pts[17];
+        // Consecutive points never jump more than a small step: the arcs meet.
+        for w in pts.windows(2) {
+            assert!((w[1] - w[0]).length() < 4.5, "gap between {:?} and {:?}", w[0], w[1]);
+        }
+        assert!((outer_end - inner_start).length() < 4.5);
+        assert!((pts[0] - *pts.last().unwrap()).length() < 4.5);
     }
 }
