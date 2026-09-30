@@ -1,9 +1,17 @@
-//! AirPlay (RAOP v1) sender: RTSP control, RTP/UDP audio as uncompressed ALAC,
-//! NTP-style timing replies, sync packets and retransmits. No encryption, so it
-//! targets receivers advertising `et=0` (AirPort Express, Apple TV, most AirPlay
-//! speakers, shairport-sync, macOS "AirPlay Receiver").
+//! AirPlay sender: RTSP control, RTP/UDP audio as uncompressed ALAC, NTP-style
+//! timing replies, sync packets and retransmits.
+//!
+//! Two handshakes share that streaming core:
+//! - AirPlay 2 (devices with CoreUtils pairing, e.g. Sonos Era, HomePod): transient
+//!   HomeKit pairing, encrypted RTSP, binary-plist SETUP, ChaCha20-Poly1305 audio.
+//! - AirPlay 1 / RAOP with unencrypted audio (`et=0`): AirPort Express, older
+//!   speakers, shairport-sync classic.
 
+use super::ap2::bplist::{self, Value, dict};
+use super::ap2::pairing::{self, DecryptReader, Encryptor, SrpClient, tlv};
 use super::{RATE, Sink};
+use chacha20poly1305::ChaCha20Poly1305;
+use chacha20poly1305::aead::KeyInit;
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -33,7 +41,20 @@ pub struct Device {
     pub password: bool,
     /// Receiver expects the MFi-SAP `auth-setup` handshake (et=4).
     pub auth_setup: bool,
+    /// Speak AirPlay 2 (transient pairing + encryption) instead of RAOP.
+    pub ap2: bool,
 }
+
+/// `ft`/`features` TXT value: "0xLOW" or "0xLOW,0xHIGH".
+fn parse_features(v: &str) -> u64 {
+    let mut parts = v.split(',').map(|p| u64::from_str_radix(p.trim().trim_start_matches("0x").trim_start_matches("0X"), 16).unwrap_or(0));
+    let lo = parts.next().unwrap_or(0);
+    let hi = parts.next().unwrap_or(0);
+    (hi << 32) | (lo & 0xffff_ffff)
+}
+
+const FEATURE_AUDIO: u64 = 1 << 9;
+const FEATURE_COREUTILS_PAIRING: u64 = 1 << 48;
 
 pub struct Discovery {
     devices: Arc<Mutex<Vec<Device>>>,
@@ -66,10 +87,13 @@ impl Discovery {
                             let label = full.split("._raop").next().unwrap_or(&full);
                             let name = label.split_once('@').map_or(label, |(_, n)| n).to_string();
                             let et = info.get_property_val_str("et").unwrap_or("0");
+                            let ft = parse_features(info.get_property_val_str("ft").or(info.get_property_val_str("sf")).unwrap_or("0"));
+                            let ap2 = ft & FEATURE_AUDIO != 0 && ft & FEATURE_COREUTILS_PAIRING != 0;
                             let device = Device {
                                 name,
                                 addrs,
-                                supported: et.split(',').any(|e| e.trim() == "0"),
+                                ap2,
+                                supported: ap2 || et.split(',').any(|e| e.trim() == "0"),
                                 auth_setup: et.split(',').any(|e| e.trim() == "4"),
                                 password: info.get_property_val_str("pw").is_some_and(|p| p == "true"),
                                 id: full,
@@ -101,7 +125,10 @@ impl Discovery {
 
 struct Rtsp {
     writer: TcpStream,
-    reader: BufReader<TcpStream>,
+    /// Set once AirPlay 2 pairing completes; everything after is encrypted.
+    encryptor: Option<Encryptor>,
+    reader: BufReader<DecryptReader<TcpStream>>,
+    user_agent: &'static str,
     cseq: u32,
     url: String,
     session: Option<String>,
@@ -112,6 +139,7 @@ struct Rtsp {
 struct Response {
     status: u16,
     headers: Vec<(String, String)>,
+    body: Vec<u8>,
 }
 
 impl Response {
@@ -124,9 +152,10 @@ impl Rtsp {
     fn request(&mut self, method: &str, uri: Option<&str>, headers: &[(&str, String)], body: Option<(&str, &[u8])>) -> Result<Response, String> {
         self.cseq += 1;
         let mut req = format!(
-            "{method} {} RTSP/1.0\r\nCSeq: {}\r\nUser-Agent: iTunes/11.0.4 (Windows; N)\r\nClient-Instance: {}\r\nDACP-ID: {}\r\nActive-Remote: {}\r\n",
+            "{method} {} RTSP/1.0\r\nCSeq: {}\r\nUser-Agent: {}\r\nClient-Instance: {}\r\nDACP-ID: {}\r\nActive-Remote: {}\r\n",
             uri.unwrap_or(&self.url),
             self.cseq,
+            self.user_agent,
             self.instance,
             self.instance,
             self.active_remote
@@ -145,6 +174,9 @@ impl Rtsp {
         if let Some((_, b)) = body {
             bytes.extend_from_slice(b);
         }
+        if let Some(e) = self.encryptor.as_mut() {
+            bytes = e.seal(&bytes);
+        }
         self.writer.write_all(&bytes).map_err(|e| format!("{method}: {e}"))?;
 
         let mut line = String::new();
@@ -162,14 +194,15 @@ impl Rtsp {
                 headers.push((k.trim().to_string(), v.trim().to_string()));
             }
         }
-        let resp = Response { status, headers };
+        let mut resp = Response { status, headers, body: Vec::new() };
         if let Some(len) = resp.header("Content-Length").and_then(|l| l.parse::<usize>().ok()) {
-            let mut body = vec![0; len];
-            self.reader.read_exact(&mut body).map_err(|e| format!("{method}: {e}"))?;
+            resp.body = vec![0; len];
+            self.reader.read_exact(&mut resp.body).map_err(|e| format!("{method}: {e}"))?;
         }
         match resp.status {
             200 => Ok(resp),
             401 => Err("AirPlay device requires a password (not supported)".into()),
+            470 => Err("AirPlay device requires PIN pairing (not supported)".into()),
             s => Err(format!("{method} failed: RTSP {s}")),
         }
     }
@@ -243,6 +276,8 @@ struct Shared {
 
 pub struct AirPlaySink {
     rtsp: Rtsp,
+    /// AirPlay 2 reverse event channel; held open for the session.
+    _events: Option<TcpStream>,
     shared: Arc<Shared>,
     producer: rtrb::Producer<i16>,
     threads: Vec<JoinHandle<()>>,
@@ -265,8 +300,10 @@ impl AirPlaySink {
         let remote_ip = stream.peer_addr().map_err(|e| e.to_string())?.ip();
         let sid = fastrand::u32(..);
         let mut rtsp = Rtsp {
-            reader: BufReader::new(stream.try_clone().map_err(|e| e.to_string())?),
+            reader: BufReader::new(DecryptReader::new(stream.try_clone().map_err(|e| e.to_string())?)),
             writer: stream,
+            encryptor: None,
+            user_agent: if device.ap2 { "AirPlay/381.13" } else { "iTunes/11.0.4 (Windows; N)" },
             cseq: 0,
             url: format!("rtsp://{local_ip}/{sid}"),
             session: None,
@@ -304,36 +341,20 @@ impl AirPlaySink {
         let timing_port = timing.local_addr().map_err(|e| e.to_string())?.port();
         let mut threads = vec![spawn("airplay-timing", move || timing_loop(timing, sh))];
 
-        let negotiated = (|| -> Result<(u16, u16), String> {
-            rtsp.request("OPTIONS", Some("*"), &[], None)?;
-            if device.auth_setup {
-                // MFi-SAP handshake: type byte 0x01 + a Curve25519 public key. Receivers
-                // only need it to happen; the reply (their key + cert) is not used for RAOP.
-                let mut body = vec![0x01];
-                body.extend((0..32).map(|_| fastrand::u8(..)));
-                rtsp.request("POST", Some("/auth-setup"), &[], Some(("application/octet-stream", &body)))?;
-            }
-            let ip4 = |ip: IpAddr| if ip.is_ipv4() { "IP4" } else { "IP6" };
-            let sdp = format!(
-                "v=0\r\no=iTunes {sid} 0 IN {} {local_ip}\r\ns=iTunes\r\nc=IN {} {remote_ip}\r\nt=0 0\r\nm=audio 0 RTP/AVP 96\r\na=rtpmap:96 AppleLossless\r\na=fmtp:96 {FRAMES_PER_PACKET} 0 16 40 10 14 2 255 0 0 {RATE}\r\n",
-                ip4(local_ip),
-                ip4(remote_ip)
-            );
-            rtsp.request("ANNOUNCE", None, &[], Some(("application/sdp", sdp.as_bytes())))?;
-            let transport = format!(
-                "RTP/AVP/UDP;unicast;interleaved=0-1;mode=record;control_port={};timing_port={timing_port}",
-                control.local_addr().map_err(|e| e.to_string())?.port(),
-            );
-            let resp = rtsp.request("SETUP", None, &[("Transport", transport)], None)?;
-            rtsp.session = resp.header("Session").map(|s| s.split(';').next().unwrap_or(s).to_string());
-            let t = resp.header("Transport").ok_or("SETUP: no Transport")?;
-            let server_port = transport_param(t, "server_port").ok_or("SETUP: no server_port")?;
-            let control_port = transport_param(t, "control_port").unwrap_or(server_port + 1);
-            rtsp.request("RECORD", None, &[("Range", "npt=0-".into()), ("RTP-Info", format!("seq={seq};rtptime={rtptime}"))], None)?;
-            Ok((server_port, control_port))
-        })();
-        let (server_port, control_port) = match negotiated {
-            Ok(p) => p,
+        let control_port_local = control.local_addr().map_err(|e| e.to_string())?.port();
+        let negotiated = if device.ap2 {
+            negotiate_ap2(&mut rtsp, remote_ip, control_port_local, timing_port)
+        } else {
+            let ports = Ports { control: control_port_local, timing: timing_port };
+            negotiate_ap1(&mut rtsp, device, sid, local_ip, remote_ip, ports, seq, rtptime).map(|(s, c)| Negotiated {
+                server_port: s,
+                control_port: c,
+                audio_key: None,
+                events: None,
+            })
+        };
+        let Negotiated { server_port, control_port, audio_key, events } = match negotiated {
+            Ok(n) => n,
             Err(e) => {
                 shared.running.store(false, Ordering::Release);
                 return Err(format!("{}: {e}", device.name));
@@ -348,9 +369,10 @@ impl AirPlaySink {
         let ctl = control.try_clone().map_err(|e| e.to_string())?;
         threads.push(spawn("airplay-control", move || control_loop(ctl, control_dst, sh)));
         let sh = shared.clone();
-        threads.push(spawn("airplay-audio", move || audio_loop(audio, control, control_dst, consumer, sh)));
+        let cipher = audio_key.map(|k| ChaCha20Poly1305::new(&k.into()));
+        threads.push(spawn("airplay-audio", move || audio_loop(audio, control, control_dst, consumer, cipher, sh)));
 
-        let mut sink = Self { rtsp, shared, producer, threads };
+        let mut sink = Self { rtsp, _events: events, shared, producer, threads };
         sink.set_volume(volume);
         Ok(sink)
     }
@@ -366,6 +388,144 @@ impl AirPlaySink {
         let rtptime = self.shared.rtptime.load(Ordering::Acquire);
         let _ = self.rtsp.request("FLUSH", None, &[("RTP-Info", format!("seq={seq};rtptime={rtptime}"))], None);
     }
+}
+
+struct Ports {
+    control: u16,
+    timing: u16,
+}
+
+struct Negotiated {
+    server_port: u16,
+    control_port: u16,
+    /// AirPlay 2 per-packet audio key (`shk`).
+    audio_key: Option<[u8; 32]>,
+    events: Option<TcpStream>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn negotiate_ap1(
+    rtsp: &mut Rtsp,
+    device: &Device,
+    sid: u32,
+    local_ip: IpAddr,
+    remote_ip: IpAddr,
+    ports: Ports,
+    seq: u16,
+    rtptime: u32,
+) -> Result<(u16, u16), String> {
+    rtsp.request("OPTIONS", Some("*"), &[], None)?;
+    if device.auth_setup {
+        // MFi-SAP handshake: type byte 0x01 + a Curve25519 public key. Receivers
+        // only need it to happen; the reply (their key + cert) is not used for RAOP.
+        let mut body = vec![0x01];
+        body.extend((0..32).map(|_| fastrand::u8(..)));
+        rtsp.request("POST", Some("/auth-setup"), &[], Some(("application/octet-stream", &body)))?;
+    }
+    let ip4 = |ip: IpAddr| if ip.is_ipv4() { "IP4" } else { "IP6" };
+    let sdp = format!(
+        "v=0\r\no=iTunes {sid} 0 IN {} {local_ip}\r\ns=iTunes\r\nc=IN {} {remote_ip}\r\nt=0 0\r\nm=audio 0 RTP/AVP 96\r\na=rtpmap:96 AppleLossless\r\na=fmtp:96 {FRAMES_PER_PACKET} 0 16 40 10 14 2 255 0 0 {RATE}\r\n",
+        ip4(local_ip),
+        ip4(remote_ip)
+    );
+    rtsp.request("ANNOUNCE", None, &[], Some(("application/sdp", sdp.as_bytes())))?;
+    let transport = format!(
+        "RTP/AVP/UDP;unicast;interleaved=0-1;mode=record;control_port={};timing_port={}",
+        ports.control, ports.timing
+    );
+    let resp = rtsp.request("SETUP", None, &[("Transport", transport)], None)?;
+    rtsp.session = resp.header("Session").map(|s| s.split(';').next().unwrap_or(s).to_string());
+    let t = resp.header("Transport").ok_or("SETUP: no Transport")?;
+    let server_port = transport_param(t, "server_port").ok_or("SETUP: no server_port")?;
+    let control_port = transport_param(t, "control_port").unwrap_or(server_port + 1);
+    rtsp.request("RECORD", None, &[("Range", "npt=0-".into()), ("RTP-Info", format!("seq={seq};rtptime={rtptime}"))], None)?;
+    Ok((server_port, control_port))
+}
+
+const PLIST: &str = "application/x-apple-binary-plist";
+
+/// Transient HomeKit pair-setup (M1..M4). Returns the 64-byte SRP session key.
+fn pair_transient(rtsp: &mut Rtsp) -> Result<[u8; 64], String> {
+    let hkp = [("X-Apple-HKP", "4".to_string())];
+    let octets = "application/octet-stream";
+    let m1 = tlv::encode(&[(tlv::STATE, &[1]), (tlv::METHOD, &[0]), (tlv::FLAGS, &[0x10])]);
+    let r = rtsp.request("POST", Some("/pair-setup"), &hkp, Some((octets, &m1)))?;
+    let m2 = tlv::decode(&r.body);
+    if let Some(e) = tlv::get(&m2, tlv::ERROR) {
+        return Err(format!("pair-setup refused (error {e:?})"));
+    }
+    let salt = tlv::get(&m2, tlv::SALT).ok_or("pair-setup: no salt")?;
+    let b_pub = tlv::get(&m2, tlv::PUBLIC_KEY).ok_or("pair-setup: no public key")?;
+    let proof = SrpClient::new().process(salt, b_pub, pairing::TRANSIENT_PIN)?;
+
+    let m3 = tlv::encode(&[(tlv::STATE, &[3]), (tlv::PUBLIC_KEY, &proof.a_pub), (tlv::PROOF, &proof.m1)]);
+    let r = rtsp.request("POST", Some("/pair-setup"), &hkp, Some((octets, &m3)))?;
+    let m4 = tlv::decode(&r.body);
+    if let Some(e) = tlv::get(&m4, tlv::ERROR) {
+        return Err(format!("pair-setup rejected our proof (error {e:?})"));
+    }
+    if tlv::get(&m4, tlv::PROOF) != Some(&proof.expected_m2[..]) {
+        return Err("pair-setup: device proof mismatch".into());
+    }
+    Ok(proof.session_key)
+}
+
+fn random_bytes<const N: usize>() -> [u8; N] {
+    let mut b = [0u8; N];
+    getrandom::getrandom(&mut b).expect("OS RNG");
+    b
+}
+
+fn negotiate_ap2(rtsp: &mut Rtsp, remote_ip: IpAddr, control_port: u16, timing_port: u16) -> Result<Negotiated, String> {
+    let key = pair_transient(rtsp)?;
+    rtsp.encryptor = Some(Encryptor::new(&pairing::hkdf32(&key, "Control-Salt", "Control-Write-Encryption-Key")));
+    rtsp.reader.get_mut().enable(&pairing::hkdf32(&key, "Control-Salt", "Control-Read-Encryption-Key"));
+
+    let id = random_bytes::<6>();
+    let device_id = id.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(":");
+    let u = random_bytes::<16>();
+    let hex: String = u.iter().map(|b| format!("{b:02X}")).collect();
+    let uuid = format!("{}-{}-{}-{}-{}", &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..]);
+    let setup = dict([
+        ("deviceID", Value::String(device_id)),
+        ("sessionUUID", Value::String(uuid)),
+        ("timingPort", Value::Int(timing_port as u64)),
+        ("timingProtocol", Value::String("NTP".into())),
+    ]);
+    let r = rtsp.request("SETUP", None, &[], Some((PLIST, &bplist::encode(&setup))))?;
+    rtsp.session = r.header("Session").map(|s| s.split(';').next().unwrap_or(s).to_string());
+    let reply = bplist::decode(&r.body)?;
+    let events = reply
+        .get("eventPort")
+        .and_then(Value::as_u64)
+        .filter(|&p| p > 0)
+        .and_then(|p| TcpStream::connect_timeout(&SocketAddr::new(remote_ip, p as u16), Duration::from_secs(2)).ok());
+
+    rtsp.request("RECORD", None, &[], None)?;
+
+    let shk: [u8; 32] = key[..32].try_into().unwrap();
+    let stream = dict([
+        ("audioFormat", Value::Int(0x40000)), // ALAC 44100/16/2
+        ("audioMode", Value::String("default".into())),
+        ("controlPort", Value::Int(control_port as u64)),
+        ("ct", Value::Int(2)), // ALAC
+        ("isMedia", Value::Bool(true)),
+        ("latencyMax", Value::Int(LATENCY as u64)),
+        ("latencyMin", Value::Int(11_025)),
+        ("shk", Value::Data(shk.to_vec())),
+        ("spf", Value::Int(FRAMES_PER_PACKET as u64)),
+        ("sr", Value::Int(RATE as u64)),
+        ("type", Value::Int(96)), // realtime
+        ("supportsDynamicStreamID", Value::Bool(false)),
+        ("streamConnectionID", Value::Int(u32::from_be_bytes(random_bytes::<4>()) as u64)),
+    ]);
+    let body = bplist::encode(&dict([("streams", Value::Array(vec![stream]))]));
+    let r = rtsp.request("SETUP", None, &[], Some((PLIST, &body)))?;
+    let reply = bplist::decode(&r.body)?;
+    let s0 = reply.get("streams").and_then(|s| s.index(0)).ok_or("SETUP stream: no streams in reply")?;
+    let data = s0.get("dataPort").and_then(Value::as_u64).ok_or("SETUP stream: no dataPort")?;
+    let ctl = s0.get("controlPort").and_then(Value::as_u64).ok_or("SETUP stream: no controlPort")?;
+    Ok(Negotiated { server_port: data as u16, control_port: ctl as u16, audio_key: Some(shk), events })
 }
 
 fn spawn(name: &str, f: impl FnOnce() + Send + 'static) -> JoinHandle<()> {
@@ -424,7 +584,14 @@ fn send_sync(sock: &UdpSocket, dst: SocketAddr, now_rtp: u32, first: bool) {
     let _ = sock.send_to(&p, dst);
 }
 
-fn audio_loop(audio: UdpSocket, control: UdpSocket, control_dst: SocketAddr, mut consumer: rtrb::Consumer<i16>, sh: Arc<Shared>) {
+fn audio_loop(
+    audio: UdpSocket,
+    control: UdpSocket,
+    control_dst: SocketAddr,
+    mut consumer: rtrb::Consumer<i16>,
+    cipher: Option<ChaCha20Poly1305>,
+    sh: Arc<Shared>,
+) {
     let ssrc = fastrand::u32(..);
     let mut frame = vec![0i16; FRAMES_PER_PACKET * 2];
     let mut start = Instant::now();
@@ -476,12 +643,17 @@ fn audio_loop(audio: UdpSocket, control: UdpSocket, control_dst: SocketAddr, mut
 
         let seq = sh.seq.load(Ordering::Acquire);
         let ts = sh.rtptime.load(Ordering::Acquire);
-        let mut pkt = Vec::with_capacity(12 + FRAMES_PER_PACKET * 4 + 4);
-        pkt.extend_from_slice(&[0x80, if first { 0xe0 } else { 0x60 }]);
-        pkt.extend_from_slice(&seq.to_be_bytes());
-        pkt.extend_from_slice(&ts.to_be_bytes());
-        pkt.extend_from_slice(&ssrc.to_be_bytes());
-        pkt.extend_from_slice(&alac_frame(&frame));
+        let mut header = [0u8; 12];
+        header[0] = 0x80;
+        header[1] = if first { 0xe0 } else { 0x60 };
+        header[2..4].copy_from_slice(&seq.to_be_bytes());
+        header[4..8].copy_from_slice(&ts.to_be_bytes());
+        header[8..12].copy_from_slice(&ssrc.to_be_bytes());
+        let payload = alac_frame(&frame);
+        let pkt = match &cipher {
+            Some(c) => pairing::seal_audio(c, &header, &payload, seq),
+            None => [&header[..], &payload].concat(),
+        };
         if let Err(e) = audio.send(&pkt) {
             eprintln!("dust: airplay send: {e}");
         }
