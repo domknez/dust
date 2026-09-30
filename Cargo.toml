@@ -20,6 +20,11 @@ ureq = { version = "2", features = ["json"] }
 tao = { version = "0.37", optional = true }
 wry = { version = "0.57", optional = true }
 if-addrs = "0.13"
+sha2 = "0.10"
+hkdf = "0.12"
+chacha20poly1305 = "0.10"
+num-bigint = "0.4"
+getrandom = "0.2"
 
 [features]
 default = ["login-window"]
