@@ -198,7 +198,67 @@ fn parse_track(v: &Value) -> Option<Track> {
 
 fn parse_item(v: &Value) -> Item {
     let picture = v["pictures"].get(0).map(|p| (s(&p["type"]), s(&p["md5"]))).filter(|(k, m)| !k.is_empty() && !m.is_empty());
-    Item { kind: s(&v["type"]), id: s(&v["id"]), title: s(&v["title"]), subtitle: s(&v["subtitle"]), picture, data: v["data"].clone() }
+    let (kind, id, data) = (s(&v["type"]), s(&v["id"]), &v["data"]);
+    // Deezer localises item texts by the listener's location, ignoring the requested
+    // language; rebuild them in English from the raw data where we can.
+    let (title, subtitle) = english_texts(&kind, &id, data, s(&v["title"]), s(&v["subtitle"]));
+    Item { kind, id, title, subtitle, picture, data: data.clone() }
+}
+
+/// 1234567 -> "1,234,567"
+fn thousands(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+fn english_texts(kind: &str, id: &str, data: &Value, title: String, subtitle: String) -> (String, String) {
+    let plural = |n: u64, one: &str, many: &str| format!("{} {}", thousands(n), if n == 1 { one } else { many });
+    match kind {
+        "playlist" => {
+            let songs = n(&data["NB_SONG"]);
+            let fans = n(&data["NB_FAN"]);
+            let mut sub = plural(songs, "track", "tracks");
+            if fans > 0 {
+                sub = format!("{sub} · {}", plural(fans, "fan", "fans"));
+            }
+            (title, sub)
+        }
+        "album" => (title, s(&data["ART_NAME"])),
+        "artist" => (title, plural(n(&data["NB_FAN"]), "fan", "fans")),
+        "flow" => {
+            let name = match id {
+                "default" => "Flow".to_string(),
+                other => other.split(['-', '_']).map(capitalize).collect::<Vec<_>>().join(" "),
+            };
+            (name, String::new())
+        }
+        "smarttracklist" => {
+            let title = match id {
+                "discovery" => "Discovery".to_string(),
+                "new-releases" => "New releases".to_string(),
+                _ => title,
+            };
+            // "Featuring A, B" arrives as e.g. "Sadrži A, B": swap the leading word.
+            let sub = match subtitle.split_once(' ') {
+                Some((first, rest)) if first != "Featuring" && !rest.is_empty() => format!("Featuring {rest}"),
+                _ => subtitle,
+            };
+            (title, sub)
+        }
+        _ => (title, subtitle),
+    }
+}
+
+fn capitalize(w: &str) -> String {
+    let mut c = w.chars();
+    c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
 }
 
 fn parse_tracks(v: &Value) -> Vec<Track> {
@@ -577,6 +637,19 @@ mod tests {
         let r = gw_call(&agent, "", &mut session, "deezer.pageSearch", json!({"query": "daft punk", "start": 0, "nb": 5}), &[]);
         let r = r.unwrap();
         assert!(!parse_tracks(&r["TRACK"]["data"]).is_empty(), "{r}");
+    }
+
+    #[test]
+    fn english_item_texts() {
+        let pl = json!({"NB_SONG": "75", "NB_FAN": 185597});
+        assert_eq!(english_texts("playlist", "1", &pl, "Radar".into(), "75 pjesama".into()).1, "75 tracks · 185,597 fans");
+        assert_eq!(english_texts("album", "1", &json!({"ART_NAME": "TOOL"}), "Undertow".into(), "izvođača TOOL".into()).1, "TOOL");
+        assert_eq!(english_texts("artist", "1", &json!({"NB_FAN": 1}), "X".into(), String::new()).1, "1 fan");
+        assert_eq!(english_texts("flow", "motivation", &json!({}), "Vježbanje".into(), String::new()).0, "Motivation");
+        assert_eq!(english_texts("flow", "hip-hop", &json!({}), "x".into(), String::new()).0, "Hip Hop");
+        let (t, sub) = english_texts("smarttracklist", "discovery", &json!({}), "Otkriće".into(), "Sadrži Foxy Shazam, The Flynts".into());
+        assert_eq!((t.as_str(), sub.as_str()), ("Discovery", "Featuring Foxy Shazam, The Flynts"));
+        assert_eq!(thousands(4702289), "4,702,289");
     }
 
     #[test]
