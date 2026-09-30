@@ -1,16 +1,29 @@
 //! egui front-end. Reactive: nothing is redrawn unless there is input, a background
 //! task finishes, or a track is playing (twice a second for the progress bar).
 
-use crate::deezer::{Deezer, Playlist, Quality, Track};
+mod covers;
+mod icons;
+mod theme;
+mod widgets;
+
+use crate::deezer::{Deezer, Playlist, Quality, Track, image_url};
 use crate::output::airplay::Discovery;
-use crate::player::{Cmd, Output, PlayerHandle, State};
-use eframe::egui::{self, Align2, Color32, FontId, Key, RichText, Sense, vec2};
+use crate::output::dacp::{self, Remote};
+use crate::player::{Cmd, Output, PlayerHandle, State, Status};
+use covers::Covers;
+use eframe::egui::{self, Align2, Color32, CornerRadius, Key, Margin, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
+use icons::Icon;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
+use theme::*;
+use widgets::text_left;
 
-const ACCENT: Color32 = Color32::from_rgb(0xa2, 0x38, 0xff);
 const KEYRING_SERVICE: &str = "dust";
 const KEYRING_USER: &str = "arl";
+/// Room for the macOS traffic lights over the full-size content view.
+const TOP_INSET: f32 = if cfg!(target_os = "macos") { 34.0 } else { 14.0 };
+const ROW_H: f32 = 56.0;
+const THUMB: u32 = 80;
 
 type Task<T> = Option<Receiver<Result<T, String>>>;
 
@@ -44,12 +57,27 @@ fn mmss(secs: f64) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
-#[derive(Clone, PartialEq)]
+fn total_duration(tracks: &[Track]) -> String {
+    let secs: u64 = tracks.iter().map(|t| t.duration as u64).sum();
+    let (h, m) = (secs / 3600, (secs % 3600) / 60);
+    if h > 0 { format!("{h} hr {m} min") } else { format!("{m} min") }
+}
+
+fn cover_url(t: &Track, size: u32) -> Option<String> {
+    (!t.cover.is_empty()).then(|| image_url("cover", &t.cover, size))
+}
+
+fn playlist_url(p: &Playlist, size: u32) -> Option<String> {
+    p.picture.as_ref().map(|(kind, md5)| image_url(kind, md5, size))
+}
+
+#[derive(Clone, Copy, PartialEq)]
 enum View {
+    Home,
     Search,
-    Flow,
     Loved,
-    Playlist(u64, String),
+    Playlists,
+    Playlist(u64),
 }
 
 pub struct App {
@@ -63,49 +91,70 @@ pub struct App {
     login_error: Option<String>,
     view: View,
     search: String,
+    searched: String,
     tracks: Vec<Track>,
     tracks_task: Task<Vec<Track>>,
     list_error: Option<String>,
     playlists: Vec<Playlist>,
     playlists_task: Task<Vec<Playlist>>,
-    seek_drag: Option<f64>,
-    volume: f32,
+    seek_drag: Option<f32>,
+    volume_drag: Option<f32>,
+    unmuted_volume: f32,
     quality: Quality,
     discovery: Option<Discovery>,
+    covers: Covers,
+    _dacp: Option<dacp::Server>,
 }
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let ctx = &cc.egui_ctx;
-        let mut visuals = egui::Visuals::dark();
-        visuals.selection.bg_fill = ACCENT;
-        visuals.hyperlink_color = ACCENT;
-        ctx.set_visuals(visuals);
+        theme::install(ctx);
 
         let volume = 0.8;
+        let player = PlayerHandle::spawn(ctx.clone(), volume);
         let repaint = ctx.clone();
         let discovery = Discovery::start(move || repaint.request_repaint())
             .inspect_err(|e| eprintln!("dust: AirPlay discovery unavailable: {e}"))
             .ok();
+        // Speaker buttons (volume, play/pause, skip) come back to us over DACP.
+        let remote = player.clone();
+        let dacp_server = dacp::start(move |r| {
+            remote.send(match r {
+                Remote::Volume(v) => Cmd::Volume(v),
+                Remote::VolumeStep(d) => Cmd::VolumeStep(d),
+                Remote::PlayPause => Cmd::Toggle,
+                Remote::Play => Cmd::Resume,
+                Remote::Pause => Cmd::Pause,
+                Remote::Next => Cmd::Next,
+                Remote::Prev => Cmd::Prev,
+            })
+        })
+        .inspect_err(|e| eprintln!("dust: speaker remote control unavailable: {e}"))
+        .ok();
         let mut app = Self {
-            player: PlayerHandle::spawn(ctx.clone(), volume),
+            player,
             client: None,
             arl: String::new(),
             login: None,
             remember: false,
             show_manual: false,
             login_error: None,
-            view: View::Search,
+            view: View::Home,
             search: String::new(),
+            searched: String::new(),
             tracks: Vec::new(),
             tracks_task: None,
             list_error: None,
             playlists: Vec::new(),
             playlists_task: None,
             seek_drag: None,
-            volume,
+            volume_drag: None,
+            unmuted_volume: volume,
             quality: Quality::Mp3_320,
             discovery,
+            covers: Covers::new(ctx),
+            _dacp: dacp_server,
         };
         if let Some(arl) = keyring().and_then(|k| k.get_password().ok()) {
             app.login = spawn(ctx, move || Deezer::login(&arl));
@@ -128,18 +177,20 @@ impl App {
 
     fn open_view(&mut self, ctx: &egui::Context, view: View) {
         let Some(client) = self.client.clone() else { return };
-        self.view = view.clone();
+        self.view = view;
         self.list_error = None;
         self.tracks.clear();
         self.tracks_task = match view {
+            View::Playlists => None,
             View::Search if self.search.trim().is_empty() => None,
             View::Search => {
-                let q = self.search.clone();
+                let q = self.search.trim().to_string();
+                self.searched = q.clone();
                 spawn(ctx, move || client.search(&q))
             }
-            View::Flow => spawn(ctx, move || client.flow()),
+            View::Home => spawn(ctx, move || client.flow()),
             View::Loved => spawn(ctx, move || client.loved()),
-            View::Playlist(id, _) => spawn(ctx, move || client.playlist(id)),
+            View::Playlist(id) => spawn(ctx, move || client.playlist(id)),
         };
     }
 
@@ -157,7 +208,7 @@ impl App {
                 let c = client.clone();
                 self.playlists_task = spawn(ctx, move || c.playlists());
                 self.client = Some(client);
-                self.open_view(ctx, View::Flow);
+                self.open_view(ctx, View::Home);
             }
             Some(Err(e)) => {
                 self.remember = false;
@@ -175,27 +226,41 @@ impl App {
         }
     }
 
-    fn login_screen(&mut self, ui: &mut egui::Ui) {
-        egui::CentralPanel::default().show(ui, |ui| {
+    fn logout(&mut self) {
+        if let Some(k) = keyring() {
+            let _ = k.delete_credential();
+        }
+        self.client = None;
+        self.tracks.clear();
+        self.playlists.clear();
+    }
+
+    // ------------------------------------------------------------ login
+
+    fn login_screen(&mut self, ui: &mut Ui) {
+        egui::CentralPanel::default().frame(egui::Frame::new().fill(SIDEBAR)).show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(ui.available_height() * 0.25);
-                ui.label(RichText::new("dust").size(42.0).strong().color(ACCENT));
-                ui.label("lightweight Deezer player");
-                ui.add_space(24.0);
+                ui.add_space((ui.available_height() * 0.3).max(40.0));
+                let (r, _) = ui.allocate_exact_size(vec2(200.0, 64.0), Sense::hover());
+                let g = ui.painter().layout_no_wrap("dust".into(), bold(56.0), TEXT);
+                let x = r.center().x - g.size().x / 2.0;
+                ui.painter().galley(pos2(x, r.center().y - g.size().y / 2.0), g.clone(), TEXT);
+                ui.painter().circle_filled(pos2(x + g.size().x + 8.0, r.center().y + 16.0), 6.0, ACCENT);
+                ui.label(egui::RichText::new("Your music, nothing else.").color(DIM).size(15.0));
+                ui.add_space(36.0);
                 if self.login.is_some() {
                     ui.spinner();
                     return;
                 }
                 #[cfg(feature = "login-window")]
                 {
-                    let button = egui::Button::new(RichText::new("Log in with Deezer").size(16.0).color(Color32::WHITE)).fill(ACCENT);
-                    if ui.add_sized([220.0, 36.0], button).clicked() {
+                    if widgets::pill(ui, "Log in with Deezer", None, true).clicked() {
                         self.start_browser_login(ui.ctx());
                     }
-                    ui.add_space(4.0);
-                    ui.small("Deezer Premium required");
-                    ui.add_space(12.0);
-                    if ui.link("Paste ARL cookie instead").clicked() {
+                    ui.add_space(10.0);
+                    ui.label(egui::RichText::new("Deezer Premium required").color(FAINT).size(12.0));
+                    ui.add_space(18.0);
+                    if ui.link(egui::RichText::new("Paste ARL cookie instead").size(13.0)).clicked() {
                         self.show_manual = !self.show_manual;
                     }
                 }
@@ -204,226 +269,502 @@ impl App {
                     self.show_manual = true;
                 }
                 if self.show_manual {
-                    ui.add_space(8.0);
-                    let edit = ui.add(egui::TextEdit::singleline(&mut self.arl).password(true).hint_text("arl").desired_width(360.0));
-                    let go = ui.button("Log in").clicked() || (edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
-                    if go && !self.arl.trim().is_empty() {
+                    ui.add_space(10.0);
+                    let edit = ui.add(
+                        egui::TextEdit::singleline(&mut self.arl).password(true).hint_text("arl").desired_width(340.0).margin(Margin::symmetric(12, 8)),
+                    );
+                    if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !self.arl.trim().is_empty() {
                         let arl = self.arl.trim().to_string();
                         self.start_login(ui.ctx(), arl);
                     }
-                    ui.small("deezer.com → DevTools → Application → Cookies → arl");
+                    ui.label(egui::RichText::new("deezer.com → DevTools → Application → Cookies → arl").color(FAINT).size(12.0));
                 }
                 if let Some(e) = &self.login_error {
-                    ui.add_space(8.0);
-                    ui.colored_label(Color32::LIGHT_RED, e);
+                    ui.add_space(12.0);
+                    ui.label(egui::RichText::new(e).color(DANGER));
                 }
             });
         });
     }
 
-    fn nav(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(8.0);
-        ui.label(RichText::new("dust").size(24.0).strong().color(ACCENT));
-        if let Some(c) = &self.client {
-            ui.small(c.name());
-        }
-        ui.add_space(8.0);
+    // ------------------------------------------------------------ sidebar
+
+    fn sidebar(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
-        for (label, view) in [("🔍 Search", View::Search), ("🌊 Flow", View::Flow), ("♥ Loved tracks", View::Loved)] {
-            if ui.selectable_label(self.view == view, label).clicked() {
-                self.open_view(&ctx, view);
-            }
+        ui.add_space(TOP_INSET);
+        ui.horizontal(|ui| {
+            ui.add_space(8.0);
+            let r = text_left(ui.painter(), ui.cursor().min + vec2(0.0, 16.0), "dust", bold(26.0), TEXT, 200.0);
+            ui.painter().circle_filled(pos2(r.right() + 6.0, r.bottom() - 7.0), 3.5, ACCENT);
+            ui.allocate_space(vec2(1.0, 32.0));
+        });
+        ui.add_space(18.0);
+
+        let mut go = None;
+        if widgets::nav_item(ui, Icon::Home, "Home", self.view == View::Home).clicked() {
+            go = Some(View::Home);
         }
-        ui.separator();
-        ui.label(RichText::new("Playlists").small().weak());
-        let bottom = 70.0;
-        egui::ScrollArea::vertical().max_height(ui.available_height() - bottom).show(ui, |ui| {
+        if widgets::nav_item(ui, Icon::Search, "Search", self.view == View::Search).clicked() {
+            self.view = View::Search;
+            self.tracks.clear();
+            self.searched.clear();
+        }
+        section(ui, "YOUR COLLECTION");
+        if widgets::nav_item(ui, Icon::Heart, "Tracks", self.view == View::Loved).clicked() {
+            go = Some(View::Loved);
+        }
+        if widgets::nav_item(ui, Icon::Grid, "Playlists", self.view == View::Playlists).clicked() {
+            go = Some(View::Playlists);
+        }
+        section(ui, "PLAYLISTS");
+
+        let footer = 56.0;
+        egui::ScrollArea::vertical().max_height((ui.available_height() - footer).max(0.0)).auto_shrink([false, false]).show(ui, |ui| {
             if self.playlists_task.is_some() {
                 ui.spinner();
             }
-            let mut open = None;
             for p in &self.playlists {
-                let selected = self.view == View::Playlist(p.id, p.title.clone());
-                if ui.selectable_label(selected, &p.title).on_hover_text(format!("{} tracks", p.count)).clicked() {
-                    open = Some(View::Playlist(p.id, p.title.clone()));
+                let selected = self.view == View::Playlist(p.id);
+                let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 48.0), Sense::click());
+                if selected || resp.hovered() {
+                    ui.painter().rect_filled(rect, CornerRadius::same(6), if selected { SURFACE } else { HOVER });
                 }
-            }
-            if let Some(v) = open {
-                self.open_view(&ctx, v);
+                let img = Rect::from_min_size(rect.min + vec2(6.0, 6.0), Vec2::splat(36.0));
+                widgets::cover(ui, &mut self.covers, playlist_url(p, 80).as_deref(), img, 4);
+                let x = img.right() + 12.0;
+                let w = rect.right() - x - 6.0;
+                text_left(ui.painter(), pos2(x, rect.center().y - 8.0), &p.title, regular(13.5), if selected { TEXT } else { DIM }, w);
+                text_left(ui.painter(), pos2(x, rect.center().y + 9.0), &format!("{} tracks", p.count), regular(11.5), FAINT, w);
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                    go = Some(View::Playlist(p.id));
+                }
             }
         });
-        ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-            ui.add_space(6.0);
-            if ui.small_button("Log out").clicked() {
-                if let Some(k) = keyring() {
-                    let _ = k.delete_credential();
+        if let Some(v) = go {
+            self.open_view(&ctx, v);
+        }
+
+        // Account / settings menu.
+        ui.add_space(6.0);
+        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click());
+        if resp.hovered() {
+            ui.painter().rect_filled(rect, CornerRadius::same(6), HOVER);
+        }
+        let name = self.client.as_ref().map(|c| c.name().to_string()).unwrap_or_default();
+        let c = pos2(rect.left() + 22.0, rect.center().y);
+        ui.painter().circle_filled(c, 15.0, ACCENT);
+        let initial = name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
+        ui.painter().text(c, Align2::CENTER_CENTER, initial, bold(14.0), BG);
+        text_left(ui.painter(), pos2(rect.left() + 46.0, rect.center().y - 7.0), &name, bold(13.0), TEXT, rect.width() - 56.0);
+        text_left(ui.painter(), pos2(rect.left() + 46.0, rect.center().y + 9.0), self.quality.label(), regular(11.5), FAINT, rect.width() - 56.0);
+        egui::Popup::menu(&resp).show(|ui| {
+            ui.set_min_width(200.0);
+            ui.label(egui::RichText::new("STREAMING QUALITY").color(FAINT).size(11.0));
+            for q in Quality::ALL {
+                if ui.selectable_label(self.quality == q, q.label()).clicked() {
+                    self.quality = q;
+                    self.player.send(Cmd::Quality(q));
                 }
-                self.client = None;
-                self.tracks.clear();
-                self.playlists.clear();
             }
-            egui::ComboBox::from_id_salt("quality").selected_text(self.quality.label()).show_ui(ui, |ui| {
-                for q in Quality::ALL {
-                    if ui.selectable_value(&mut self.quality, q, q.label()).clicked() {
-                        self.player.send(Cmd::Quality(q));
-                    }
-                }
-            });
+            ui.separator();
+            if ui.button("Log out").clicked() {
+                self.logout();
+            }
         });
     }
 
-    fn player_bar(&mut self, ui: &mut egui::Ui) {
-        let st = self.player.status();
-        let duration = st.track.as_ref().map_or(0.0, |t| t.duration as f64);
-        ui.add_space(6.0);
+    // ------------------------------------------------------------ main area
+
+    fn main_area(&mut self, ui: &mut Ui, st: &Status) {
+        let ctx = ui.ctx().clone();
+        ui.add_space(TOP_INSET);
+        // Search field + transient error.
         ui.horizontal(|ui| {
-            if ui.button("⏮").clicked() {
-                self.player.send(Cmd::Prev);
+            let (rect, _) = ui.allocate_exact_size(vec2(360.0f32.min(ui.available_width()), 38.0), Sense::hover());
+            ui.painter().rect_filled(rect, CornerRadius::same(19), SURFACE);
+            icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.left() + 20.0, rect.center().y), Vec2::splat(15.0)), Icon::Search, DIM);
+            let inner = Rect::from_min_max(pos2(rect.left() + 38.0, rect.top() + 9.0), pos2(rect.right() - 14.0, rect.bottom() - 7.0));
+            let edit = ui.put(
+                inner,
+                egui::TextEdit::singleline(&mut self.search).hint_text("Search tracks, artists, albums").frame(egui::Frame::new()).text_color(TEXT),
+            );
+            if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                self.open_view(&ctx, View::Search);
             }
-            let icon = if st.state == State::Playing { "⏸" } else { "▶" };
-            if ui.add(egui::Button::new(RichText::new(icon).size(18.0))).clicked() {
-                self.player.send(Cmd::Toggle);
+            if let Some(e) = &st.error {
+                ui.add_space(12.0);
+                ui.label(egui::RichText::new(e).color(DANGER).size(12.5));
             }
-            if ui.button("⏭").clicked() {
-                self.player.send(Cmd::Next);
+        });
+        ui.add_space(20.0);
+
+        if self.view == View::Playlists {
+            self.playlist_grid(ui);
+            return;
+        }
+        let playing_id = st.track.as_ref().map(|t| t.id);
+        let playing = st.state == State::Playing;
+        self.track_view(ui, playing_id, playing);
+    }
+
+    fn header_info(&self) -> (&'static str, String, Option<String>, Option<(Icon, Color32)>) {
+        match self.view {
+            View::Home => ("MIX", "Flow".into(), None, Some((Icon::Refresh, Color32::from_rgb(0x3b, 0x2a, 0x8f)))),
+            View::Loved => ("COLLECTION", "Tracks".into(), None, Some((Icon::Heart, Color32::from_rgb(0x8f, 0x1f, 0x4f)))),
+            View::Playlist(id) => {
+                let p = self.playlists.iter().find(|p| p.id == id);
+                ("PLAYLIST", p.map(|p| p.title.clone()).unwrap_or_default(), p.and_then(|p| playlist_url(p, 400)), None)
             }
-            ui.add_space(8.0);
-            match (&st.track, st.state) {
-                (_, State::Loading) => {
-                    ui.spinner();
-                }
-                (Some(t), _) => {
-                    ui.vertical(|ui| {
-                        ui.label(RichText::new(&t.title).strong());
-                        ui.label(RichText::new(&t.artist).weak());
+            View::Search | View::Playlists => ("", String::new(), None, None),
+        }
+    }
+
+    fn track_view(&mut self, ui: &mut Ui, playing_id: Option<u64>, playing: bool) {
+        let ctx = ui.ctx().clone();
+        let search = self.view == View::Search;
+        let header_h = if search { 96.0 } else { 268.0 };
+        let n = self.tracks.len();
+        let mut play: Option<(usize, bool)> = None;
+        let mut refresh = false;
+
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
+            let width = ui.available_width();
+            ui.set_height(header_h + n as f32 * ROW_H + 24.0);
+            let origin = ui.max_rect().min;
+
+            // ---- header
+            let head = Rect::from_min_size(origin, vec2(width, header_h));
+            ui.scope_builder(UiBuilder::new().max_rect(head), |ui| {
+                if search {
+                    let title = if self.searched.is_empty() { "Search".to_string() } else { format!("“{}”", self.searched) };
+                    text_left(ui.painter(), head.min + vec2(0.0, 22.0), &title, bold(30.0), TEXT, width);
+                    if !self.tracks.is_empty() {
+                        text_left(ui.painter(), head.min + vec2(0.0, 54.0), &format!("{n} tracks"), regular(13.0), DIM, width);
+                    }
+                } else {
+                    let (kind, title, art, tile) = self.header_info();
+                    let art_rect = Rect::from_min_size(head.min, Vec2::splat(200.0));
+                    match (art, tile) {
+                        (Some(url), _) => widgets::cover(ui, &mut self.covers, Some(&url), art_rect, 8),
+                        (None, Some((icon, color))) => widgets::tile(ui, art_rect, icon, color, 8),
+                        _ => widgets::cover(ui, &mut self.covers, None, art_rect, 8),
+                    }
+                    let x = art_rect.right() + 28.0;
+                    let tw = width - (x - head.left());
+                    text_left(ui.painter(), pos2(x, head.top() + 40.0), kind, bold(11.5), DIM, tw);
+                    text_left(ui.painter(), pos2(x, head.top() + 82.0), &title, bold(40.0), TEXT, tw);
+                    if n > 0 {
+                        let meta = format!("{n} tracks · {}", total_duration(&self.tracks));
+                        text_left(ui.painter(), pos2(x, head.top() + 124.0), &meta, regular(13.5), DIM, tw);
+                    }
+                    let buttons = Rect::from_min_size(pos2(x, head.top() + 152.0), vec2(tw, 44.0));
+                    ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
+                        if n > 0 && widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {
+                            play = Some((0, false));
+                        }
+                        if n > 1 && widgets::pill(ui, "Shuffle", Some(Icon::Shuffle), false).clicked() {
+                            play = Some((0, true));
+                        }
+                        if self.view == View::Home && widgets::pill(ui, "New mix", Some(Icon::Refresh), false).clicked() {
+                            refresh = true;
+                        }
                     });
                 }
-                _ => {}
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(egui::Slider::new(&mut self.volume, 0.0..=1.0).show_value(false)).changed() {
-                    self.player.send(Cmd::Volume(self.volume));
+                // Column captions.
+                if n > 0 {
+                    let y = head.bottom() - 22.0;
+                    let cols = columns(head.left(), width);
+                    let p = ui.painter();
+                    p.text(pos2(cols.index + 14.0, y), Align2::CENTER_CENTER, "#", bold(11.0), FAINT);
+                    p.text(pos2(cols.title, y), Align2::LEFT_CENTER, "TITLE", bold(11.0), FAINT);
+                    if let Some(a) = cols.album {
+                        p.text(pos2(a, y), Align2::LEFT_CENTER, "ALBUM", bold(11.0), FAINT);
+                    }
+                    p.text(pos2(cols.time, y), Align2::RIGHT_CENTER, "TIME", bold(11.0), FAINT);
+                    p.hline(head.x_range(), head.bottom() - 4.0, egui::Stroke::new(1.0, LINE));
                 }
-                ui.label("🔊");
-                self.output_picker(ui, &st.output);
+            });
+
+            if self.tracks_task.is_some() {
+                let r = Rect::from_min_size(origin + vec2(0.0, header_h + 24.0), vec2(width, 40.0));
+                ui.put(r, egui::Spinner::new().size(22.0));
+                return;
+            }
+            if let Some(e) = &self.list_error {
+                text_left(ui.painter(), origin + vec2(0.0, header_h + 24.0), e, regular(14.0), DANGER, width);
+                return;
+            }
+
+            // ---- rows (virtualised)
+            let first = ((viewport.top() - header_h) / ROW_H).floor().max(0.0) as usize;
+            let last = (((viewport.bottom() - header_h) / ROW_H).ceil().max(0.0) as usize).min(n);
+            let cols = columns(origin.x, width);
+            for i in first..last {
+                let rect = Rect::from_min_size(origin + vec2(0.0, header_h + i as f32 * ROW_H), vec2(width, ROW_H));
+                let resp = ui.interact(rect, ui.id().with(("row", i)), Sense::click());
+                let t = &self.tracks[i];
+                let current = playing_id == Some(t.id);
+                let hovered = resp.hovered();
+                let p = ui.painter();
+                if hovered {
+                    p.rect_filled(rect, CornerRadius::same(6), HOVER);
+                }
+                let cy = rect.center().y;
+                let idx = Rect::from_center_size(pos2(cols.index + 14.0, cy), Vec2::splat(14.0));
+                if hovered {
+                    icons::paint(p, idx, if current && playing { Icon::Pause } else { Icon::Play }, TEXT);
+                } else if current {
+                    equalizer(p, idx, playing);
+                } else {
+                    p.text(idx.center(), Align2::CENTER_CENTER, (i + 1).to_string(), regular(13.0), FAINT);
+                }
+                let art = Rect::from_min_size(pos2(cols.art, cy - 20.0), Vec2::splat(40.0));
+                widgets::cover(ui, &mut self.covers, cover_url(t, THUMB).as_deref(), art, 4);
+                let p = ui.painter();
+                let tw = cols.album.unwrap_or(cols.time - 60.0) - cols.title - 16.0;
+                text_left(p, pos2(cols.title, cy - 9.0), &t.title, regular(14.0), if current { ACCENT } else { TEXT }, tw);
+                text_left(p, pos2(cols.title, cy + 10.0), &t.artist, regular(12.5), DIM, tw);
+                if let Some(a) = cols.album {
+                    text_left(p, pos2(a, cy), &t.album, regular(13.0), DIM, cols.time - a - 70.0);
+                }
+                p.text(pos2(cols.time, cy), Align2::RIGHT_CENTER, mmss(t.duration as f64), regular(13.0), DIM);
+
+                let clicked_index = resp.clicked() && resp.interact_pointer_pos().is_some_and(|pt| pt.x < cols.art);
+                if resp.double_clicked() || clicked_index {
+                    if current && clicked_index {
+                        self.player.send(Cmd::Toggle);
+                    } else {
+                        play = Some((i, false));
+                    }
+                }
+                resp.on_hover_cursor(egui::CursorIcon::Default);
+            }
+        });
+
+        if refresh {
+            self.open_view(&ctx, View::Home);
+        }
+        if let Some((i, shuffle)) = play {
+            let mut queue = self.tracks.clone();
+            if shuffle {
+                fastrand::shuffle(&mut queue);
+            }
+            self.player.send(Cmd::Play(queue, i));
+        }
+    }
+
+    fn playlist_grid(&mut self, ui: &mut Ui) {
+        let ctx = ui.ctx().clone();
+        text_left(ui.painter(), ui.cursor().min + vec2(0.0, 18.0), "Playlists", bold(30.0), TEXT, 400.0);
+        ui.add_space(52.0);
+        let mut open = None;
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            let card = 176.0;
+            let gap = 22.0;
+            let width = ui.available_width();
+            let per_row = (((width + gap) / (card + gap)).floor() as usize).max(1);
+            for row in self.playlists.chunks(per_row) {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    for p in row {
+                        let (rect, resp) = ui.allocate_exact_size(vec2(card, card + 54.0), Sense::click());
+                        let art = Rect::from_min_size(rect.min, Vec2::splat(card));
+                        widgets::cover(ui, &mut self.covers, playlist_url(p, 352).as_deref(), art, 8);
+                        if resp.hovered() {
+                            ui.painter().rect_filled(art, CornerRadius::same(8), Color32::from_black_alpha(70));
+                            let c = pos2(art.right() - 30.0, art.bottom() - 30.0);
+                            ui.painter().circle_filled(c, 20.0, TEXT);
+                            icons::paint(ui.painter(), Rect::from_center_size(c, Vec2::splat(16.0)), Icon::Play, BG);
+                        }
+                        text_left(ui.painter(), pos2(rect.left(), art.bottom() + 16.0), &p.title, bold(14.0), TEXT, card);
+                        text_left(ui.painter(), pos2(rect.left(), art.bottom() + 36.0), &format!("{} tracks", p.count), regular(12.5), DIM, card);
+                        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            open = Some(p.id);
+                        }
+                    }
+                });
+                ui.add_space(18.0);
+            }
+        });
+        if let Some(id) = open {
+            self.open_view(&ctx, View::Playlist(id));
+        }
+    }
+
+    // ------------------------------------------------------------ player bar
+
+    fn player_bar(&mut self, ui: &mut Ui, st: &Status) {
+        let full = ui.max_rect();
+        ui.painter().hline(full.x_range(), full.top(), egui::Stroke::new(1.0, LINE));
+        let duration = st.track.as_ref().map_or(0.0, |t| t.duration as f64);
+        let side = (full.width() * 0.3).min(360.0);
+        let left = Rect::from_min_max(full.min, pos2(full.left() + side, full.bottom()));
+        let right = Rect::from_min_max(pos2(full.right() - side, full.top()), full.max);
+        let center = Rect::from_min_max(pos2(left.right() + 16.0, full.top()), pos2(right.left() - 16.0, full.bottom()));
+
+        // Now playing.
+        if let Some(t) = &st.track {
+            let art = Rect::from_min_size(pos2(left.left(), left.center().y - 28.0), Vec2::splat(56.0));
+            widgets::cover(ui, &mut self.covers, cover_url(t, 112).as_deref(), art, 4);
+            let x = art.right() + 14.0;
+            let w = left.right() - x;
+            text_left(ui.painter(), pos2(x, left.center().y - 9.0), &t.title, bold(14.0), TEXT, w);
+            text_left(ui.painter(), pos2(x, left.center().y + 11.0), &t.artist, regular(12.5), DIM, w);
+        }
+        if st.state == State::Loading {
+            ui.put(Rect::from_center_size(pos2(left.left() + 28.0, left.center().y), Vec2::splat(56.0)), egui::Spinner::new().size(20.0));
+        }
+
+        // Transport + progress.
+        ui.scope_builder(UiBuilder::new().max_rect(center), |ui| {
+            let controls = Rect::from_center_size(pos2(center.center().x, center.top() + 30.0), vec2(160.0, 40.0));
+            ui.scope_builder(UiBuilder::new().max_rect(controls).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                if widgets::icon_button(ui, Icon::Prev, 16.0, DIM).clicked() {
+                    self.player.send(Cmd::Prev);
+                }
+                if widgets::play_circle(ui, st.state == State::Playing, 38.0).clicked() {
+                    self.player.send(Cmd::Toggle);
+                }
+                if widgets::icon_button(ui, Icon::Next, 16.0, DIM).clicked() {
+                    self.player.send(Cmd::Next);
+                }
+            });
+            let bar_w = center.width().min(560.0);
+            let row = Rect::from_center_size(pos2(center.center().x, center.top() + 64.0), vec2(bar_w, 16.0));
+            let pos = self.seek_drag.map(|f| f as f64 * duration).unwrap_or(st.position).min(duration);
+            let p = ui.painter();
+            p.text(pos2(row.left(), row.center().y), Align2::RIGHT_CENTER, mmss(pos), regular(11.5), DIM);
+            p.text(pos2(row.right(), row.center().y), Align2::LEFT_CENTER, mmss(duration), regular(11.5), DIM);
+            let slider = Rect::from_min_max(pos2(row.left() + 10.0, row.top()), pos2(row.right() - 10.0, row.bottom()));
+            ui.scope_builder(UiBuilder::new().max_rect(slider), |ui| {
+                let mut frac = if duration > 0.0 { (pos / duration) as f32 } else { 0.0 };
+                let resp = widgets::thin_slider(ui, &mut frac, slider.width(), duration > 0.0);
+                if resp.dragged() {
+                    self.seek_drag = Some(frac);
+                }
+                if resp.drag_stopped() || (resp.clicked() && !resp.dragged()) {
+                    self.player.send(Cmd::Seek(frac as f64 * duration));
+                    self.seek_drag = None;
+                }
             });
         });
-        ui.horizontal(|ui| {
-            let mut pos = self.seek_drag.unwrap_or(st.position).min(duration);
-            ui.label(mmss(pos));
-            ui.spacing_mut().slider_width = (ui.available_width() - 50.0).max(50.0);
-            let resp = ui.add_enabled(duration > 0.0, egui::Slider::new(&mut pos, 0.0..=duration.max(1.0)).show_value(false));
-            if resp.dragged() {
-                self.seek_drag = Some(pos);
+
+        // Output + volume.
+        ui.scope_builder(UiBuilder::new().max_rect(right).layout(egui::Layout::right_to_left(egui::Align::Center)), |ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            let mut vol = self.volume_drag.unwrap_or(st.volume);
+            let resp = widgets::thin_slider(ui, &mut vol, 104.0, true);
+            if resp.changed() {
+                self.volume_drag = Some(vol);
+                self.player.send(Cmd::Volume(vol));
             }
-            if resp.drag_stopped() || (resp.changed() && !resp.dragged()) {
-                self.player.send(Cmd::Seek(pos));
-                self.seek_drag = None;
+            if resp.drag_stopped() || (!resp.dragged() && self.volume_drag.is_some() && !resp.hovered()) {
+                self.volume_drag = None;
             }
-            ui.label(mmss(duration));
+            let icon = if vol <= 0.001 { Icon::Mute } else { Icon::Volume };
+            if widgets::icon_button(ui, icon, 18.0, DIM).on_hover_text("Mute").clicked() {
+                if vol > 0.001 {
+                    self.unmuted_volume = vol;
+                    self.player.send(Cmd::Volume(0.0));
+                } else {
+                    self.player.send(Cmd::Volume(self.unmuted_volume.max(0.1)));
+                }
+            }
+            ui.add_space(10.0);
+            self.output_button(ui, &st.output);
         });
-        if let Some(e) = &st.error {
-            ui.colored_label(Color32::LIGHT_RED, e);
-        }
-        ui.add_space(4.0);
+
         if st.state == State::Playing {
             ui.ctx().request_repaint_after(Duration::from_millis(500));
         }
     }
 
-    fn output_picker(&mut self, ui: &mut egui::Ui, current: &str) {
-        egui::ComboBox::from_id_salt("output").selected_text(format!("🖧 {current}")).show_ui(ui, |ui| {
-            if ui.selectable_label(current == Output::Local.name(), Output::Local.name()).clicked() {
-                self.player.send(Cmd::Output(Output::Local));
+    fn output_button(&mut self, ui: &mut Ui, current: &str) {
+        let remote = current != Output::Local.name();
+        let label = if remote { current } else { "" };
+        let g = ui.painter().layout_no_wrap(label.to_string(), regular(12.5), ACCENT);
+        let w = 34.0 + if remote { g.size().x.min(140.0) + 8.0 } else { 0.0 };
+        let (rect, resp) = ui.allocate_exact_size(vec2(w, 34.0), Sense::click());
+        if resp.hovered() {
+            ui.painter().rect_filled(rect, CornerRadius::same(17), HOVER);
+        }
+        let color = if remote { ACCENT } else if resp.hovered() { TEXT } else { DIM };
+        icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.left() + 17.0, rect.center().y), Vec2::splat(18.0)), Icon::AirPlay, color);
+        if remote {
+            text_left(ui.painter(), pos2(rect.left() + 32.0, rect.center().y), label, regular(12.5), ACCENT, 140.0);
+        }
+        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        egui::Popup::menu(&resp).show(|ui| {
+            ui.set_min_width(260.0);
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new("PLAY ON").color(FAINT).size(11.0));
+            ui.add_space(2.0);
+            let mut pick = None;
+            if widgets::nav_item(ui, Icon::Computer, Output::Local.name(), !remote).clicked() {
+                pick = Some(Output::Local);
             }
             let devices = self.discovery.as_ref().map(|d| d.devices()).unwrap_or_default();
-            if devices.is_empty() {
-                ui.label(RichText::new("Searching for AirPlay…").weak());
-            }
-            for d in devices {
-                let label = if d.supported { format!("AirPlay: {}", d.name) } else { format!("AirPlay: {} (unsupported)", d.name) };
-                let r = ui.add_enabled(d.supported && !d.password, egui::Button::selectable(current == d.name, label));
-                if r.clicked() {
-                    self.player.send(Cmd::Output(Output::AirPlay(d)));
+            for d in devices.into_iter().filter(|d| d.supported && !d.password) {
+                if widgets::nav_item(ui, Icon::AirPlay, &d.name, current == d.name).clicked() {
+                    pick = Some(Output::AirPlay(d));
                 }
+            }
+            if self.discovery.as_ref().is_some_and(|d| d.devices().is_empty()) {
+                ui.label(egui::RichText::new("Looking for AirPlay speakers…").color(FAINT).size(12.0));
+            }
+            if let Some(o) = pick {
+                self.player.send(Cmd::Output(o));
+                ui.close();
             }
         });
     }
+}
 
-    fn track_list(&mut self, ui: &mut egui::Ui) {
-        let ctx = ui.ctx().clone();
-        match &self.view {
-            View::Search => {
-                ui.horizontal(|ui| {
-                    let edit = ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Search tracks…").desired_width(f32::INFINITY));
-                    if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                        self.open_view(&ctx, View::Search);
-                    }
-                });
-            }
-            View::Flow => {
-                ui.horizontal(|ui| {
-                    ui.heading("Flow");
-                    if ui.small_button("↻").on_hover_text("More").clicked() {
-                        self.open_view(&ctx, View::Flow);
-                    }
-                });
-            }
-            View::Loved => {
-                ui.heading("Loved tracks");
-            }
-            View::Playlist(_, title) => {
-                ui.heading(title.as_str());
-            }
-        }
-        ui.add_space(4.0);
-        if self.tracks_task.is_some() {
-            ui.spinner();
-            return;
-        }
-        if let Some(e) = &self.list_error {
-            ui.colored_label(Color32::LIGHT_RED, e);
-            return;
-        }
+fn section(ui: &mut Ui, label: &str) {
+    ui.add_space(18.0);
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
+    text_left(ui.painter(), pos2(rect.left() + 10.0, rect.center().y), label, bold(11.0), FAINT, rect.width());
+    ui.add_space(4.0);
+}
 
-        let playing_id = self.player.status().track.map(|t| t.id);
-        let row_h = 22.0;
-        let font = FontId::proportional(13.5);
-        let text = ui.visuals().text_color();
-        let weak = ui.visuals().weak_text_color();
-        let hover_bg = ui.visuals().widgets.hovered.weak_bg_fill;
-        let mut play = None;
-        egui::ScrollArea::vertical().auto_shrink(false).show_rows(ui, row_h, self.tracks.len(), |ui, range| {
-            for i in range {
-                let t = &self.tracks[i];
-                let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
-                let p = ui.painter();
-                if resp.hovered() {
-                    p.rect_filled(rect, 3.0, hover_bg);
-                }
-                let current = playing_id == Some(t.id);
-                let color = if current { ACCENT } else { text };
-                let w = rect.width();
-                let cols = [(0.0, 0.42, &t.title, color), (0.43, 0.27, &t.artist, weak), (0.71, 0.22, &t.album, weak)];
-                for (x, width, s, c) in cols {
-                    let col = egui::Rect::from_min_size(rect.min + vec2(8.0 + x * w, 0.0), vec2(width * w - 8.0, row_h));
-                    p.with_clip_rect(col).text(col.left_center(), Align2::LEFT_CENTER, s, font.clone(), c);
-                }
-                p.text(rect.right_center() - vec2(8.0, 0.0), Align2::RIGHT_CENTER, mmss(t.duration as f64), font.clone(), weak);
-                if resp.double_clicked() {
-                    play = Some(i);
-                }
-            }
-        });
-        if let Some(i) = play {
-            self.player.send(Cmd::Play(self.tracks.clone(), i));
-        }
+/// Three little bars marking the current track.
+fn equalizer(p: &egui::Painter, r: Rect, animated: bool) {
+    let t = if animated { p.ctx().input(|i| i.time) as f32 } else { 0.0 };
+    for (k, phase) in [0.0f32, 1.7, 3.1].into_iter().enumerate() {
+        let h = if animated { 0.35 + 0.65 * (0.5 + 0.5 * (t * 7.0 + phase).sin()) } else { 0.5 };
+        let x = r.left() + k as f32 * r.width() * 0.38;
+        let bar = Rect::from_min_max(pos2(x, r.bottom() - r.height() * h), pos2(x + r.width() * 0.24, r.bottom()));
+        p.rect_filled(bar, CornerRadius::same(1), ACCENT);
+    }
+    if animated {
+        p.ctx().request_repaint_after(Duration::from_millis(80));
+    }
+}
+
+struct Columns {
+    index: f32,
+    art: f32,
+    title: f32,
+    album: Option<f32>,
+    time: f32,
+}
+
+fn columns(left: f32, width: f32) -> Columns {
+    let title = left + 104.0;
+    Columns {
+        index: left + 8.0,
+        art: left + 48.0,
+        title,
+        album: (width > 640.0).then(|| left + width * 0.58),
+        time: left + width - 16.0,
     }
 }
 
 impl eframe::App for App {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.covers.begin_frame();
         self.poll_tasks(&ctx);
         if self.client.is_none() {
             self.login_screen(ui);
@@ -432,8 +773,21 @@ impl eframe::App for App {
         if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(Key::Space)) {
             self.player.send(Cmd::Toggle);
         }
-        egui::Panel::bottom("player").show(ui, |ui| self.player_bar(ui));
-        egui::Panel::left("nav").exact_size(200.0).show(ui, |ui| self.nav(ui));
-        egui::CentralPanel::default().show(ui, |ui| self.track_list(ui));
+        let st = self.player.status();
+        egui::Panel::bottom("player")
+            .exact_size(92.0)
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(egui::Frame::new().fill(BAR).inner_margin(Margin::symmetric(20, 0)))
+            .show(ui, |ui| self.player_bar(ui, &st));
+        egui::Panel::left("nav")
+            .exact_size(248.0)
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(egui::Frame::new().fill(SIDEBAR).inner_margin(Margin { left: 12, right: 12, top: 0, bottom: 10 }))
+            .show(ui, |ui| self.sidebar(ui));
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(BG).inner_margin(Margin { left: 36, right: 36, top: 0, bottom: 0 }))
+            .show(ui, |ui| self.main_area(ui, &st));
     }
 }

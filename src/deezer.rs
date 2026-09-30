@@ -24,6 +24,8 @@ pub struct Track {
     pub album: String,
     pub duration: u32,
     pub token: String,
+    /// Album cover id (md5) on Deezer's image CDN.
+    pub cover: String,
 }
 
 #[derive(Clone, Debug)]
@@ -31,6 +33,13 @@ pub struct Playlist {
     pub id: u64,
     pub title: String,
     pub count: u32,
+    /// (`cover`|`playlist`|..., md5) on Deezer's image CDN.
+    pub picture: Option<(String, String)>,
+}
+
+/// Square image from Deezer's CDN, e.g. `image_url("cover", md5, 120)`.
+pub fn image_url(kind: &str, md5: &str, size: u32) -> String {
+    format!("https://cdn-images.dzcdn.net/images/{kind}/{md5}/{size}x{size}-000000-80-0-0.jpg")
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -147,6 +156,7 @@ fn parse_track(v: &Value) -> Option<Track> {
         album: s(&v["ALB_TITLE"]),
         duration: n(&v["DURATION"]) as u32,
         token,
+        cover: s(&v["ALB_PICTURE"]),
     })
 }
 
@@ -242,7 +252,12 @@ impl Deezer {
         let list = r["TAB"]["playlists"]["data"].as_array().cloned().unwrap_or_default();
         Ok(list
             .iter()
-            .map(|p| Playlist { id: n(&p["PLAYLIST_ID"]), title: s(&p["TITLE"]), count: n(&p["NB_SONG"]) as u32 })
+            .map(|p| Playlist {
+                id: n(&p["PLAYLIST_ID"]),
+                title: s(&p["TITLE"]),
+                count: n(&p["NB_SONG"]) as u32,
+                picture: Some((s(&p["PICTURE_TYPE"]), s(&p["PLAYLIST_PICTURE"]))).filter(|(k, m)| !k.is_empty() && !m.is_empty()),
+            })
             .filter(|p| p.id != 0 && p.id != self.0.loved_id)
             .collect())
     }
