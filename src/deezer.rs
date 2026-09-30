@@ -26,6 +26,9 @@ pub struct Track {
     pub token: String,
     /// Album cover id (md5) on Deezer's image CDN.
     pub cover: String,
+    /// Alternative version (id, token) Deezer offers when this one isn't licensed
+    /// in the listener's region, e.g. a different remaster.
+    pub fallback: Option<(u64, String)>,
 }
 
 #[derive(Clone, Debug)]
@@ -35,6 +38,26 @@ pub struct Playlist {
     pub count: u32,
     /// (`cover`|`playlist`|..., md5) on Deezer's image CDN.
     pub picture: Option<(String, String)>,
+}
+
+/// One entry on a Deezer page (home): a playlist, album, artist, mix, flow, ...
+#[derive(Clone, Debug)]
+pub struct Item {
+    pub kind: String,
+    pub id: String,
+    pub title: String,
+    pub subtitle: String,
+    /// (`cover`|`playlist`|`artist`|..., md5) on Deezer's image CDN.
+    pub picture: Option<(String, String)>,
+    /// Raw item data, for types we open specially (e.g. flow mood config).
+    pub data: Value,
+}
+
+#[derive(Clone, Debug)]
+pub struct Section {
+    pub title: String,
+    pub layout: String,
+    pub items: Vec<Item>,
 }
 
 /// Square image from Deezer's CDN, e.g. `image_url("cover", md5, 120)`.
@@ -169,7 +192,13 @@ fn parse_track(v: &Value) -> Option<Track> {
         duration: n(&v["DURATION"]) as u32,
         token,
         cover: s(&v["ALB_PICTURE"]),
+        fallback: Some((n(&v["FALLBACK"]["SNG_ID"]), s(&v["FALLBACK"]["TRACK_TOKEN"]))).filter(|(id, tok)| *id != 0 && !tok.is_empty()),
     })
+}
+
+fn parse_item(v: &Value) -> Item {
+    let picture = v["pictures"].get(0).map(|p| (s(&p["type"]), s(&p["md5"]))).filter(|(k, m)| !k.is_empty() && !m.is_empty());
+    Item { kind: s(&v["type"]), id: s(&v["id"]), title: s(&v["title"]), subtitle: s(&v["subtitle"]), picture, data: v["data"].clone() }
 }
 
 fn parse_tracks(v: &Value) -> Vec<Track> {
@@ -190,7 +219,7 @@ impl Deezer {
         let arl = arl.trim().to_string();
         let agent = agent();
         let mut session = Session::new();
-        let data = gw_call(&agent, &arl, &mut session, "deezer.getUserData", json!({}))?;
+        let data = gw_call(&agent, &arl, &mut session, "deezer.getUserData", json!({}), &[])?;
         let user = &data["USER"];
         let user_id = n(&user["USER_ID"]);
         if user_id == 0 {
@@ -221,14 +250,19 @@ impl Deezer {
     }
 
     fn call(&self, method: &str, body: Value) -> Result<Value> {
+        self.call_with(method, body, &[])
+    }
+
+    /// gw-light call with extra URL query parameters (e.g. `gateway_input` for pages).
+    fn call_with(&self, method: &str, body: Value, extra: &[(&str, &str)]) -> Result<Value> {
         let mut session = self.0.session.lock().unwrap();
-        match gw_call(&self.0.agent, &self.0.arl, &mut session, method, body.clone()) {
+        match gw_call(&self.0.agent, &self.0.arl, &mut session, method, body.clone(), extra) {
             Err(e) if e.contains("VALID_TOKEN_REQUIRED") => {
                 // api_token expired: refresh and retry once.
                 session.api_token = "null".into();
-                let data = gw_call(&self.0.agent, &self.0.arl, &mut session, "deezer.getUserData", json!({}))?;
+                let data = gw_call(&self.0.agent, &self.0.arl, &mut session, "deezer.getUserData", json!({}), &[])?;
                 session.api_token = s(&data["checkForm"]);
-                gw_call(&self.0.agent, &self.0.arl, &mut session, method, body)
+                gw_call(&self.0.agent, &self.0.arl, &mut session, method, body, extra)
             }
             r => r,
         }
@@ -240,11 +274,6 @@ impl Deezer {
             json!({"query": query, "start": 0, "nb": 100, "suggest": false, "artist_suggest": false, "top_tracks": false}),
         )?;
         Ok(parse_tracks(&r["TRACK"]["data"]))
-    }
-
-    pub fn flow(&self) -> Result<Vec<Track>> {
-        let r = self.call("radio.getUserRadio", json!({"user_id": self.0.user_id}))?;
-        Ok(parse_tracks(&r["data"]))
     }
 
     pub fn loved(&self) -> Result<Vec<Track>> {
@@ -272,6 +301,55 @@ impl Deezer {
             })
             .filter(|p| p.id != 0 && p.id != self.0.loved_id)
             .collect())
+    }
+
+    /// Personalised home page, as sections of items (what the web app shows).
+    pub fn home(&self) -> Result<Vec<Section>> {
+        let support = json!({
+            "grid": ["channel", "album", "playlist", "flow", "smarttracklist", "artist"],
+            "horizontal-grid": ["album", "playlist", "flow", "smarttracklist", "artist", "channel"],
+            "large-card": ["album", "playlist"],
+            "slideshow": ["album", "playlist"],
+            "filterable-grid": ["flow"],
+            "item-highlight": ["radio"],
+        });
+        let input = json!({"PAGE": "home", "VERSION": "2.5", "SUPPORT": support, "LANG": "en", "OPTIONS": []}).to_string();
+        let r = self.call_with("page.get", json!({}), &[("gateway_input", &input)])?;
+        let sections = r["sections"].as_array().cloned().unwrap_or_default();
+        Ok(sections
+            .iter()
+            .map(|sec| Section {
+                title: s(&sec["title"]),
+                layout: s(&sec["layout"]),
+                items: sec["items"].as_array().map(|a| a.iter().map(parse_item).collect()).unwrap_or_default(),
+            })
+            .filter(|sec| !sec.items.is_empty())
+            .collect())
+    }
+
+    pub fn album(&self, id: &str) -> Result<Vec<Track>> {
+        let r = self.call("deezer.pageAlbum", json!({"alb_id": id, "lang": "en", "header": true, "tab": 0}))?;
+        Ok(parse_tracks(&r["SONGS"]["data"]))
+    }
+
+    pub fn artist_top(&self, id: &str) -> Result<Vec<Track>> {
+        let r = self.call("artist.getTopTrack", json!({"art_id": id, "nb": 100}))?;
+        Ok(parse_tracks(&r["data"]))
+    }
+
+    pub fn mix(&self, id: &str) -> Result<Vec<Track>> {
+        let r = self.call("smartTracklist.getSongs", json!({"smartTracklist_id": id}))?;
+        Ok(parse_tracks(&r["data"]))
+    }
+
+    /// Flow, optionally tuned to a mood/genre config (e.g. "motivation").
+    pub fn flow_mood(&self, config: Option<&str>) -> Result<Vec<Track>> {
+        let mut body = json!({"user_id": self.0.user_id});
+        if let Some(c) = config {
+            body["config_id"] = json!(c);
+        }
+        let r = self.call("radio.getUserRadio", body)?;
+        Ok(parse_tracks(&r["data"]))
     }
 
     /// Fresh track token, used when a cached one was rejected.
@@ -311,10 +389,19 @@ impl Deezer {
     }
 
     /// Resolve a (short-lived) CDN URL for a track at the best available format.
-    pub fn stream_url(&self, track: &Track, quality: Quality) -> Result<(String, Format)> {
-        match self.media_url(&track.token, quality) {
-            Ok(r) => Ok(r),
-            Err(_) => self.media_url(&self.refresh_token(track.id)?, quality),
+    /// Returns (url, format, id of the song actually streamed — needed for decryption).
+    /// Tries the track's token, a refreshed token, then Deezer's regional fallback version.
+    pub fn stream_url(&self, track: &Track, quality: Quality) -> Result<(String, Format, u64)> {
+        let first = match self.media_url(&track.token, quality) {
+            Ok((u, f)) => return Ok((u, f, track.id)),
+            Err(e) => e,
+        };
+        if let Ok((u, f)) = self.refresh_token(track.id).and_then(|t| self.media_url(&t, quality)) {
+            return Ok((u, f, track.id));
+        }
+        match &track.fallback {
+            Some((id, token)) => self.media_url(token, quality).map(|(u, f)| (u, f, *id)).map_err(|_| first),
+            None => Err(first),
         }
     }
 
@@ -339,7 +426,7 @@ pub enum Format {
     Flac,
 }
 
-fn gw_call(agent: &ureq::Agent, arl: &str, session: &mut Session, method: &str, body: Value) -> Result<Value> {
+fn gw_call(agent: &ureq::Agent, arl: &str, session: &mut Session, method: &str, body: Value, extra: &[(&str, &str)]) -> Result<Value> {
     let cookie = session.header(arl);
     let resp = agent
         .post(GW)
@@ -347,6 +434,7 @@ fn gw_call(agent: &ureq::Agent, arl: &str, session: &mut Session, method: &str, 
         .query("input", "3")
         .query("api_version", "1.0")
         .query("api_token", &session.api_token)
+        .query_pairs(extra.iter().copied())
         .set("Cookie", &cookie)
         .send_json(body)
         .map_err(|e| format!("{method}: {e}"))?;
@@ -444,9 +532,9 @@ mod tests {
     fn session_csrf_roundtrip() {
         let agent = agent();
         let mut session = Session::new();
-        let data = gw_call(&agent, "", &mut session, "deezer.getUserData", json!({})).unwrap();
+        let data = gw_call(&agent, "", &mut session, "deezer.getUserData", json!({}), &[]).unwrap();
         session.api_token = s(&data["checkForm"]);
-        let r = gw_call(&agent, "", &mut session, "deezer.pageSearch", json!({"query": "daft punk", "start": 0, "nb": 5}));
+        let r = gw_call(&agent, "", &mut session, "deezer.pageSearch", json!({"query": "daft punk", "start": 0, "nb": 5}), &[]);
         let r = r.unwrap();
         assert!(!parse_tracks(&r["TRACK"]["data"]).is_empty(), "{r}");
     }

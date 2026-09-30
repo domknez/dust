@@ -36,6 +36,8 @@ impl Output {
 pub enum Cmd {
     Client(Deezer),
     Play(Vec<Track>, usize),
+    /// Endless Flow, optionally tuned to a mood/genre config (e.g. "chill").
+    PlayFlow(Option<String>),
     Toggle,
     Next,
     Prev,
@@ -63,6 +65,8 @@ pub struct Status {
     pub track: Option<Track>,
     pub position: f64,
     pub volume: f32,
+    /// Active Flow config ("default" for plain Flow), if playing Flow.
+    pub flow: Option<String>,
     pub output: String,
     pub error: Option<String>,
 }
@@ -85,6 +89,7 @@ impl PlayerHandle {
             client: None,
             quality: Quality::Mp3_320,
             queue: Vec::new(),
+            flow: None,
             index: 0,
             sink: None,
             output: Output::Local,
@@ -112,6 +117,8 @@ impl PlayerHandle {
 
 struct Stream {
     url: String,
+    /// Song id actually streamed (differs from the track's on regional fallbacks).
+    song_id: u64,
     format_kind: Format,
     reader: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,
@@ -134,6 +141,8 @@ struct Player {
     client: Option<Deezer>,
     quality: Quality,
     queue: Vec<Track>,
+    /// Some(config) while playing endless Flow: the queue refills itself.
+    flow: Option<Option<String>>,
     index: usize,
     sink: Option<Box<dyn Sink>>,
     output: Output,
@@ -199,6 +208,7 @@ impl Player {
         };
         st.output = self.output.name().to_string();
         st.volume = self.volume;
+        st.flow = self.flow.as_ref().map(|c| c.clone().unwrap_or_else(|| "default".into()));
         drop(st);
         if repaint {
             self.ctx.request_repaint();
@@ -215,7 +225,18 @@ impl Player {
         match cmd {
             Cmd::Client(c) => self.client = Some(c),
             Cmd::Quality(q) => self.quality = q,
+            Cmd::PlayFlow(config) => {
+                self.flow = Some(config);
+                self.queue.clear();
+                self.index = 0;
+                if self.extend_flow() {
+                    self.start_track(0.0);
+                } else {
+                    self.flow = None;
+                }
+            }
             Cmd::Play(queue, index) => {
+                self.flow = None;
                 self.queue = queue;
                 self.index = index;
                 self.start_track(0.0);
@@ -247,6 +268,9 @@ impl Player {
                 }
             }
             Cmd::Next => {
+                if self.index + 1 >= self.queue.len() {
+                    self.extend_flow();
+                }
                 if self.index + 1 < self.queue.len() {
                     self.index += 1;
                     self.start_track(0.0);
@@ -283,6 +307,26 @@ impl Player {
             }
         }
         self.publish(true);
+    }
+
+    /// Append the next batch of Flow tracks. Returns whether anything was added.
+    fn extend_flow(&mut self) -> bool {
+        let (Some(config), Some(client)) = (self.flow.clone(), self.client.clone()) else { return false };
+        match client.flow_mood(config.as_deref()) {
+            Ok(tracks) => {
+                let before = self.queue.len();
+                for t in tracks {
+                    if !self.queue.iter().any(|q| q.id == t.id) {
+                        self.queue.push(t);
+                    }
+                }
+                self.queue.len() > before
+            }
+            Err(e) => {
+                self.error(format!("Flow: {e}"));
+                false
+            }
+        }
     }
 
     fn ensure_sink(&mut self) {
@@ -338,8 +382,8 @@ impl Player {
 
     fn open(&self, track: &Track, at: f64) -> Result<Stream, String> {
         let client = self.client.as_ref().ok_or("Not logged in")?;
-        let (url, format) = client.stream_url(track, self.quality)?;
-        open_stream(client, url, format, track.id, at)
+        let (url, format, song_id) = client.stream_url(track, self.quality)?;
+        open_stream(client, url, format, song_id, at)
     }
 
     fn seek(&mut self, t: f64) {
@@ -352,7 +396,7 @@ impl Player {
             Format::Flac => t < s.written,
         };
         if reopen {
-            let (url, format, id) = (s.url.clone(), s.format_kind, self.queue[self.index].id);
+            let (url, format, id) = (s.url.clone(), s.format_kind, s.song_id);
             let client = self.client.clone().expect("stream implies client");
             match open_stream(&client, url, format, id, t) {
                 Ok(new) => self.stream = Some(new),
@@ -390,6 +434,9 @@ impl Player {
 
         if stream.eof {
             if sink.pending_frames() == 0 {
+                if self.index + 1 >= self.queue.len() {
+                    self.extend_flow();
+                }
                 if self.index + 1 < self.queue.len() {
                     self.index += 1;
                     let track = self.queue[self.index].clone();
@@ -487,6 +534,7 @@ fn open_stream(client: &Deezer, url: String, format_kind: Format, track_id: u64,
     }
     Ok(Stream {
         url,
+        song_id: track_id,
         format_kind,
         track_id: track.id,
         time_base: track.codec_params.time_base.unwrap_or(TimeBase::new(1, RATE)),
