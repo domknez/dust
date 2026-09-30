@@ -133,6 +133,32 @@ DUST_DEBUG=1 dust --tone "Living Room"     # ...on an AirPlay speaker, with pack
 - Right-click a track or card: *Play next* / *Add to queue*
 - Queue button (next to AirPlay): open the queue; drag rows to reorder
 
+## Project structure
+
+```
+src/
+├── main.rs            entry point: run the app, or a command-line mode (cli.rs)
+├── deezer/            Deezer client: session, catalogue, streaming, listen reports, stream cipher
+├── player/            playback engine thread, queue (pure, tested), decoding, listen tracking
+├── output/            audio outputs behind the Sink trait
+│   ├── local.rs       sound card (cpal)
+│   └── airplay/       AirPlay 1 & 2 sender: discovery, RTSP, handshakes, packets, network threads,
+│                      ap2/ (pairing, plists, PTP clock), dacp (speaker remote control)
+├── ui/
+│   ├── app.rs         UI state, lifecycle and panel layout
+│   ├── views/         one file per screen or panel
+│   ├── widgets/       reusable painted components
+│   └── style/         palette, type scale, metrics, icons — all visual constants live here
+├── credentials.rs     session in the OS keychain
+├── settings.rs        settings file
+└── login.rs           "Log in with Deezer" webview helper
+```
+
+To change how dust looks, start in `src/ui/style/`: views use named text roles
+(`typography::TITLE`, `CAPTION`, ...), palette colours and `metrics` constants rather than
+raw values. `cargo test` covers the protocol and data layers; `dust --tone` and
+`dust --debug-home` help check audio output and the Deezer API.
+
 ## Credits
 
 - AirPlay 2 pairing, encryption and PTP timing follow the approach of

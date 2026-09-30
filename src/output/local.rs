@@ -1,6 +1,7 @@
 //! Local sound card output via cpal, fed through a lock-free ring buffer.
 
-use super::{RATE, Resampler, Sink};
+use super::resample::Resampler;
+use super::{RATE, Sink};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample};
 use std::sync::Arc;
