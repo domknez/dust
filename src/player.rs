@@ -50,6 +50,18 @@ pub enum Cmd {
     Quality(Quality),
     /// Report listens to Deezer (history, Flow, Last.fm scrobbling).
     ReportListens(bool),
+    /// Append to the end of the queue.
+    Enqueue(Vec<Track>),
+    /// Insert right after the current track.
+    PlayNext(Vec<Track>),
+    /// Remove the queue entry at an index.
+    Remove(usize),
+    /// Move a queue entry from one index to another.
+    Move(usize, usize),
+    /// Play the queue entry at an index.
+    JumpTo(usize),
+    /// Drop everything after the current track (and stop endless Flow).
+    ClearUpcoming,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -65,6 +77,9 @@ pub enum State {
 pub struct Status {
     pub state: State,
     pub track: Option<Track>,
+    pub queue: Arc<Vec<Track>>,
+    /// Index of the current track in `queue`.
+    pub index: usize,
     pub position: f64,
     pub volume: f32,
     /// Active Flow config ("default" for plain Flow), if playing Flow.
@@ -91,6 +106,7 @@ impl PlayerHandle {
             client: None,
             quality: Quality::Mp3_320,
             queue: Vec::new(),
+            queue_dirty: false,
             flow: None,
             listen: None,
             report_listens: true,
@@ -145,6 +161,19 @@ struct ListenState {
     seeked: bool,
 }
 
+/// Where the current track ends up after moving the entry at `from` to `to`.
+fn index_after_move(current: usize, from: usize, to: usize) -> usize {
+    if current == from {
+        to
+    } else if from < current && to >= current {
+        current - 1
+    } else if from > current && to <= current {
+        current + 1
+    } else {
+        current
+    }
+}
+
 fn unix_now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
@@ -161,6 +190,8 @@ struct Player {
     client: Option<Deezer>,
     quality: Quality,
     queue: Vec<Track>,
+    /// Queue changed since the last publish.
+    queue_dirty: bool,
     /// Listen in progress, reported to Deezer when the track is replaced or ends.
     listen: Option<ListenState>,
     report_listens: bool,
@@ -240,6 +271,10 @@ impl Player {
         };
         st.output = self.output.name().to_string();
         st.volume = self.volume;
+        st.index = self.index;
+        if std::mem::take(&mut self.queue_dirty) {
+            st.queue = Arc::new(self.queue.clone());
+        }
         st.flow = self.flow.as_ref().map(|c| c.clone().unwrap_or_else(|| "default".into()));
         drop(st);
         if repaint {
@@ -254,7 +289,55 @@ impl Player {
     }
 
     fn handle(&mut self, cmd: Cmd) {
+        if matches!(
+            cmd,
+            Cmd::Play(..) | Cmd::PlayFlow(_) | Cmd::Enqueue(_) | Cmd::PlayNext(_) | Cmd::Remove(_) | Cmd::Move(..) | Cmd::ClearUpcoming
+        ) {
+            self.queue_dirty = true;
+        }
         match cmd {
+            Cmd::Enqueue(tracks) => {
+                if self.queue.is_empty() {
+                    self.index = 0;
+                }
+                self.queue.extend(tracks);
+            }
+            Cmd::PlayNext(tracks) => {
+                let at = if self.queue.is_empty() { 0 } else { self.index + 1 };
+                self.queue.splice(at..at, tracks);
+            }
+            Cmd::Remove(i) if i < self.queue.len() => {
+                self.queue.remove(i);
+                if i < self.index {
+                    self.index -= 1;
+                } else if i == self.index {
+                    // Removed the current track: continue with what took its place.
+                    if self.index < self.queue.len() {
+                        self.start_track(0.0);
+                    } else {
+                        self.finish_listen();
+                        self.stream = None;
+                        self.playing = false;
+                        self.index = self.queue.len().saturating_sub(1);
+                    }
+                }
+            }
+            Cmd::Remove(_) => {}
+            Cmd::Move(from, to) if from < self.queue.len() && to < self.queue.len() && from != to => {
+                let t = self.queue.remove(from);
+                self.queue.insert(to, t);
+                self.index = index_after_move(self.index, from, to);
+            }
+            Cmd::Move(..) => {}
+            Cmd::JumpTo(i) if i < self.queue.len() => {
+                self.index = i;
+                self.start_track(0.0);
+            }
+            Cmd::JumpTo(_) => {}
+            Cmd::ClearUpcoming => {
+                self.flow = None;
+                self.queue.truncate(self.index + 1);
+            }
             Cmd::Client(c) => self.client = Some(c),
             Cmd::Quality(q) => self.quality = q,
             Cmd::ReportListens(on) => self.report_listens = on,
@@ -353,6 +436,7 @@ impl Player {
                         self.queue.push(t);
                     }
                 }
+                self.queue_dirty = true;
                 self.queue.len() > before
             }
             Err(e) => {
@@ -630,4 +714,27 @@ fn open_stream(client: &Deezer, url: String, format_kind: Format, track_id: u64,
         samples: None,
         eof: false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::index_after_move;
+
+    /// Simulate on a real Vec and compare with the bookkeeping.
+    #[test]
+    fn move_keeps_current_track() {
+        for len in 1..6 {
+            for current in 0..len {
+                for from in 0..len {
+                    for to in 0..len {
+                        let mut v: Vec<usize> = (0..len).collect();
+                        let x = v.remove(from);
+                        v.insert(to, x);
+                        let expected = v.iter().position(|&t| t == current).unwrap();
+                        assert_eq!(index_after_move(current, from, to), expected, "len {len} cur {current} {from}->{to}");
+                    }
+                }
+            }
+        }
+    }
 }
