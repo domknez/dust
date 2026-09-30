@@ -24,6 +24,7 @@ fn tone(target: Option<String>) {
                 password: false,
                 auth_setup: false,
                 ap2: std::env::var_os("DUST_AP2").is_some(),
+                ptp: std::env::var_os("DUST_PTP").is_some(),
             };
             Box::new(output::airplay::AirPlaySink::connect(&device, 0.3).expect("AirPlay connect"))
         }

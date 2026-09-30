@@ -9,6 +9,7 @@
 
 use super::ap2::bplist::{self, Value, dict};
 use super::ap2::pairing::{self, DecryptReader, Encryptor, SrpClient, tlv};
+use super::ap2::ptp::{self, PtpPeer};
 use super::{RATE, Sink};
 use chacha20poly1305::ChaCha20Poly1305;
 use chacha20poly1305::aead::KeyInit;
@@ -43,6 +44,8 @@ pub struct Device {
     pub auth_setup: bool,
     /// Speak AirPlay 2 (transient pairing + encryption) instead of RAOP.
     pub ap2: bool,
+    /// Receiver supports PTP timing (required for audio by most AirPlay 2 devices).
+    pub ptp: bool,
 }
 
 /// `ft`/`features` TXT value: "0xLOW" or "0xLOW,0xHIGH".
@@ -54,6 +57,7 @@ fn parse_features(v: &str) -> u64 {
 }
 
 const FEATURE_AUDIO: u64 = 1 << 9;
+const FEATURE_PTP: u64 = 1 << 41;
 const FEATURE_COREUTILS_PAIRING: u64 = 1 << 48;
 
 pub struct Discovery {
@@ -93,6 +97,7 @@ impl Discovery {
                                 name,
                                 addrs,
                                 ap2,
+                                ptp: ft & FEATURE_PTP != 0,
                                 supported: ap2 || et.split(',').any(|e| e.trim() == "0"),
                                 auth_setup: et.split(',').any(|e| e.trim() == "4"),
                                 password: info.get_property_val_str("pw").is_some_and(|p| p == "true"),
@@ -278,6 +283,8 @@ pub struct AirPlaySink {
     rtsp: Rtsp,
     /// AirPlay 2 reverse event channel; held open for the session.
     _events: Option<TcpStream>,
+    /// Keeps our PTP grandmaster talking to this receiver.
+    _ptp: Option<PtpPeer>,
     shared: Arc<Shared>,
     producer: rtrb::Producer<i16>,
     threads: Vec<JoinHandle<()>>,
@@ -343,7 +350,7 @@ impl AirPlaySink {
 
         let control_port_local = control.local_addr().map_err(|e| e.to_string())?.port();
         let negotiated = if device.ap2 {
-            negotiate_ap2(&mut rtsp, remote_ip, control_port_local, timing_port)
+            negotiate_ap2(&mut rtsp, device, local_ip, remote_ip, control_port_local, timing_port)
         } else {
             let ports = Ports { control: control_port_local, timing: timing_port };
             negotiate_ap1(&mut rtsp, device, sid, local_ip, remote_ip, ports, seq, rtptime).map(|(s, c)| Negotiated {
@@ -351,9 +358,10 @@ impl AirPlaySink {
                 control_port: c,
                 audio_key: None,
                 events: None,
+                ptp: None,
             })
         };
-        let Negotiated { server_port, control_port, audio_key, events } = match negotiated {
+        let Negotiated { server_port, control_port, audio_key, events, ptp } = match negotiated {
             Ok(n) => n,
             Err(e) => {
                 shared.running.store(false, Ordering::Release);
@@ -370,9 +378,10 @@ impl AirPlaySink {
         threads.push(spawn("airplay-control", move || control_loop(ctl, control_dst, sh)));
         let sh = shared.clone();
         let cipher = audio_key.map(|k| ChaCha20Poly1305::new(&k.into()));
-        threads.push(spawn("airplay-audio", move || audio_loop(audio, control, control_dst, consumer, cipher, sh)));
+        let clock_id = ptp.as_ref().map(PtpPeer::clock_id);
+        threads.push(spawn("airplay-audio", move || audio_loop(audio, control, control_dst, consumer, cipher, clock_id, sh)));
 
-        let mut sink = Self { rtsp, _events: events, shared, producer, threads };
+        let mut sink = Self { rtsp, _events: events, _ptp: ptp, shared, producer, threads };
         sink.set_volume(volume);
         Ok(sink)
     }
@@ -401,6 +410,7 @@ struct Negotiated {
     /// AirPlay 2 per-packet audio key (`shk`).
     audio_key: Option<[u8; 32]>,
     events: Option<TcpStream>,
+    ptp: Option<PtpPeer>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -470,28 +480,76 @@ fn pair_transient(rtsp: &mut Rtsp) -> Result<[u8; 64], String> {
     Ok(proof.session_key)
 }
 
+fn uuid_v4() -> String {
+    let mut u = random_bytes::<16>();
+    u[6] = (u[6] & 0x0f) | 0x40;
+    u[8] = (u[8] & 0x3f) | 0x80;
+    let hex: String = u.iter().map(|b| format!("{b:02X}")).collect();
+    format!("{}-{}-{}-{}-{}", &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..])
+}
+
 fn random_bytes<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
     getrandom::getrandom(&mut b).expect("OS RNG");
     b
 }
 
-fn negotiate_ap2(rtsp: &mut Rtsp, remote_ip: IpAddr, control_port: u16, timing_port: u16) -> Result<Negotiated, String> {
+fn negotiate_ap2(
+    rtsp: &mut Rtsp,
+    device: &Device,
+    local_ip: IpAddr,
+    remote_ip: IpAddr,
+    control_port: u16,
+    timing_port: u16,
+) -> Result<Negotiated, String> {
     let key = pair_transient(rtsp)?;
     rtsp.encryptor = Some(Encryptor::new(&pairing::hkdf32(&key, "Control-Salt", "Control-Write-Encryption-Key")));
     rtsp.reader.get_mut().enable(&pairing::hkdf32(&key, "Control-Salt", "Control-Read-Encryption-Key"));
 
     let id = random_bytes::<6>();
     let device_id = id.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(":");
-    let u = random_bytes::<16>();
-    let hex: String = u.iter().map(|b| format!("{b:02X}")).collect();
-    let uuid = format!("{}-{}-{}-{}-{}", &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..]);
-    let setup = dict([
-        ("deviceID", Value::String(device_id)),
-        ("sessionUUID", Value::String(uuid)),
-        ("timingPort", Value::Int(timing_port as u64)),
-        ("timingProtocol", Value::String("NTP".into())),
-    ]);
+    let uuid = uuid_v4();
+    // PTP when the receiver supports it (AirPlay 2 receivers generally won't play
+    // NTP-timed streams); NTP only as a fallback, e.g. if ports 319/320 are taken.
+    let ptp = if device.ptp {
+        match ptp::join(remote_ip) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                eprintln!("dust: {e}; falling back to NTP timing");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let setup = match &ptp {
+        Some(p) => {
+            let peer = dict([
+                ("ID", Value::String(uuid.clone())),
+                ("DeviceType", Value::Int(0)),
+                ("ClockID", Value::Int(p.clock_id())), // encoded as signed 64-bit, as Apple does
+                ("SupportsClockPortMatchingOverride", Value::Bool(false)),
+                ("Addresses", Value::Array(vec![Value::String(local_ip.to_string())])),
+            ]);
+            dict([
+                ("name", Value::String("dust".into())),
+                ("deviceID", Value::String(device_id.clone())),
+                ("sessionUUID", Value::String(uuid)),
+                ("timingProtocol", Value::String("PTP".into())),
+                ("macAddress", Value::String(device_id)),
+                ("groupUUID", Value::String(uuid_v4())),
+                ("groupContainsGroupLeader", Value::Bool(false)),
+                ("timingPeerInfo", peer.clone()),
+                ("timingPeerList", Value::Array(vec![peer])),
+            ])
+        }
+        None => dict([
+            ("deviceID", Value::String(device_id)),
+            ("sessionUUID", Value::String(uuid)),
+            ("timingPort", Value::Int(timing_port as u64)),
+            ("timingProtocol", Value::String("NTP".into())),
+        ]),
+    };
     let r = rtsp.request("SETUP", None, &[], Some((PLIST, &bplist::encode(&setup))))?;
     rtsp.session = r.header("Session").map(|s| s.split(';').next().unwrap_or(s).to_string());
     let reply = bplist::decode(&r.body)?;
@@ -502,6 +560,10 @@ fn negotiate_ap2(rtsp: &mut Rtsp, remote_ip: IpAddr, control_port: u16, timing_p
         .and_then(|p| TcpStream::connect_timeout(&SocketAddr::new(remote_ip, p as u16), Duration::from_secs(2)).ok());
 
     rtsp.request("RECORD", None, &[], None)?;
+    if ptp.is_some() {
+        let peers = Value::Array(vec![Value::String(remote_ip.to_string()), Value::String(local_ip.to_string())]);
+        rtsp.request("SETPEERS", None, &[], Some(("/peer-list-changed", &bplist::encode(&peers))))?;
+    }
 
     let shk: [u8; 32] = key[..32].try_into().unwrap();
     let stream = dict([
@@ -525,7 +587,7 @@ fn negotiate_ap2(rtsp: &mut Rtsp, remote_ip: IpAddr, control_port: u16, timing_p
     let s0 = reply.get("streams").and_then(|s| s.index(0)).ok_or("SETUP stream: no streams in reply")?;
     let data = s0.get("dataPort").and_then(Value::as_u64).ok_or("SETUP stream: no dataPort")?;
     let ctl = s0.get("controlPort").and_then(Value::as_u64).ok_or("SETUP stream: no controlPort")?;
-    Ok(Negotiated { server_port: data as u16, control_port: ctl as u16, audio_key: Some(shk), events })
+    Ok(Negotiated { server_port: data as u16, control_port: ctl as u16, audio_key: Some(shk), events, ptp })
 }
 
 fn spawn(name: &str, f: impl FnOnce() + Send + 'static) -> JoinHandle<()> {
@@ -575,6 +637,17 @@ fn control_loop(sock: UdpSocket, dst: SocketAddr, sh: Arc<Shared>) {
     }
 }
 
+/// PTP flavour (AirPlay 2): rtptime playing at `now`, PTP time, stream anchor, clock id.
+fn send_sync_ptp(sock: &UdpSocket, dst: SocketAddr, now_rtp: u32, head_rtp: u32, clock_id: u64, first: bool) {
+    let mut p = [0u8; 28];
+    p[..4].copy_from_slice(&[if first { 0x90 } else { 0x80 }, 0xd7, 0x00, 0x06]);
+    p[4..8].copy_from_slice(&now_rtp.wrapping_sub(LATENCY).to_be_bytes());
+    p[8..16].copy_from_slice(&ptp::now_ns().to_be_bytes());
+    p[16..20].copy_from_slice(&head_rtp.wrapping_sub(11_025).to_be_bytes());
+    p[20..28].copy_from_slice(&clock_id.to_be_bytes());
+    let _ = sock.send_to(&p, dst);
+}
+
 fn send_sync(sock: &UdpSocket, dst: SocketAddr, now_rtp: u32, first: bool) {
     let mut p = [0u8; 20];
     p[..4].copy_from_slice(&[if first { 0x90 } else { 0x80 }, 0xd4, 0x00, 0x07]);
@@ -590,6 +663,7 @@ fn audio_loop(
     control_dst: SocketAddr,
     mut consumer: rtrb::Consumer<i16>,
     cipher: Option<ChaCha20Poly1305>,
+    ptp_clock: Option<u64>,
     sh: Arc<Shared>,
 ) {
     let ssrc = fastrand::u32(..);
@@ -621,7 +695,11 @@ fn audio_loop(
         }
         let elapsed = (start.elapsed().as_secs_f64() * RATE as f64) as u64;
         if elapsed >= next_sync {
-            send_sync(&control, control_dst, start_rtp.wrapping_add(elapsed as u32), first);
+            let now_rtp = start_rtp.wrapping_add(elapsed as u32);
+            match ptp_clock {
+                Some(id) => send_sync_ptp(&control, control_dst, now_rtp, sh.rtptime.load(Ordering::Acquire), id, first),
+                None => send_sync(&control, control_dst, now_rtp, first),
+            }
             next_sync = elapsed + RATE as u64;
         }
         if sent >= elapsed + LEAD {
