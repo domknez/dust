@@ -31,6 +31,8 @@ Inspired by [SpotLight](https://github.com/dddevid/SpotLight).
 - **Seeking** (HTTP range jumps for MP3), shuffle, queue auto-advance
 - **AirPlay 2 and AirPlay 1** output with automatic discovery — Sonos (incl. Era 100/300),
   HomePod-class receivers, Apple TV, AirPort Express, shairport-sync and most AirPlay speakers
+- **Last.fm scrobbling, history and Flow learning:** dust reports what you listen to
+  back to Deezer, exactly like Deezer's own apps
 - **Speaker buttons work:** volume and play/pause/skip on the speaker control dust
 - **Modern UI:** Tidal-style layout with cover art, soft dark and light themes (or follow
   the system), Inter typeface
@@ -71,10 +73,20 @@ Click your name at the bottom of the sidebar:
 
 - **Appearance:** System, Dark or Light
 - **Streaming quality:** MP3 128, MP3 320 or FLAC
+- **Share listening with Deezer:** history, Flow and Last.fm scrobbling (on by default)
 
 Choices are saved in `settings.conf` in your config directory
 (`~/Library/Application Support/dust` on macOS, `%APPDATA%\dust` on Windows,
 `~/.config/dust` on Linux).
+
+## Last.fm scrobbling and listening history
+
+dust reports each listen to Deezer (how long you listened, whether you skipped), the same
+way Deezer's apps do. Deezer uses that for your listening history, "Recently played" and
+Flow recommendations and, if you've connected Last.fm in your Deezer account settings,
+scrobbles it to Last.fm. Nothing is sent anywhere else.
+
+Turn it off under **Share listening with Deezer** in the account menu.
 
 ## AirPlay
 

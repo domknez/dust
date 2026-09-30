@@ -158,6 +158,7 @@ pub struct App {
     discovery: Option<Discovery>,
     covers: Covers,
     theme_mode: theme::Mode,
+    report_listens: bool,
     _dacp: Option<dacp::Server>,
 }
 
@@ -167,6 +168,7 @@ impl App {
         let saved = crate::settings::load();
         let theme_mode = saved.get("theme").and_then(|k| theme::Mode::from_key(k)).unwrap_or(theme::Mode::System);
         let quality = saved.get("quality").and_then(|k| Quality::from_key(k)).unwrap_or(Quality::Mp3_320);
+        let report_listens = saved.get("report_listens").is_none_or(|v| v != "false");
         theme::install_fonts(ctx);
         theme::apply(ctx, theme_mode.resolve(ctx));
 
@@ -217,6 +219,7 @@ impl App {
             discovery,
             covers: Covers::new(ctx),
             theme_mode,
+            report_listens,
             _dacp: dacp_server,
         };
         if let Some(arl) = keyring().and_then(|k| k.get_password().ok()) {
@@ -280,6 +283,7 @@ impl App {
                 self.arl.clear();
                 self.player.send(Cmd::Client(client.clone()));
                 self.player.send(Cmd::Quality(self.quality));
+                self.player.send(Cmd::ReportListens(self.report_listens));
                 let c = client.clone();
                 self.playlists_task = spawn(ctx, move || c.playlists());
                 self.client = Some(client);
@@ -483,6 +487,14 @@ impl App {
                     self.player.send(Cmd::Quality(q));
                     crate::settings::set("quality", q.key());
                 }
+            }
+            ui.add_space(8.0);
+            widgets::caption(ui, "LISTENING");
+            let sub = "History, Flow and Last.fm scrobbling via Deezer";
+            if widgets::menu_row(ui, None, "Share listening with Deezer", Some(sub), self.report_listens, c().text).clicked() {
+                self.report_listens = !self.report_listens;
+                self.player.send(Cmd::ReportListens(self.report_listens));
+                crate::settings::set("report_listens", if self.report_listens { "true" } else { "false" });
             }
             widgets::divider(ui);
             if widgets::menu_row(ui, Some(Icon::LogOut), "Log out", None, false, c().danger).clicked() {
@@ -711,7 +723,7 @@ impl App {
                 ui.add_space(8.0);
                 egui::ScrollArea::horizontal().id_salt(("home-row", si)).auto_shrink([false, true]).show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = if is_flow { 22.0 } else { 18.0 };
+                        ui.spacing_mut().item_spacing.x = if is_flow { 10.0 } else { 18.0 };
                         for it in items {
                             if is_flow {
                                 if let Some(f) = flow_card(ui, &mut self.covers, it, st.flow.as_deref() == Some(it.id.as_str())) {
@@ -962,8 +974,10 @@ fn card(ui: &mut Ui, covers: &mut Covers, coll: &Coll) -> CardClick {
 /// Round Flow mood tile; returns the flow config to play when clicked.
 fn flow_card(ui: &mut Ui, covers: &mut Covers, it: &Item, active: bool) -> Option<Option<String>> {
     let d = 116.0;
-    let (rect, resp) = ui.allocate_exact_size(vec2(d, d + 34.0), Sense::click());
-    let art = Rect::from_min_size(rect.min, Vec2::splat(d));
+    // Leave room around the artwork for the selection ring so scroll areas don't clip it.
+    let pad = 6.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(d + 2.0 * pad, d + 2.0 * pad + 30.0), Sense::click());
+    let art = Rect::from_min_size(rect.min + Vec2::splat(pad), Vec2::splat(d));
     let url = it.picture.as_ref().map(|(k, m)| image_url(k, m, 240));
     widgets::cover(ui, covers, url.as_deref(), art, 58);
     if active || resp.hovered() {
@@ -971,7 +985,7 @@ fn flow_card(ui: &mut Ui, covers: &mut Covers, it: &Item, active: bool) -> Optio
         ui.painter().circle_stroke(art.center(), d / 2.0 + 3.0, egui::Stroke::new(2.5, color));
     }
     let g = widgets::line(ui.painter(), &it.title, if active { bold(13.0) } else { regular(13.0) }, if active { c().accent } else { c().text }, d + 10.0);
-    let pos = pos2(art.center().x - g.size().x / 2.0, art.bottom() + 12.0);
+    let pos = pos2(art.center().x - g.size().x / 2.0, art.bottom() + pad + 8.0);
     ui.painter().galley(pos, g, c().text);
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     resp.clicked().then(|| (it.id != "default").then(|| it.id.clone()))
