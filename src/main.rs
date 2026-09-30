@@ -3,6 +3,7 @@
 #![allow(clippy::chunks_exact_to_as_chunks)]
 
 mod deezer;
+mod icon;
 #[cfg(feature = "login-window")]
 mod login;
 mod output;
@@ -151,7 +152,8 @@ fn main() -> eframe::Result {
             let v = egui::ViewportBuilder::default()
                 .with_title("dust")
                 .with_inner_size([1180.0, 760.0])
-                .with_min_inner_size([760.0, 480.0]);
+                .with_min_inner_size([760.0, 480.0])
+                .with_icon(std::sync::Arc::new(icon::window_icon()));
             // Content under a transparent title bar, traffic lights floating over the sidebar.
             #[cfg(target_os = "macos")]
             let v = v.with_fullsize_content_view(true).with_title_shown(false).with_titlebar_shown(false);

@@ -199,6 +199,8 @@ pub struct App {
     covers: Covers,
     theme_mode: theme::Mode,
     report_listens: bool,
+    logo_small: egui::TextureHandle,
+    logo_large: egui::TextureHandle,
     /// Last volume written to settings.
     saved_volume: f32,
     /// Speaker (by name) to reselect once discovery finds it.
@@ -267,6 +269,8 @@ impl App {
             covers: Covers::new(ctx),
             theme_mode,
             report_listens,
+            logo_small: crate::icon::texture(ctx, false),
+            logo_large: crate::icon::texture(ctx, true),
             saved_volume: volume,
             restore_output,
             _dacp: dacp_server,
@@ -379,11 +383,11 @@ impl App {
         egui::CentralPanel::default().frame(egui::Frame::new().fill(c().sidebar)).show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space((ui.available_height() * 0.3).max(40.0));
-                let (r, _) = ui.allocate_exact_size(vec2(200.0, 64.0), Sense::hover());
-                let g = ui.painter().layout_no_wrap("dust".into(), bold(56.0), c().text);
-                let x = r.center().x - g.size().x / 2.0;
-                ui.painter().galley(pos2(x, r.center().y - g.size().y / 2.0), g.clone(), c().text);
-                ui.painter().circle_filled(pos2(x + g.size().x + 8.0, r.center().y + 16.0), 6.0, c().accent);
+                ui.add(egui::Image::from_texture((self.logo_large.id(), Vec2::splat(112.0))));
+                ui.add_space(10.0);
+                let (r, _) = ui.allocate_exact_size(vec2(200.0, 56.0), Sense::hover());
+                let g = ui.painter().layout_no_wrap("dust".into(), bold(48.0), c().text);
+                ui.painter().galley(pos2(r.center().x - g.size().x / 2.0, r.center().y - g.size().y / 2.0), g, c().text);
                 ui.label(egui::RichText::new("Your music, nothing else.").color(c().dim).size(15.0));
                 ui.add_space(36.0);
                 if self.login.is_some() {
@@ -430,12 +434,10 @@ impl App {
     fn sidebar(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
         ui.add_space(TOP_INSET);
-        ui.horizontal(|ui| {
-            ui.add_space(8.0);
-            let r = text_left(ui.painter(), ui.cursor().min + vec2(0.0, 16.0), "dust", bold(26.0), c().text, 200.0);
-            ui.painter().circle_filled(pos2(r.right() + 6.0, r.bottom() - 7.0), 3.5, c().accent);
-            ui.allocate_space(vec2(1.0, 32.0));
-        });
+        let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::hover());
+        let logo = Rect::from_min_size(pos2(row.left() + 6.0, row.top() + 1.0), Vec2::splat(32.0));
+        egui::Image::from_texture((self.logo_small.id(), logo.size())).paint_at(ui, logo);
+        text_left(ui.painter(), pos2(logo.right() + 10.0, logo.center().y), "dust", bold(24.0), c().text, 160.0);
         ui.add_space(18.0);
 
         let mut go = None;

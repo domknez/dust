@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/dust-icon-pack/png/dust-128.png" width="128" alt="dust icon"></p>
+
 # dust
 
 **A free and open source, ultra-lightweight Deezer desktop client written in Rust — with
