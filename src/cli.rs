@@ -1,6 +1,7 @@
 //! Command-line modes besides the app itself: the login helper and diagnostics.
 //!
 //! - `--tone [speaker | ip:port]`  4 s test tone on an output
+//! - `--list-speakers`            AirPlay speakers found on the network (silent)
 //! - `--debug-home`                home page structure for the stored session
 //! - `--debug-tracks <kind> <id>`  what a home item plays (flow|mix|album|artist|playlist)
 //! - `--debug-stream <playlist> [n]`  stream resolution per track, incl. fallbacks
@@ -17,6 +18,7 @@ pub enum Command {
     #[cfg(feature = "login-window")]
     LoginWindow,
     Tone(Option<String>),
+    ListSpeakers,
     DebugHome,
     DebugTracks {
         kind: String,
@@ -39,6 +41,7 @@ impl Command {
             #[cfg(feature = "login-window")]
             crate::login::ARG => Command::LoginWindow,
             "--tone" => Command::Tone(args.next()),
+            "--list-speakers" => Command::ListSpeakers,
             "--debug-home" => Command::DebugHome,
             "--debug-tracks" => Command::DebugTracks { kind: args.next().unwrap_or_default(), id: args.next().unwrap_or_default() },
             "--debug-stream" => Command::DebugStream {
@@ -59,6 +62,7 @@ impl Command {
             #[cfg(feature = "login-window")]
             Command::LoginWindow => crate::login::run_window(),
             Command::Tone(target) => tone(target),
+            Command::ListSpeakers => list_speakers(),
             Command::DebugHome => debug_home(&logged_in()),
             Command::DebugTracks { kind, id } => debug_tracks(&logged_in(), &kind, &id),
             Command::DebugStream { playlist, count } => debug_stream(&logged_in(), playlist, count),
@@ -100,6 +104,18 @@ fn tone(target: Option<String>) {
     std::thread::sleep(Duration::from_millis(sink.latency_frames() as u64 * 1000 / RATE as u64));
     drop(sink);
     println!("done");
+}
+
+/// Browse for 3 s and print what was found, with the protocol each uses.
+fn list_speakers() {
+    let discovery = Discovery::start(|| {}).expect("mDNS");
+    std::thread::sleep(Duration::from_secs(3));
+    for d in discovery.devices() {
+        let protocol = if d.ap2 { "AirPlay 2" } else { "AirPlay 1" };
+        let addrs: Vec<String> = d.addrs.iter().map(|a| a.to_string()).collect();
+        let note = if d.supported { "" } else { "  (unsupported)" };
+        println!("{:<24} {protocol:<10} {}{note}", d.name, addrs.join(", "));
+    }
 }
 
 /// A speaker by name (via mDNS), or directly by `ip:port` (for test receivers;
