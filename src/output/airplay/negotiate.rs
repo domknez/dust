@@ -186,6 +186,6 @@ fn uuid_v4() -> String {
 
 fn random_bytes<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
-    getrandom::getrandom(&mut b).expect("OS RNG");
+    getrandom::fill(&mut b).expect("OS RNG");
     b
 }

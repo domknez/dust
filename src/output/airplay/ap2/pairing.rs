@@ -105,7 +105,7 @@ pub struct SrpProof {
 impl SrpClient {
     pub fn new() -> Self {
         let mut secret = [0u8; 32];
-        getrandom::getrandom(&mut secret).expect("OS RNG");
+        getrandom::fill(&mut secret).expect("OS RNG");
         Self::with_secret(&secret)
     }
 

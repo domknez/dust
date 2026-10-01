@@ -103,7 +103,7 @@ impl PtpMaster {
         let general = bind(GENERAL_PORT)?;
         event.set_read_timeout(Some(Duration::from_millis(50))).ok();
         let mut id = [0u8; 8];
-        getrandom::getrandom(&mut id).expect("OS RNG");
+        getrandom::fill(&mut id).expect("OS RNG");
         let master = Arc::new(Self { clock_id: u64::from_be_bytes(id), peers: Mutex::new(Vec::new()), event, general });
 
         let weak = Arc::downgrade(&master);

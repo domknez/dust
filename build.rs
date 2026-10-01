@@ -2,6 +2,7 @@
 //! decoder at runtime) and, on Windows, embeds dust.ico into the executable.
 
 use std::fs::File;
+use std::io::BufReader;
 use std::path::Path;
 
 /// macOS icons leave a transparent margin around the artwork; without it the Dock /
@@ -11,9 +12,9 @@ const MACOS_ART_FRACTION: f32 = 836.0 / 1024.0;
 
 fn decode(src: &str) -> (Vec<u8>, usize) {
     println!("cargo:rerun-if-changed={src}");
-    let decoder = png::Decoder::new(File::open(src).unwrap_or_else(|e| panic!("{src}: {e}")));
+    let decoder = png::Decoder::new(BufReader::new(File::open(src).unwrap_or_else(|e| panic!("{src}: {e}"))));
     let mut reader = decoder.read_info().expect("png header");
-    let mut buf = vec![0; reader.output_buffer_size()];
+    let mut buf = vec![0; reader.output_buffer_size().expect("png size")];
     let info = reader.next_frame(&mut buf).expect("png data");
     assert_eq!(info.color_type, png::ColorType::Rgba, "{src}: expected RGBA");
     assert_eq!(info.bit_depth, png::BitDepth::Eight, "{src}: expected 8-bit");
