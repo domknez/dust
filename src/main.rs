@@ -4,6 +4,8 @@
 
 //! dust — a free and open source, lightweight Deezer client with AirPlay output.
 
+#[macro_use]
+mod log;
 mod cli;
 mod credentials;
 mod deezer;

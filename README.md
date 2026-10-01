@@ -123,8 +123,11 @@ Check an output without logging in:
 
 ```sh
 dust --tone                                # 4 s test tone on the local sound card
-DUST_DEBUG=1 dust --tone "Living Room"     # ...on an AirPlay speaker, with packet stats
+DUST_LOG=debug dust --tone "Living Room"   # ...on an AirPlay speaker, with packet stats
 ```
+
+Troubleshooting: `DUST_LOG=debug` (or `info`, `trace`) prints diagnostics to the terminal,
+e.g. AirPlay packet stats, speaker remote-control requests and listen reports.
 
 ## Shortcuts
 

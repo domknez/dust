@@ -105,7 +105,7 @@ impl Stream {
             }
             Err(DecodeError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Decoded::End,
             Err(e) => {
-                eprintln!("dust: stream: {e}");
+                log_warn!("stream: {e}");
                 return Decoded::End;
             }
         };
@@ -121,7 +121,7 @@ impl Stream {
             Ok(d) => d,
             Err(DecodeError::DecodeError(_)) => return Decoded::Nothing,
             Err(e) => {
-                eprintln!("dust: decode: {e}");
+                log_warn!("decode: {e}");
                 return Decoded::End;
             }
         };

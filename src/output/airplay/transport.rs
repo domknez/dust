@@ -27,7 +27,7 @@ pub struct Shared {
     pub stats: Stats,
 }
 
-/// Diagnostics, printed when a session ends with DUST_DEBUG set.
+/// Diagnostics, logged (debug level) when a session ends.
 #[derive(Default)]
 pub struct Stats {
     pub timing_requests: AtomicU64,
@@ -157,7 +157,7 @@ pub fn audio_loop(out: AudioOut, mut consumer: rtrb::Consumer<i16>, sh: &Shared)
         let rtptime = sh.rtptime.load(Ordering::Acquire);
         let packet = packets::audio_packet(seq, rtptime, ssrc, first, &frame, out.cipher.as_ref());
         if let Err(e) = out.socket.send(&packet) {
-            eprintln!("dust: airplay send: {e}");
+            log_warn!("airplay send: {e}");
         }
         sh.stats.packets.fetch_add(1, Ordering::Relaxed);
         if frame.iter().any(|&s| s != 0) {

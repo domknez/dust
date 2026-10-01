@@ -15,7 +15,7 @@ pub fn save(arl: &str) {
     if let Some(e) = entry()
         && let Err(err) = e.set_password(arl)
     {
-        eprintln!("dust: could not save session to the keychain: {err}");
+        log_warn!("could not save session to the keychain: {err}");
     }
 }
 

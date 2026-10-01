@@ -1,7 +1,6 @@
 //! Tracks how long the current track has actually been heard and reports each
 //! listen to Deezer (history, Flow, Last.fm), like Deezer's own apps.
 
-use super::debug_enabled;
 use crate::deezer::{Deezer, Format, Listen};
 use std::time::Duration;
 
@@ -60,11 +59,8 @@ impl ListenTracker {
         listen.listened_secs = secs;
         listen.skipped = current.seeked || secs + SKIP_TOLERANCE_SECS < current.track_secs as u64;
         std::thread::spawn(move || match client.report_listen(&listen) {
-            Err(e) => eprintln!("dust: listen report failed: {e}"),
-            Ok(()) if debug_enabled() => {
-                eprintln!("dust: reported listen of {} ({} s, skipped: {})", listen.song_id, listen.listened_secs, listen.skipped)
-            }
-            Ok(()) => {}
+            Ok(()) => log_debug!("reported listen of {} ({} s, skipped: {})", listen.song_id, listen.listened_secs, listen.skipped),
+            Err(e) => log_warn!("listen report failed: {e}"),
         });
     }
 }

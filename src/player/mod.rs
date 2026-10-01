@@ -121,9 +121,3 @@ impl PlayerHandle {
         self.status.lock().unwrap().clone()
     }
 }
-
-/// Diagnostics switch shared by the player's modules.
-fn debug_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("DUST_DEBUG").is_some())
-}

@@ -29,6 +29,6 @@ pub fn set(key: &str, value: &str) {
         let _ = std::fs::create_dir_all(dir);
     }
     if let Err(e) = std::fs::write(&p, text) {
-        eprintln!("dust: could not save settings to {}: {e}", p.display());
+        log_warn!("could not save settings to {}: {e}", p.display());
     }
 }

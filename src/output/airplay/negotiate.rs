@@ -74,7 +74,7 @@ pub fn airplay2(rtsp: &mut Rtsp, device: &Device, local: &Local, remote_ip: IpAd
     let ptp = device
         .ptp
         .then(|| ptp::join(remote_ip))
-        .and_then(|joined| joined.inspect_err(|e| eprintln!("dust: {e}; falling back to NTP timing")).ok());
+        .and_then(|joined| joined.inspect_err(|e| log_warn!("{e}; falling back to NTP timing")).ok());
     let resp = rtsp.request("SETUP", None, &[], Some((PLIST, &bplist::encode(&session_setup(local, ptp.as_ref())))))?;
     rtsp.adopt_session(&resp);
     let reply = bplist::decode(&resp.body)?;

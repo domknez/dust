@@ -102,7 +102,7 @@ fn build<T: SizedSample + FromSample<f32>>(
                     }
                 }
             },
-            |e| eprintln!("audio stream error: {e}"),
+            |e| log_error!("audio stream: {e}"),
             None,
         )
         .map_err(|e| e.to_string())

@@ -4,7 +4,7 @@
 use super::listens::ListenTracker;
 use super::queue::{Flow, Queue, Removed};
 use super::stream::{Decoded, Stream};
-use super::{Cmd, Output, State, Status, debug_enabled};
+use super::{Cmd, Output, State, Status};
 use crate::deezer::{Deezer, Quality, Track};
 use crate::output::airplay::AirPlaySink;
 use crate::output::local::LocalSink;
@@ -195,9 +195,7 @@ impl Engine {
     }
 
     fn switch_output(&mut self, output: Output) {
-        if debug_enabled() {
-            eprintln!("dust: output -> {} (volume {:.2})", output.name(), self.volume);
-        }
+        log_debug!("output -> {} (volume {:.2})", output.name(), self.volume);
         let pos = self.position();
         self.sink = None; // tear down first: may be the same device
         self.output = output;
@@ -418,7 +416,7 @@ impl Engine {
     }
 
     fn error(&mut self, e: String) {
-        eprintln!("dust: {e}");
+        log_error!("{e}");
         self.status.lock().unwrap().error = Some(e);
         self.ctx.request_repaint();
     }

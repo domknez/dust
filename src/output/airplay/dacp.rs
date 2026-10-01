@@ -95,9 +95,7 @@ fn handle(stream: TcpStream, on_command: &impl Fn(Remote)) {
         }
         let path = request.split_whitespace().nth(1).unwrap_or("");
         let command = parse(path);
-        if std::env::var_os("DUST_DEBUG").is_some() {
-            eprintln!("dacp: {path} -> {command:?}");
-        }
+        log_debug!("dacp: {path} -> {command:?}");
         if let Some(c) = command {
             on_command(c);
         }

@@ -179,15 +179,13 @@ impl Drop for AirPlaySink {
         for t in self.threads.drain(..) {
             let _ = t.join();
         }
-        if std::env::var_os("DUST_DEBUG").is_some() {
-            let s = &self.shared.stats;
-            eprintln!(
-                "airplay: {} packets sent ({} audible), {} timing requests answered, {} packets retransmitted",
-                s.packets.load(Ordering::Relaxed),
-                s.audible.load(Ordering::Relaxed),
-                s.timing_requests.load(Ordering::Relaxed),
-                s.resent.load(Ordering::Relaxed)
-            );
-        }
+        let s = &self.shared.stats;
+        log_debug!(
+            "airplay: {} packets sent ({} audible), {} timing requests answered, {} packets retransmitted",
+            s.packets.load(Ordering::Relaxed),
+            s.audible.load(Ordering::Relaxed),
+            s.timing_requests.load(Ordering::Relaxed),
+            s.resent.load(Ordering::Relaxed)
+        );
     }
 }

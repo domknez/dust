@@ -80,7 +80,7 @@ impl App {
         let player = PlayerHandle::spawn(ctx.clone(), volume);
         let repaint = ctx.clone();
         let discovery =
-            Discovery::start(move || repaint.request_repaint()).inspect_err(|e| eprintln!("dust: AirPlay discovery unavailable: {e}")).ok();
+            Discovery::start(move || repaint.request_repaint()).inspect_err(|e| log_warn!("AirPlay discovery unavailable: {e}")).ok();
         let mut app = Self {
             _remote_control: start_remote_control(player.clone()),
             player,
@@ -295,7 +295,7 @@ fn start_remote_control(player: PlayerHandle) -> Option<dacp::Server> {
             Remote::Prev => Cmd::Prev,
         })
     })
-    .inspect_err(|e| eprintln!("dust: speaker remote control unavailable: {e}"))
+    .inspect_err(|e| log_warn!("speaker remote control unavailable: {e}"))
     .ok()
 }
 
@@ -347,10 +347,7 @@ impl eframe::App for App {
     }
 }
 
-/// DUST_DEBUG_REPAINT=1: print what requested each frame (to hunt idle redraws).
+/// DUST_LOG=trace: print what requested each frame (to hunt idle redraws).
 fn log_repaint_causes(ctx: &egui::Context) {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if *ON.get_or_init(|| std::env::var_os("DUST_DEBUG_REPAINT").is_some()) {
-        eprintln!("frame {}: {:?}", ctx.cumulative_pass_nr(), ctx.repaint_causes());
-    }
+    log_trace!("frame {}: {:?}", ctx.cumulative_pass_nr(), ctx.repaint_causes());
 }
