@@ -3,6 +3,8 @@
 use super::crypto::{CHUNK, StripeReader};
 use super::models::{Format, Quality, Track};
 use super::parse::text;
+use super::prefetch::Prefetch;
+use super::session::CALL_TIMEOUT;
 use super::{Deezer, Error, Result};
 use serde_json::{Value, json};
 use std::io::Read;
@@ -40,12 +42,14 @@ impl Deezer {
     /// chunk. Returns the reader and the offset actually used.
     pub fn open_stream(&self, source: &StreamSource, offset: u64) -> Result<(Box<dyn Read + Send + Sync>, u64)> {
         let offset = offset - offset % CHUNK as u64;
-        let mut req = self.0.agent.get(&source.url);
+        // No overall deadline: a track streams for minutes and may sit paused.
+        // Prefetch bounds each wait for data instead.
+        let mut req = self.0.agent.get(&source.url).config().timeout_global(None).timeout_recv_response(Some(CALL_TIMEOUT)).build();
         if offset > 0 {
-            req = req.set("Range", &format!("bytes={offset}-"));
+            req = req.header("Range", &format!("bytes={offset}-"));
         }
-        let resp = req.call()?;
-        let reader = StripeReader::new(resp.into_reader(), source.song_id, offset / CHUNK as u64);
+        let body = Prefetch::new(req.call()?.into_body().into_reader(), CALL_TIMEOUT);
+        let reader = StripeReader::new(body, source.song_id, offset / CHUNK as u64);
         Ok((Box::new(reader), offset))
     }
 
@@ -62,7 +66,7 @@ impl Deezer {
             "media": [{"type": "FULL", "formats": formats}],
             "track_tokens": [token],
         });
-        let r: Value = self.0.agent.post(MEDIA_API).send_json(body)?.into_json()?;
+        let r: Value = self.0.agent.post(MEDIA_API).send_json(body)?.into_body().read_json()?;
         let item = &r["data"][0];
         if let Some(err) = item["errors"].get(0) {
             // 2002: "Track token has no sufficient rights on requested media".

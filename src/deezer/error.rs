@@ -35,8 +35,8 @@ impl Error {
 impl From<ureq::Error> for Error {
     fn from(e: ureq::Error) -> Self {
         match e {
-            ureq::Error::Status(code, _) => Error::Api(format!("HTTP {code}")),
-            ureq::Error::Transport(t) => Error::Network(t.to_string()),
+            ureq::Error::StatusCode(code) => Error::Api(format!("HTTP {code}")),
+            e => Error::Network(e.to_string()),
         }
     }
 }

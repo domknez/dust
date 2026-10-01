@@ -7,6 +7,7 @@
 //! - [`listens`]: listen reports (history, Flow, Last.fm scrobbling)
 //! - [`models`] / [`parse`]: data types and their construction from API JSON
 //! - [`crypto`]: the `BF_CBC_STRIPE` stream cipher
+//! - [`prefetch`]: stall-proof network reads for streams
 //! - [`session`]: cookies, CSRF token and the raw gw-light transport
 
 mod catalog;
@@ -16,6 +17,7 @@ mod error;
 mod listens;
 mod models;
 mod parse;
+mod prefetch;
 mod session;
 mod streaming;
 

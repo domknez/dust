@@ -17,7 +17,7 @@ mdns-sd = { version = "0.21", default-features = false }
 rtrb = "0.4"
 serde_json = "1"
 symphonia = { version = "0.5", default-features = false, features = ["flac", "mp3"] }
-ureq = { version = "2", features = ["json"] }
+ureq = { version = "3", features = ["json"] }
 tao = { version = "0.37", optional = true }
 wry = { version = "0.57", optional = true }
 if-addrs = "0.15"

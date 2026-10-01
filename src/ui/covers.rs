@@ -41,7 +41,7 @@ impl Covers {
     pub fn new(ctx: &egui::Context) -> Self {
         let queue: Queue = Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
         let (tx, done) = mpsc::channel();
-        let agent = ureq::AgentBuilder::new().timeout(std::time::Duration::from_secs(15)).build();
+        let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(15))).build().into();
         for i in 0..WORKERS {
             let (queue, tx, agent, ctx) = (queue.clone(), tx.clone(), agent.clone(), ctx.clone());
             std::thread::Builder::new()
@@ -139,8 +139,7 @@ fn worker(queue: Queue, tx: Sender<Done>, agent: ureq::Agent, ctx: egui::Context
 }
 
 fn fetch(agent: &ureq::Agent, url: &str) -> Option<ColorImage> {
-    let mut bytes = Vec::new();
-    std::io::Read::read_to_end(&mut agent.get(url).call().ok()?.into_reader(), &mut bytes).ok()?;
+    let bytes = agent.get(url).call().ok()?.into_body().read_to_vec().ok()?;
     let mut dec = JpegDecoder::new_with_options(&bytes[..], DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA));
     let pixels = dec.decode().ok()?;
     let info = dec.info()?;

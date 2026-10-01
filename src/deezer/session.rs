@@ -9,8 +9,16 @@ const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KH
 /// api_token value gw-light expects before we have a real one.
 const NO_TOKEN: &str = "null";
 
+/// Per-call limit for API requests. Streams opt out (see `open_stream`).
+pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
+
 pub fn http_agent() -> ureq::Agent {
-    ureq::AgentBuilder::new().user_agent(USER_AGENT).timeout_connect(Duration::from_secs(10)).timeout_read(Duration::from_secs(30)).build()
+    ureq::Agent::config_builder()
+        .user_agent(USER_AGENT)
+        .timeout_connect(Some(Duration::from_secs(10)))
+        .timeout_global(Some(CALL_TIMEOUT))
+        .build()
+        .into()
 }
 
 /// CSRF token plus every cookie the server set. The token is bound to the whole
@@ -56,12 +64,14 @@ pub fn call(agent: &ureq::Agent, arl: &str, session: &mut Session, method: &str,
         .query("api_version", "1.0")
         .query("api_token", &session.api_token)
         .query_pairs(extra.iter().copied())
-        .set("Cookie", &session.cookie_header(arl))
+        .header("Cookie", &session.cookie_header(arl))
         .send_json(body)?;
-    for c in resp.all("set-cookie") {
-        session.store(c);
+    for c in resp.headers().get_all("set-cookie") {
+        if let Ok(c) = c.to_str() {
+            session.store(c);
+        }
     }
-    results(method, resp.into_json()?)
+    results(method, resp.into_body().read_json()?)
 }
 
 /// The `results` of a gw-light reply, or its `error` object as an [`Error`].
