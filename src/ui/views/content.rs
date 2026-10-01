@@ -1,11 +1,11 @@
 //! The main area: search field on top, then the current page.
 
-use crate::player::{State, Status};
+use crate::player::Status;
 use crate::ui::app::App;
 use crate::ui::state::View;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, typography as ty};
-use eframe::egui::{self, CornerRadius, Key, Rect, RichText, Sense, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, CornerRadius, Key, KeyboardShortcut, Modifiers, Rect, RichText, Sense, Ui, Vec2, pos2, vec2};
 
 impl App {
     pub(in crate::ui) fn content(&mut self, ui: &mut Ui, st: &Status) {
@@ -21,10 +21,7 @@ impl App {
         match &self.view {
             View::Home => self.home_page(ui, st),
             View::Playlists => self.playlists_page(ui),
-            View::Search | View::Loved | View::Collection(_) => {
-                let playing_id = st.track.as_ref().map(|t| t.id);
-                self.collection_page(ui, playing_id, st.state == State::Playing);
-            }
+            View::Search | View::Loved | View::Collection(_) => self.collection_page(ui, st),
         }
     }
 
@@ -40,6 +37,9 @@ impl App {
             .frame(egui::Frame::new())
             .text_color(colors().text);
         let edit = ui.put(input, field);
+        if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::F))) {
+            edit.request_focus();
+        }
         if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
             let ctx = ui.ctx().clone();
             self.open_view(&ctx, View::Search);

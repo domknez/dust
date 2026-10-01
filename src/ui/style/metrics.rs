@@ -28,6 +28,8 @@ pub const LIST_ART: f32 = 36.0;
 pub const NOW_PLAYING_ART: f32 = 56.0;
 pub const HEADER_ART: f32 = 200.0;
 pub const HOME_CARD: f32 = 168.0;
+/// Title and subtitle under a card's artwork.
+pub const CARD_TEXT: f32 = 50.0;
 pub const GRID_CARD: f32 = 176.0;
 pub const FLOW_TILE: f32 = 116.0;
 pub const LOGO: f32 = 112.0;

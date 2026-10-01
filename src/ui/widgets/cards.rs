@@ -22,7 +22,7 @@ pub enum CardClick {
 /// and a right-click queue menu.
 pub fn card(ui: &mut Ui, covers: &mut Covers, coll: &Coll) -> CardClick {
     let w = metrics::HOME_CARD;
-    let (rect, resp) = ui.allocate_exact_size(vec2(w, w + 50.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, w + metrics::CARD_TEXT), Sense::click());
     let art = Rect::from_min_size(rect.min, Vec2::splat(w));
     let corner = if coll.round() { (w / 2.0) as u8 } else { radius::CARD };
     let url = coll.picture.as_ref().map(|(k, m)| image_url(k, m, metrics::HOME_CARD_PX));

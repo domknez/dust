@@ -7,7 +7,7 @@ use super::state::{Coll, PlayMode, Source, View};
 use super::style::{self, Appearance, colors, metrics};
 use super::tasks::{self, Task};
 use crate::credentials;
-use crate::deezer::{Deezer, Error, Playlist, Quality, Section, Track};
+use crate::deezer::{Deezer, Error, Playlist, Quality, SearchResults, Section, Track};
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
 use crate::player::{Cmd, Output, PlayerHandle, Status};
@@ -34,6 +34,9 @@ pub struct App {
     pub(super) searched: String,
     pub(super) tracks: Vec<Track>,
     pub(super) tracks_task: Task<Vec<Track>>,
+    /// Artist, album and playlist cards of the current search.
+    pub(super) search_sections: Vec<Section>,
+    pub(super) search_task: Task<SearchResults>,
     pub(super) list_error: Option<String>,
     pub(super) playlists: Vec<Playlist>,
     pub(super) playlists_task: Task<Vec<Playlist>>,
@@ -98,6 +101,8 @@ impl App {
             searched: String::new(),
             tracks: Vec::new(),
             tracks_task: None,
+            search_sections: Vec::new(),
+            search_task: None,
             list_error: None,
             playlists: Vec::new(),
             playlists_task: None,
@@ -176,17 +181,26 @@ impl App {
             return;
         }
         self.tracks.clear();
-        self.tracks_task = match view {
-            View::Home | View::Playlists => None,
-            View::Search if self.search.trim().is_empty() => None,
+        self.search_sections.clear();
+        // Replacing a task drops its receiver, so a stale result never lands.
+        self.tracks_task = None;
+        self.search_task = None;
+        match view {
+            View::Home | View::Playlists => {}
+            View::Search if self.search.trim().is_empty() => {}
             View::Search => {
                 let query = self.search.trim().to_string();
                 self.searched = query.clone();
-                tasks::spawn(ctx, move || client.search(&query))
+                self.search_task = tasks::spawn(ctx, move || client.search(&query));
             }
-            View::Loved => tasks::spawn(ctx, move || client.loved()),
-            View::Collection(coll) => tasks::spawn(ctx, move || coll.source.fetch(&client)),
-        };
+            View::Loved => self.tracks_task = tasks::spawn(ctx, move || client.loved()),
+            View::Collection(coll) => self.tracks_task = tasks::spawn(ctx, move || coll.source.fetch(&client)),
+        }
+    }
+
+    /// A track list is on its way.
+    pub(super) fn loading_tracks(&self) -> bool {
+        self.tracks_task.is_some() || self.search_task.is_some()
     }
 
     pub(super) fn open_collection(&mut self, ctx: &egui::Context, coll: Coll) {
@@ -258,6 +272,11 @@ impl App {
         }
         match tasks::poll(&mut self.tracks_task) {
             Some(Ok(t)) => self.tracks = t,
+            Some(Err(e)) => self.on_load_error(e),
+            None => {}
+        }
+        match tasks::poll(&mut self.search_task) {
+            Some(Ok(results)) => (self.tracks, self.search_sections) = (results.tracks, results.sections),
             Some(Err(e)) => self.on_load_error(e),
             None => {}
         }

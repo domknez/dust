@@ -132,6 +132,7 @@ e.g. AirPlay packet stats, speaker remote-control requests and listen reports.
 ## Shortcuts
 
 - `Space`: play/pause
+- `⌘F` / `Ctrl+F`: search
 - Double-click a track, or click its number: play from there
 - Home cards: click to open, click the round play button to play right away
 - Right-click a track or card: *Play next* / *Add to queue*

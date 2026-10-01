@@ -2,16 +2,20 @@
 //! (artwork, title, Play/Shuffle) scrolls with a virtualised track table.
 
 use crate::deezer::image_url;
-use crate::player::Cmd;
+use crate::player::{Cmd, State, Status};
 use crate::ui::app::App;
 use crate::ui::format::{cover_url, mmss, total_duration};
 use crate::ui::state::{PlayMode, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
+use crate::ui::views::home::{CARD_ROW_HEIGHT, CardPicks, card_row};
 use crate::ui::widgets::{self, text_left};
 use eframe::egui::{self, Align2, Color32, CornerRadius, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
 
-const SEARCH_HEADER: f32 = 96.0;
+/// Search page: title and result count, then card rows, then the table captions.
+const SEARCH_TOP: f32 = 64.0;
+const SEARCH_TRACKS_TITLE: f32 = 50.0;
+const CAPTIONS: f32 = 32.0;
 const COLLECTION_HEADER: f32 = 268.0;
 /// Below this width the album column is hidden.
 const ALBUM_COLUMN_MIN_WIDTH: f32 = 640.0;
@@ -33,6 +37,7 @@ struct Header {
 struct Picked {
     play: Option<(usize, bool)>,
     queue: Option<(usize, PlayMode)>,
+    cards: CardPicks,
 }
 
 /// X positions of the table columns.
@@ -57,8 +62,9 @@ impl Columns {
 }
 
 impl App {
-    pub(in crate::ui) fn collection_page(&mut self, ui: &mut Ui, playing_id: Option<u64>, playing: bool) {
-        let header_height = if self.view == View::Search { SEARCH_HEADER } else { COLLECTION_HEADER };
+    pub(in crate::ui) fn collection_page(&mut self, ui: &mut Ui, st: &Status) {
+        let (playing_id, playing) = (st.track.as_ref().map(|t| t.id), st.state == State::Playing);
+        let header_height = if self.view == View::Search { self.search_header_height() } else { COLLECTION_HEADER };
         let count = self.tracks.len();
         let mut picked = Picked::default();
 
@@ -69,7 +75,7 @@ impl App {
             let head = Rect::from_min_size(origin, vec2(width, header_height));
             ui.scope_builder(UiBuilder::new().max_rect(head), |ui| {
                 if self.view == View::Search {
-                    self.search_header(ui, head);
+                    self.search_header(ui, head, st, &mut picked.cards);
                 } else {
                     self.collection_header(ui, head, &mut picked);
                 }
@@ -79,7 +85,7 @@ impl App {
             });
 
             let below_header = Rect::from_min_size(origin + vec2(0.0, header_height + 24.0), vec2(width, 40.0));
-            if self.tracks_task.is_some() {
+            if self.loading_tracks() {
                 ui.put(below_header, egui::Spinner::new().size(22.0));
                 return;
             }
@@ -98,6 +104,8 @@ impl App {
             }
         });
 
+        let ctx = ui.ctx().clone();
+        self.apply_card_picks(&ctx, picked.cards);
         if let Some((i, mode)) = picked.queue {
             self.player.send(mode.command(vec![self.tracks[i].clone()]));
         }
@@ -127,18 +135,35 @@ impl App {
         }
     }
 
-    fn search_header(&self, ui: &Ui, head: Rect) {
+    fn search_header_height(&self) -> f32 {
+        let rows = self.search_sections.len() as f32;
+        let tracks_title = if rows > 0.0 { SEARCH_TRACKS_TITLE } else { 0.0 };
+        SEARCH_TOP + rows * CARD_ROW_HEIGHT + tracks_title + CAPTIONS
+    }
+
+    fn search_header(&mut self, ui: &mut Ui, head: Rect, st: &Status, picked: &mut CardPicks) {
+        let p = colors();
         let title = if self.searched.is_empty() { "Search".to_string() } else { format!("“{}”", self.searched) };
-        text_left(ui.painter(), head.min + vec2(0.0, 22.0), &title, ty::PAGE_TITLE, colors().text, head.width());
+        text_left(ui.painter(), head.min + vec2(0.0, 22.0), &title, ty::PAGE_TITLE, p.text, head.width());
+        let counts: Vec<String> = std::iter::once((self.tracks.len(), "tracks"))
+            .chain(self.search_sections.iter().map(|s| (s.items.len(), s.title.as_str())))
+            .filter(|(n, _)| *n > 0)
+            .map(|(n, what)| format!("{n} {}", what.to_lowercase()))
+            .collect();
+        text_left(ui.painter(), head.min + vec2(0.0, 54.0), &counts.join(" · "), ty::BODY, p.dim, head.width());
+        if self.search_sections.is_empty() {
+            return;
+        }
+        let rows =
+            Rect::from_min_size(head.min + vec2(0.0, SEARCH_TOP), vec2(head.width(), self.search_sections.len() as f32 * CARD_ROW_HEIGHT));
+        ui.scope_builder(UiBuilder::new().max_rect(rows), |ui| {
+            for (i, section) in self.search_sections.iter().enumerate() {
+                card_row(ui, &mut self.covers, ("search-row", i), &section.title, &section.items, st, picked);
+            }
+        });
         if !self.tracks.is_empty() {
-            text_left(
-                ui.painter(),
-                head.min + vec2(0.0, 54.0),
-                &format!("{} tracks", self.tracks.len()),
-                ty::BODY,
-                colors().dim,
-                head.width(),
-            );
+            let y = rows.bottom() + 22.0 + 14.0;
+            text_left(ui.painter(), pos2(head.left(), y), "Tracks", ty::SECTION_TITLE, p.text, head.width());
         }
     }
 
