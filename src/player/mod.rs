@@ -3,10 +3,12 @@
 //!
 //! - [`engine`]: the playback loop and command handling
 //! - [`queue`]: queue bookkeeping (pure, unit-tested)
-//! - [`stream`]: opening and decoding a track
+//! - [`library`]: what the engine needs from Deezer (a seam for tests)
+//! - [`stream`]: opening and decoding a Deezer track
 //! - [`listens`]: listen tracking and reporting to Deezer
 
 mod engine;
+mod library;
 mod listens;
 mod queue;
 mod stream;

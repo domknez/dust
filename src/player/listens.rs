@@ -1,7 +1,8 @@
 //! Tracks how long the current track has actually been heard and reports each
 //! listen to Deezer (history, Flow, Last.fm), like Deezer's own apps.
 
-use crate::deezer::{Deezer, Format, Listen};
+use super::library::Library;
+use crate::deezer::{Format, Listen};
 use std::time::Duration;
 
 /// A listen that played to within this many seconds of the end isn't a skip.
@@ -25,14 +26,12 @@ impl ListenTracker {
     }
 
     /// A new track started: report the start and begin counting.
-    pub fn start(&mut self, client: Option<&Deezer>, song_id: u64, format: Format, track_secs: u32) {
+    pub fn start(&mut self, library: Option<&dyn Library>, song_id: u64, format: Format, track_secs: u32) {
         let listen = Listen { song_id, format, started_unix: unix_now(), listened_secs: 0, skipped: false, stream_id: stream_uuid() };
         if self.enabled
-            && let Some(client) = client.cloned()
+            && let Some(library) = library
         {
-            std::thread::spawn(move || {
-                let _ = client.report_listen_start(song_id);
-            });
+            library.report_listen_start(song_id);
         }
         self.current = Some(Current { listen, heard: Duration::ZERO, track_secs, seeked: false });
     }
@@ -50,18 +49,15 @@ impl ListenTracker {
         }
     }
 
-    /// The current track ended or was replaced: report it (in the background).
-    pub fn finish(&mut self, client: Option<&Deezer>) {
+    /// The current track ended or was replaced: report it.
+    pub fn finish(&mut self, library: Option<&dyn Library>) {
         let Some(current) = self.current.take() else { return };
         let secs = current.heard.as_secs();
-        let (true, Some(client), true) = (self.enabled, client.cloned(), secs > 0) else { return };
+        let (true, Some(library), true) = (self.enabled, library, secs > 0) else { return };
         let mut listen = current.listen;
         listen.listened_secs = secs;
         listen.skipped = current.seeked || secs + SKIP_TOLERANCE_SECS < current.track_secs as u64;
-        std::thread::spawn(move || match client.report_listen(&listen) {
-            Ok(()) => log_debug!("reported listen of {} ({} s, skipped: {})", listen.song_id, listen.listened_secs, listen.skipped),
-            Err(e) => log_warn!("listen report failed: {e}"),
-        });
+        library.report_listen(listen);
     }
 }
 

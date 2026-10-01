@@ -1,5 +1,6 @@
-//! One playing track: its decrypted byte stream, container reader and decoder.
+//! One playing Deezer track: its decrypted byte stream, container reader and decoder.
 
+use super::library::{Decoded, Playback};
 use crate::deezer::{Deezer, Format, StreamSource};
 use crate::output::RATE;
 use symphonia::core::audio::SampleBuffer;
@@ -15,7 +16,8 @@ use symphonia::core::units::TimeBase;
 const BYTES_PER_KBPS: f64 = 125.0;
 
 pub struct Stream {
-    pub source: StreamSource,
+    client: Deezer,
+    source: StreamSource,
     reader: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,
     audio_track: u32,
@@ -25,19 +27,9 @@ pub struct Stream {
     /// Discard packets before this track time (FLAC seeks).
     skip_until: f64,
     /// Track time (s) at the end of the audio handed to the sink.
-    pub written: f64,
+    written: f64,
     samples: Option<SampleBuffer<i16>>,
-    pub eof: bool,
-}
-
-/// Result of decoding one packet.
-pub enum Decoded {
-    /// Stereo samples were appended; they end at this track time (s).
-    Audio { ends_at: f64 },
-    /// Nothing usable in this packet (other track, skipped, decode glitch).
-    Nothing,
-    /// End of stream (or an unrecoverable error).
-    End,
+    eof: bool,
 }
 
 impl Stream {
@@ -67,6 +59,7 @@ impl Stream {
         let decoder =
             symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default()).map_err(|e| format!("decoder: {e}"))?;
         Ok(Stream {
+            client: client.clone(),
             audio_track: track.id,
             time_base: track.codec_params.time_base.unwrap_or(TimeBase::new(1, RATE)),
             source,
@@ -80,23 +73,7 @@ impl Stream {
         })
     }
 
-    /// Whether seeking to `t` needs a new HTTP request (vs. skipping forward in place).
-    pub fn needs_reopen_for(&self, t: f64) -> bool {
-        match self.source.format {
-            Format::Mp3(_) => true,
-            // FLAC over a non-seekable HTTP stream: skip forward, or restart and skip.
-            Format::Flac => t < self.written,
-        }
-    }
-
-    /// Seek forward without reopening: drop packets until `t`.
-    pub fn skip_to(&mut self, t: f64) {
-        self.skip_until = t;
-        self.written = t;
-    }
-
-    /// Decode the next packet, appending interleaved stereo i16 to `out`.
-    pub fn decode_next(&mut self, out: &mut Vec<i16>) -> Decoded {
+    fn decode_packet(&mut self, out: &mut Vec<i16>) -> Decoded {
         let packet = match self.reader.next_packet() {
             Ok(p) => p,
             Err(DecodeError::ResetRequired) => {
@@ -143,5 +120,52 @@ impl Stream {
             _ => out.extend(samples.chunks_exact(channels).flat_map(|f| [f[0], f[1]])),
         }
         Decoded::Audio { ends_at: start + frames as f64 / spec.rate as f64 }
+    }
+}
+
+impl Playback for Stream {
+    fn song_id(&self) -> u64 {
+        self.source.song_id
+    }
+
+    fn format(&self) -> Format {
+        self.source.format
+    }
+
+    fn written(&self) -> f64 {
+        self.written
+    }
+
+    fn set_written(&mut self, t: f64) {
+        self.written = t;
+    }
+
+    fn finished(&self) -> bool {
+        self.eof
+    }
+
+    fn decode_next(&mut self, out: &mut Vec<i16>) -> Decoded {
+        let result = self.decode_packet(out);
+        if matches!(result, Decoded::End) {
+            self.eof = true;
+        }
+        result
+    }
+
+    fn needs_reopen_for(&self, t: f64) -> bool {
+        match self.source.format {
+            Format::Mp3(_) => true,
+            // FLAC over a non-seekable HTTP stream: skip forward, or restart and skip.
+            Format::Flac => t < self.written,
+        }
+    }
+
+    fn skip_to(&mut self, t: f64) {
+        self.skip_until = t;
+        self.written = t;
+    }
+
+    fn reopen(&self, at: f64) -> Result<Box<dyn Playback>, String> {
+        Ok(Box::new(Stream::open(&self.client, self.source.clone(), at)?))
     }
 }
