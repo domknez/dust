@@ -35,6 +35,13 @@ pub struct Item {
     pub picture: Option<(String, String)>,
 }
 
+/// Search hits: tracks, plus artist, album and playlist card sections.
+#[derive(Clone, Debug, Default)]
+pub struct SearchResults {
+    pub tracks: Vec<Track>,
+    pub sections: Vec<Section>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Section {
     pub title: String,

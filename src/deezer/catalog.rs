@@ -1,17 +1,22 @@
 //! Browsing the catalogue: search, the user's library, the home page and what its
 //! items open (albums, artists, mixes, Flow).
 
-use super::models::{Playlist, Section, Track};
+use super::models::{Playlist, SearchResults, Section, Track};
 use super::{Deezer, Result, parse};
 use serde_json::json;
 
 impl Deezer {
-    pub fn search(&self, query: &str) -> Result<Vec<Track>> {
+    pub fn search(&self, query: &str) -> Result<SearchResults> {
         let r = self.call(
             "deezer.pageSearch",
             json!({"query": query, "start": 0, "nb": 100, "suggest": false, "artist_suggest": false, "top_tracks": false}),
         )?;
-        Ok(parse::tracks(&r["TRACK"]["data"]))
+        let sections = [("Artists", "artist", "ARTIST"), ("Albums", "album", "ALBUM"), ("Playlists", "playlist", "PLAYLIST")]
+            .into_iter()
+            .map(|(title, kind, key)| parse::search_section(title, kind, &r[key]["data"]))
+            .filter(|s| !s.items.is_empty())
+            .collect();
+        Ok(SearchResults { tracks: parse::tracks(&r["TRACK"]["data"]), sections })
     }
 
     /// The account's "Loved tracks".

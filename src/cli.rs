@@ -3,6 +3,7 @@
 //! - `--tone [speaker | ip:port]`  4 s test tone on an output
 //! - `--list-speakers`            AirPlay speakers found on the network (silent)
 //! - `--debug-home`                home page structure for the stored session
+//! - `--debug-search <query>`      search results: track count and card sections
 //! - `--debug-tracks <kind> <id>`  what a home item plays (flow|mix|album|artist|playlist)
 //! - `--debug-stream <playlist> [n]`  stream resolution per track, incl. fallbacks
 //! - `--debug-decode <playlist> [quality] [start s]`  decrypt and decode 10 s of the first track (no sound)
@@ -20,6 +21,7 @@ pub enum Command {
     Tone(Option<String>),
     ListSpeakers,
     DebugHome,
+    DebugSearch(String),
     DebugTracks {
         kind: String,
         id: String,
@@ -44,6 +46,7 @@ impl Command {
             "--tone" => Command::Tone(args.next()),
             "--list-speakers" => Command::ListSpeakers,
             "--debug-home" => Command::DebugHome,
+            "--debug-search" => Command::DebugSearch(args.collect::<Vec<_>>().join(" ")),
             "--debug-tracks" => Command::DebugTracks { kind: args.next().unwrap_or_default(), id: args.next().unwrap_or_default() },
             "--debug-stream" => Command::DebugStream {
                 playlist: args.next().and_then(|a| a.parse().ok()).unwrap_or(0),
@@ -66,6 +69,7 @@ impl Command {
             Command::Tone(target) => tone(target),
             Command::ListSpeakers => list_speakers(),
             Command::DebugHome => debug_home(&logged_in()),
+            Command::DebugSearch(query) => debug_search(&logged_in(), &query),
             Command::DebugTracks { kind, id } => debug_tracks(&logged_in(), &kind, &id),
             Command::DebugStream { playlist, count } => debug_stream(&logged_in(), playlist, count),
             Command::DebugDecode { playlist, quality, start } => debug_decode(&logged_in(), playlist, quality, start),
@@ -151,6 +155,18 @@ fn debug_home(client: &Deezer) {
     for sec in client.home().expect("home") {
         println!("\n## {} [{}] ({} items)", sec.title, sec.layout, sec.items.len());
         for it in sec.items.iter().take(8) {
+            println!("  - {}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
+        }
+    }
+}
+
+fn debug_search(client: &Deezer, query: &str) {
+    let results = client.search(query).expect("search");
+    println!("{} tracks", results.tracks.len());
+    results.tracks.iter().take(3).for_each(|t| println!("  {} – {}", t.artist, t.title));
+    for sec in results.sections {
+        println!("\n## {} ({} items)", sec.title, sec.items.len());
+        for it in sec.items.iter().take(4) {
             println!("  - {}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
         }
     }

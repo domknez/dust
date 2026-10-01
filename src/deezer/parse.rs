@@ -75,6 +75,30 @@ pub fn section(v: &Value) -> Section {
     }
 }
 
+/// Most cards a search section shows.
+const SEARCH_SECTION_ITEMS: usize = 24;
+
+/// A search result list (`ARTIST`, `ALBUM`, `PLAYLIST` data) as a card section.
+pub fn search_section(title: &str, kind: &str, data: &Value) -> Section {
+    let items = data.as_array().map(|a| a.iter().filter_map(|v| search_item(kind, v)).take(SEARCH_SECTION_ITEMS).collect());
+    Section { title: title.into(), layout: "search".into(), items: items.unwrap_or_default() }
+}
+
+fn search_item(kind: &str, v: &Value) -> Option<Item> {
+    let (id, title, picture) = match kind {
+        "artist" => (&v["ART_ID"], &v["ART_NAME"], picture(&"artist".into(), &v["ART_PICTURE"])),
+        "album" => (&v["ALB_ID"], &v["ALB_TITLE"], picture(&"cover".into(), &v["ALB_PICTURE"])),
+        "playlist" => (&v["PLAYLIST_ID"], &v["TITLE"], picture(&v["PICTURE_TYPE"], &v["PLAYLIST_PICTURE"])),
+        _ => return None,
+    };
+    let id = text(id);
+    if id.is_empty() || id == "0" {
+        return None;
+    }
+    let (title, subtitle) = english_texts(kind, &id, v, text(title), String::new());
+    Some(Item { kind: kind.into(), id, title, subtitle, picture })
+}
+
 pub fn item(v: &Value) -> Item {
     let picture = v["pictures"].get(0).and_then(|p| picture(&p["type"], &p["md5"]));
     let (kind, id, data) = (text(&v["type"]), text(&v["id"]), &v["data"]);
@@ -158,6 +182,22 @@ mod tests {
         let (t, sub) = english_texts("smarttracklist", "discovery", &json!({}), "Otkriće".into(), "Sadrži Foxy Shazam, The Flynts".into());
         assert_eq!((t.as_str(), sub.as_str()), ("Discovery", "Featuring Foxy Shazam, The Flynts"));
         assert_eq!(thousands(4702289), "4,702,289");
+    }
+
+    #[test]
+    fn search_sections() {
+        let artists = json!([{"ART_ID": "27", "ART_NAME": "Daft Punk", "ART_PICTURE": "abc", "NB_FAN": 2}, {"ART_ID": "0"}]);
+        let s = search_section("Artists", "artist", &artists);
+        assert_eq!(s.items.len(), 1);
+        let a = &s.items[0];
+        assert_eq!((a.kind.as_str(), a.id.as_str(), a.title.as_str(), a.subtitle.as_str()), ("artist", "27", "Daft Punk", "2 fans"));
+        assert_eq!(a.picture, Some(("artist".into(), "abc".into())));
+        let albums = json!([{"ALB_ID": 302127, "ALB_TITLE": "Discovery", "ALB_PICTURE": "def", "ART_NAME": "Daft Punk"}]);
+        let b = &search_section("Albums", "album", &albums).items[0];
+        assert_eq!((b.id.as_str(), b.subtitle.as_str(), b.picture.as_ref().map(|p| p.0.as_str())), ("302127", "Daft Punk", Some("cover")));
+        let playlists = json!([{"PLAYLIST_ID": "9", "TITLE": "Mix", "PICTURE_TYPE": "playlist", "PLAYLIST_PICTURE": "f", "NB_SONG": 3}]);
+        assert_eq!(search_section("Playlists", "playlist", &playlists).items[0].subtitle, "3 tracks");
+        assert!(search_section("Artists", "artist", &json!(null)).items.is_empty());
     }
 
     #[test]
