@@ -1137,7 +1137,6 @@ dependencies = [
  "num-bigint",
  "png 0.17.16",
  "rtrb",
- "serde",
  "serde_json",
  "sha2",
  "symphonia",
