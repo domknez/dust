@@ -32,20 +32,20 @@ impl LocalSink {
             .supported_output_configs()
             .map_err(|e| e.to_string())?
             .filter(|c| c.sample_format() == default.sample_format() && c.channels() >= 2)
-            .find(|c| c.min_sample_rate().0 <= RATE && RATE <= c.max_sample_rate().0)
-            .map(|c| c.with_sample_rate(cpal::SampleRate(RATE)))
+            .find(|c| c.min_sample_rate() <= RATE && RATE <= c.max_sample_rate())
+            .map(|c| c.with_sample_rate(RATE))
             .unwrap_or(default);
-        let rate = config.sample_rate().0;
+        let rate = config.sample_rate();
         let channels = config.channels() as usize;
         // ~200 ms of stereo audio at device rate.
         let (producer, consumer) = rtrb::RingBuffer::new((rate as usize * 2 / 5) & !1);
         let shared =
             Arc::new(Shared { volume: AtomicU32::new(volume.to_bits()), paused: AtomicBool::new(false), flush: AtomicBool::new(false) });
         let stream = match config.sample_format() {
-            SampleFormat::F32 => build::<f32>(&device, &config.into(), channels, consumer, shared.clone()),
-            SampleFormat::I16 => build::<i16>(&device, &config.into(), channels, consumer, shared.clone()),
-            SampleFormat::U16 => build::<u16>(&device, &config.into(), channels, consumer, shared.clone()),
-            SampleFormat::I32 => build::<i32>(&device, &config.into(), channels, consumer, shared.clone()),
+            SampleFormat::F32 => build::<f32>(&device, config.into(), channels, consumer, shared.clone()),
+            SampleFormat::I16 => build::<i16>(&device, config.into(), channels, consumer, shared.clone()),
+            SampleFormat::U16 => build::<u16>(&device, config.into(), channels, consumer, shared.clone()),
+            SampleFormat::I32 => build::<i32>(&device, config.into(), channels, consumer, shared.clone()),
             f => return Err(format!("Unsupported sample format {f}")),
         }?;
         stream.play().map_err(|e| e.to_string())?;
@@ -69,7 +69,7 @@ impl LocalSink {
 
 fn build<T: SizedSample + FromSample<f32>>(
     device: &cpal::Device,
-    config: &cpal::StreamConfig,
+    config: cpal::StreamConfig,
     channels: usize,
     mut consumer: rtrb::Consumer<f32>,
     shared: Arc<Shared>,
