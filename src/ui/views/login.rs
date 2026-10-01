@@ -2,7 +2,6 @@
 
 use crate::ui::app::App;
 use crate::ui::style::{colors, metrics, typography as ty};
-use crate::ui::widgets;
 use eframe::egui::{self, Key, Margin, RichText, Sense, Ui, Vec2, vec2};
 
 impl App {
@@ -34,7 +33,7 @@ impl App {
         let p = colors();
         #[cfg(feature = "login-window")]
         {
-            if widgets::pill(ui, "Log in with Deezer", None, true).clicked() {
+            if crate::ui::widgets::pill(ui, "Log in with Deezer", None, true).clicked() {
                 self.log_in_with_browser(ui.ctx());
             }
             ui.add_space(10.0);
