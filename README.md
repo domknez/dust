@@ -31,7 +31,8 @@ including cover art.
   (Chill, Focus, Workout, Party, ...), daily mixes, recently played, new releases,
   artists and albums picked for you
 - **Endless Flow:** keeps going like on Deezer, fetching more as you listen
-- **Music:** Loved tracks, playlists (list and grid), albums, artist top tracks, search
+- **Music:** Loved tracks, playlists (list and grid), albums, artist top tracks
+- **Search:** tracks, artists, albums and playlists
 - **Plays more of the catalogue:** when a track isn't licensed in your region, dust uses
   the alternative version Deezer offers, like the web app does
 - **Quality:** MP3 128 / MP3 320 / FLAC (FLAC needs a HiFi plan), streamed and decoded
@@ -44,6 +45,9 @@ including cover art.
 - **Last.fm scrobbling, history and Flow learning:** dust reports what you listen to
   back to Deezer, exactly like Deezer's own apps
 - **Speaker buttons work:** volume and play/pause/skip on the speaker control dust
+- **Media keys and Now Playing:** keyboard and headset media keys, plus the system's
+  Now Playing controls with cover art (macOS Control Center, Windows media overlay,
+  Linux MPRIS)
 - **Modern UI:** Tidal-style layout with cover art, soft dark and light themes (or follow
   the system), Inter typeface
 - **Secure sign-in:** "Log in with Deezer" opens Deezer's own login page; the session is
@@ -122,12 +126,24 @@ service), so volume changes on the speaker move dust's slider.
 Check an output without logging in:
 
 ```sh
+dust --list-speakers                       # speakers found on the network (silent)
 dust --tone                                # 4 s test tone on the local sound card
 DUST_LOG=debug dust --tone "Living Room"   # ...on an AirPlay speaker, with packet stats
 ```
 
-Troubleshooting: `DUST_LOG=debug` (or `info`, `trace`) prints diagnostics to the terminal,
-e.g. AirPlay packet stats, speaker remote-control requests and listen reports.
+## Troubleshooting
+
+`DUST_LOG=debug` (or `info`, `trace`) prints diagnostics to the terminal, e.g. AirPlay
+packet stats, speaker remote-control requests, media keys and listen reports.
+
+With a stored session (log in with the app first), these check the Deezer side without
+opening the window:
+
+```sh
+dust --debug-home                          # home page sections
+dust --debug-search "daft punk"            # search results
+dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, silently
+```
 
 ## Shortcuts
 
@@ -143,6 +159,7 @@ e.g. AirPlay packet stats, speaker remote-control requests and listen reports.
 ```
 src/
 ├── main.rs            entry point: run the app, or a command-line mode (cli.rs)
+├── log.rs             DUST_LOG levels and log macros
 ├── deezer/            Deezer client: session, catalogue, streaming, listen reports, stream cipher
 ├── player/            playback engine thread, queue (pure, tested), decoding, listen tracking
 ├── output/            audio outputs behind the Sink trait
@@ -151,6 +168,7 @@ src/
 │                      ap2/ (pairing, plists, PTP clock), dacp (speaker remote control)
 ├── ui/
 │   ├── app.rs         UI state, lifecycle and panel layout
+│   ├── now_playing.rs media keys and the OS Now Playing widget
 │   ├── views/         one file per screen or panel
 │   ├── widgets/       reusable painted components
 │   └── style/         palette, type scale, metrics, icons — all visual constants live here
@@ -161,8 +179,9 @@ src/
 
 To change how dust looks, start in `src/ui/style/`: views use named text roles
 (`typography::TITLE`, `CAPTION`, ...), palette colours and `metrics` constants rather than
-raw values. `cargo test` covers the protocol and data layers; `dust --tone` and
-`dust --debug-home` help check audio output and the Deezer API.
+raw values. `cargo test` covers the protocol and data layers and the playback engine
+(against fake outputs); the commands under [Troubleshooting](#troubleshooting) check real
+audio output and the Deezer API.
 
 ## Credits
 
@@ -172,7 +191,8 @@ raw values. `cargo test` covers the protocol and data layers; `dust --tone` and
 - [Inter](https://rsms.me/inter/) typeface by Rasmus Andersson, SIL Open Font License
   ([assets/fonts/OFL-Inter.txt](assets/fonts/OFL-Inter.txt)).
 - Built with [egui](https://github.com/emilk/egui), [symphonia](https://github.com/pdeljanov/Symphonia),
-  [cpal](https://github.com/RustAudio/cpal) and [wry](https://github.com/tauri-apps/wry).
+  [cpal](https://github.com/RustAudio/cpal), [souvlaki](https://github.com/Sinono3/souvlaki)
+  and [wry](https://github.com/tauri-apps/wry).
 
 ## License
 
