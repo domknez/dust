@@ -3,13 +3,12 @@
 use super::library::{Decoded, Playback};
 use crate::deezer::{Deezer, Format, StreamSource};
 use crate::output::RATE;
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{CODEC_TYPE_NULL, Decoder, DecoderOptions};
+use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
 use symphonia::core::errors::Error as DecodeError;
-use symphonia::core::formats::{FormatOptions, FormatReader};
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::io::{MediaSourceStream, ReadOnlySource};
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 use symphonia::core::units::TimeBase;
 
 /// Bytes per second per kbps (1000 / 8).
@@ -19,7 +18,7 @@ pub struct Stream {
     client: Deezer,
     source: StreamSource,
     reader: Box<dyn FormatReader>,
-    decoder: Box<dyn Decoder>,
+    decoder: Box<dyn AudioDecoder>,
     audio_track: u32,
     time_base: TimeBase,
     /// Track time (s) at which this byte stream starts (non-zero after an MP3 range seek).
@@ -28,7 +27,8 @@ pub struct Stream {
     skip_until: f64,
     /// Track time (s) at the end of the audio handed to the sink.
     written: f64,
-    samples: Option<SampleBuffer<i16>>,
+    /// Decoded interleaved samples, reused across packets.
+    samples: Vec<i16>,
     eof: bool,
 }
 
@@ -49,33 +49,36 @@ impl Stream {
         let mut hint = Hint::new();
         hint.with_extension(if source.format == Format::Flac { "flac" } else { "mp3" });
         let reader = symphonia::default::get_probe()
-            .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
-            .map_err(|e| format!("probe: {e}"))?
-            .format;
-        let track = reader.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL).ok_or("No audio track")?;
-        if track.codec_params.sample_rate.is_some_and(|r| r != RATE) {
-            return Err(format!("Unsupported sample rate {:?}", track.codec_params.sample_rate));
+            .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+            .map_err(|e| format!("probe: {e}"))?;
+        let track = reader.default_track(TrackType::Audio).ok_or("No audio track")?;
+        let params = track.codec_params.as_ref().and_then(|p| p.audio()).ok_or("No audio codec")?;
+        if params.sample_rate.is_some_and(|r| r != RATE) {
+            return Err(format!("Unsupported sample rate {:?}", params.sample_rate));
         }
-        let decoder =
-            symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default()).map_err(|e| format!("decoder: {e}"))?;
+        let decoder = symphonia::default::get_codecs()
+            .make_audio_decoder(params, &AudioDecoderOptions::default())
+            .map_err(|e| format!("decoder: {e}"))?;
+        let time_base = track.time_base.or_else(|| TimeBase::try_new(1, RATE)).ok_or("No time base")?;
         Ok(Stream {
             client: client.clone(),
             audio_track: track.id,
-            time_base: track.codec_params.time_base.unwrap_or(TimeBase::new(1, RATE)),
+            time_base,
             source,
             reader,
             decoder,
             base,
             skip_until,
             written: base.max(skip_until),
-            samples: None,
+            samples: Vec::new(),
             eof: false,
         })
     }
 
     fn decode_packet(&mut self, out: &mut Vec<i16>) -> Decoded {
         let packet = match self.reader.next_packet() {
-            Ok(p) => p,
+            Ok(Some(p)) => p,
+            Ok(None) => return Decoded::End,
             Err(DecodeError::ResetRequired) => {
                 self.decoder.reset();
                 return Decoded::Nothing;
@@ -86,11 +89,10 @@ impl Stream {
                 return Decoded::End;
             }
         };
-        if packet.track_id() != self.audio_track {
+        if packet.track_id != self.audio_track {
             return Decoded::Nothing;
         }
-        let t = self.time_base.calc_time(packet.ts);
-        let start = self.base + t.seconds as f64 + t.frac;
+        let start = self.base + self.time_base.calc_time_saturating(packet.pts).as_secs_f64();
         if start + 0.05 < self.skip_until {
             return Decoded::Nothing;
         }
@@ -102,24 +104,19 @@ impl Stream {
                 return Decoded::End;
             }
         };
-        let spec = *decoded.spec();
         let frames = decoded.frames();
         if frames == 0 {
             return Decoded::Nothing;
         }
-        let channels = spec.channels.count();
-        let buf = self.samples.get_or_insert_with(|| SampleBuffer::new(decoded.capacity() as u64, spec));
-        if buf.capacity() < decoded.capacity() * channels {
-            *buf = SampleBuffer::new(decoded.capacity() as u64, spec);
-        }
-        buf.copy_interleaved_ref(decoded);
-        let samples = &buf.samples()[..frames * channels];
+        let (channels, rate) = (decoded.spec().channels().count(), decoded.spec().rate());
+        decoded.copy_to_vec_interleaved(&mut self.samples);
+        let samples = &self.samples[..];
         match channels {
             2 => out.extend_from_slice(samples),
             1 => out.extend(samples.iter().flat_map(|&x| [x, x])),
             _ => out.extend(samples.chunks_exact(channels).flat_map(|f| [f[0], f[1]])),
         }
-        Decoded::Audio { ends_at: start + frames as f64 / spec.rate as f64 }
+        Decoded::Audio { ends_at: start + frames as f64 / rate as f64 }
     }
 }
 

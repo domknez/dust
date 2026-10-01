@@ -146,9 +146,9 @@ mod tests {
     /// Decode our escape frames with a real ALAC decoder.
     #[test]
     fn alac_decodes() {
-        use symphonia::core::audio::SampleBuffer;
-        use symphonia::core::codecs::{CODEC_TYPE_ALAC, CodecParameters, DecoderOptions};
-        use symphonia::core::formats::Packet;
+        use symphonia::core::codecs::audio::well_known::CODEC_ID_ALAC;
+        use symphonia::core::codecs::audio::{AudioCodecParameters, AudioDecoderOptions};
+        use symphonia::core::packet::Packet;
         // ALACSpecificConfig matching our SDP fmtp line.
         let mut cookie = Vec::new();
         cookie.extend(352u32.to_be_bytes());
@@ -157,15 +157,14 @@ mod tests {
         cookie.extend(0u32.to_be_bytes());
         cookie.extend(0u32.to_be_bytes());
         cookie.extend(44100u32.to_be_bytes());
-        let mut params = CodecParameters::new();
-        params.for_codec(CODEC_TYPE_ALAC).with_extra_data(cookie.into_boxed_slice()).with_sample_rate(44100);
-        let mut dec = symphonia::default::get_codecs().make(&params, &DecoderOptions::default()).unwrap();
+        let mut params = AudioCodecParameters::new();
+        params.for_codec(CODEC_ID_ALAC).with_extra_data(cookie.into_boxed_slice()).with_sample_rate(44100);
+        let mut dec = symphonia::default::get_codecs().make_audio_decoder(&params, &AudioDecoderOptions::default()).unwrap();
         let input: Vec<i16> = (0..FRAMES_PER_PACKET * 2).map(|i| ((i as f32 * 0.05).sin() * 8000.0) as i16).collect();
-        let pkt = Packet::new_from_slice(0, 0, 352, &alac_frame(&input));
-        let buf = dec.decode(&pkt).unwrap();
-        let mut out = SampleBuffer::<i16>::new(buf.capacity() as u64, *buf.spec());
-        out.copy_interleaved_ref(buf);
-        assert_eq!(out.samples(), &input[..]);
+        let pkt = Packet::new(0, 0.into(), 352u64.into(), alac_frame(&input));
+        let mut out = Vec::<i16>::new();
+        dec.decode(&pkt).unwrap().copy_to_vec_interleaved(&mut out);
+        assert_eq!(out, input);
     }
 
     #[test]
