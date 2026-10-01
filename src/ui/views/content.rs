@@ -35,7 +35,10 @@ impl App {
         let icon = Rect::from_center_size(pos2(rect.left() + 20.0, rect.center().y), Vec2::splat(15.0));
         icons::paint(ui.painter(), icon, Icon::Search, colors().dim);
         let input = Rect::from_min_max(pos2(rect.left() + 38.0, rect.top() + 9.0), pos2(rect.right() - 14.0, rect.bottom() - 7.0));
-        let field = egui::TextEdit::singleline(&mut self.search).hint_text("Search tracks, artists, albums").frame(egui::Frame::new()).text_color(colors().text);
+        let field = egui::TextEdit::singleline(&mut self.search)
+            .hint_text("Search tracks, artists, albums")
+            .frame(egui::Frame::new())
+            .text_color(colors().text);
         let edit = ui.put(input, field);
         if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
             let ctx = ui.ctx().clone();

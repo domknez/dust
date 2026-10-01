@@ -79,9 +79,8 @@ impl App {
 
         let player = PlayerHandle::spawn(ctx.clone(), volume);
         let repaint = ctx.clone();
-        let discovery = Discovery::start(move || repaint.request_repaint())
-            .inspect_err(|e| eprintln!("dust: AirPlay discovery unavailable: {e}"))
-            .ok();
+        let discovery =
+            Discovery::start(move || repaint.request_repaint()).inspect_err(|e| eprintln!("dust: AirPlay discovery unavailable: {e}")).ok();
         let mut app = Self {
             _remote_control: start_remote_control(player.clone()),
             player,

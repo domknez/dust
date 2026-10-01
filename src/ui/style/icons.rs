@@ -104,7 +104,10 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
         }
         Icon::AirPlay => {
             let s = Stroke::new(stroke.width, color);
-            painter.add(Shape::line(vec![p(r, 0.3, 0.68), p(r, 0.12, 0.68), p(r, 0.12, 0.16), p(r, 0.88, 0.16), p(r, 0.88, 0.68), p(r, 0.7, 0.68)], s));
+            painter.add(Shape::line(
+                vec![p(r, 0.3, 0.68), p(r, 0.12, 0.68), p(r, 0.12, 0.16), p(r, 0.88, 0.16), p(r, 0.88, 0.68), p(r, 0.7, 0.68)],
+                s,
+            ));
             poly(vec![p(r, 0.5, 0.56), p(r, 0.76, 0.88), p(r, 0.24, 0.88)]);
         }
         Icon::Computer => {
@@ -118,7 +121,15 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
         Icon::Home => {
             let s = Stroke::new(stroke.width, color);
             painter.add(Shape::closed_line(
-                vec![p(r, 0.5, 0.12), p(r, 0.88, 0.44), p(r, 0.78, 0.44), p(r, 0.78, 0.86), p(r, 0.22, 0.86), p(r, 0.22, 0.44), p(r, 0.12, 0.44)],
+                vec![
+                    p(r, 0.5, 0.12),
+                    p(r, 0.88, 0.44),
+                    p(r, 0.78, 0.44),
+                    p(r, 0.78, 0.86),
+                    p(r, 0.22, 0.86),
+                    p(r, 0.22, 0.44),
+                    p(r, 0.12, 0.44),
+                ],
                 s,
             ));
         }

@@ -24,7 +24,9 @@ pub enum Removed {
     /// An entry other than the current one.
     Other,
     /// The current track; `current` now points at what took its place, if anything.
-    Current { replaced: bool },
+    Current {
+        replaced: bool,
+    },
 }
 
 #[derive(Default)]
@@ -182,7 +184,16 @@ mod tests {
     use super::*;
 
     fn t(id: u64) -> Track {
-        Track { id, title: id.to_string(), artist: String::new(), album: String::new(), duration: 1, token: String::new(), cover: String::new(), fallback: None }
+        Track {
+            id,
+            title: id.to_string(),
+            artist: String::new(),
+            album: String::new(),
+            duration: 1,
+            token: String::new(),
+            cover: String::new(),
+            fallback: None,
+        }
     }
 
     fn ids(q: &Queue) -> Vec<u64> {

@@ -1,6 +1,7 @@
 //! Track lists: search results, Loved tracks and opened collections. A header
 //! (artwork, title, Play/Shuffle) scrolls with a virtualised track table.
 
+use crate::deezer::image_url;
 use crate::player::Cmd;
 use crate::ui::app::App;
 use crate::ui::format::{cover_url, mmss, total_duration};
@@ -8,7 +9,6 @@ use crate::ui::state::{PlayMode, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
-use crate::deezer::image_url;
 use eframe::egui::{self, Align2, Color32, CornerRadius, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
 
 const SEARCH_HEADER: f32 = 96.0;
@@ -92,7 +92,8 @@ impl App {
             let last = (((viewport.bottom() - header_height) / metrics::TRACK_ROW).ceil().max(0.0) as usize).min(count);
             let columns = Columns::new(origin.x, width);
             for i in first..last {
-                let rect = Rect::from_min_size(origin + vec2(0.0, header_height + i as f32 * metrics::TRACK_ROW), vec2(width, metrics::TRACK_ROW));
+                let rect =
+                    Rect::from_min_size(origin + vec2(0.0, header_height + i as f32 * metrics::TRACK_ROW), vec2(width, metrics::TRACK_ROW));
                 self.track_row(ui, i, rect, &columns, playing_id, playing, &mut picked);
             }
         });
@@ -111,7 +112,9 @@ impl App {
 
     fn header(&self) -> Header {
         match &self.view {
-            View::Loved => Header { kind: "COLLECTION", title: "Tracks".into(), tile: Some((Icon::Heart, colors().tile_loved)), ..Default::default() },
+            View::Loved => {
+                Header { kind: "COLLECTION", title: "Tracks".into(), tile: Some((Icon::Heart, colors().tile_loved)), ..Default::default() }
+            }
             View::Collection(coll) => Header {
                 kind: coll.kind,
                 title: coll.title.clone(),
@@ -128,7 +131,14 @@ impl App {
         let title = if self.searched.is_empty() { "Search".to_string() } else { format!("“{}”", self.searched) };
         text_left(ui.painter(), head.min + vec2(0.0, 22.0), &title, ty::PAGE_TITLE, colors().text, head.width());
         if !self.tracks.is_empty() {
-            text_left(ui.painter(), head.min + vec2(0.0, 54.0), &format!("{} tracks", self.tracks.len()), ty::BODY, colors().dim, head.width());
+            text_left(
+                ui.painter(),
+                head.min + vec2(0.0, 54.0),
+                &format!("{} tracks", self.tracks.len()),
+                ty::BODY,
+                colors().dim,
+                head.width(),
+            );
         }
     }
 
@@ -166,7 +176,16 @@ impl App {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn track_row(&mut self, ui: &mut Ui, i: usize, rect: Rect, columns: &Columns, playing_id: Option<u64>, playing: bool, picked: &mut Picked) {
+    fn track_row(
+        &mut self,
+        ui: &mut Ui,
+        i: usize,
+        rect: Rect,
+        columns: &Columns,
+        playing_id: Option<u64>,
+        playing: bool,
+        picked: &mut Picked,
+    ) {
         let p = colors();
         let resp = ui.interact(rect, ui.id().with(("row", i)), Sense::click());
         let track = &self.tracks[i];

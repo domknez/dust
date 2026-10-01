@@ -17,10 +17,7 @@ fn path() -> Option<PathBuf> {
 
 pub fn load() -> BTreeMap<String, String> {
     let Some(text) = path().and_then(|p| std::fs::read_to_string(p).ok()) else { return BTreeMap::new() };
-    text.lines()
-        .filter_map(|l| l.split_once('='))
-        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
-        .collect()
+    text.lines().filter_map(|l| l.split_once('=')).map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).collect()
 }
 
 pub fn set(key: &str, value: &str) {

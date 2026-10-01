@@ -58,7 +58,13 @@ impl Rtsp {
 
     /// Send a request (to the session URL unless `uri` is given) and read the reply.
     /// Non-200 statuses become errors.
-    pub fn request(&mut self, method: &str, uri: Option<&str>, headers: &[(&str, String)], body: Option<(&str, &[u8])>) -> Result<Response, String> {
+    pub fn request(
+        &mut self,
+        method: &str,
+        uri: Option<&str>,
+        headers: &[(&str, String)],
+        body: Option<(&str, &[u8])>,
+    ) -> Result<Response, String> {
         self.cseq += 1;
         let mut req = format!(
             "{method} {} RTSP/1.0\r\nCSeq: {}\r\nUser-Agent: {}\r\nClient-Instance: {}\r\nDACP-ID: {}\r\nActive-Remote: {}\r\n",

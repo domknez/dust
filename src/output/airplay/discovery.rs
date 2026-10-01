@@ -30,7 +30,8 @@ pub struct Device {
 
 impl Device {
     fn from_service(info: &ServiceInfo, local_ips: &[IpAddr]) -> Option<Device> {
-        let mut addrs: Vec<SocketAddr> = info.get_addresses_v4().into_iter().map(|ip| SocketAddr::new(IpAddr::V4(*ip), info.get_port())).collect();
+        let mut addrs: Vec<SocketAddr> =
+            info.get_addresses_v4().into_iter().map(|ip| SocketAddr::new(IpAddr::V4(*ip), info.get_port())).collect();
         // Skip ourselves (e.g. macOS "AirPlay Receiver" on this machine).
         if addrs.is_empty() || addrs.iter().any(|a| local_ips.contains(&a.ip())) {
             return None;

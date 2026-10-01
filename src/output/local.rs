@@ -39,11 +39,8 @@ impl LocalSink {
         let channels = config.channels() as usize;
         // ~200 ms of stereo audio at device rate.
         let (producer, consumer) = rtrb::RingBuffer::new((rate as usize * 2 / 5) & !1);
-        let shared = Arc::new(Shared {
-            volume: AtomicU32::new(volume.to_bits()),
-            paused: AtomicBool::new(false),
-            flush: AtomicBool::new(false),
-        });
+        let shared =
+            Arc::new(Shared { volume: AtomicU32::new(volume.to_bits()), paused: AtomicBool::new(false), flush: AtomicBool::new(false) });
         let stream = match config.sample_format() {
             SampleFormat::F32 => build::<f32>(&device, &config.into(), channels, consumer, shared.clone()),
             SampleFormat::I16 => build::<i16>(&device, &config.into(), channels, consumer, shared.clone()),

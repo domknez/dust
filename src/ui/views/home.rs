@@ -27,7 +27,8 @@ impl App {
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(vec2(96.0, 44.0), Sense::hover());
                 text_left(ui.painter(), pos2(r.left(), r.center().y), "Home", ty::PAGE_TITLE, colors().text, r.width());
-                picked.reload = widgets::icon_button(ui, Icon::Refresh, 16.0, colors().dim).on_hover_text("Refresh recommendations").clicked();
+                picked.reload =
+                    widgets::icon_button(ui, Icon::Refresh, 16.0, colors().dim).on_hover_text("Refresh recommendations").clicked();
             });
             if self.home.is_empty() {
                 if self.home_task.is_some() {

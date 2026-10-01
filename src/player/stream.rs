@@ -64,9 +64,8 @@ impl Stream {
         if track.codec_params.sample_rate.is_some_and(|r| r != RATE) {
             return Err(format!("Unsupported sample rate {:?}", track.codec_params.sample_rate));
         }
-        let decoder = symphonia::default::get_codecs()
-            .make(&track.codec_params, &DecoderOptions::default())
-            .map_err(|e| format!("decoder: {e}"))?;
+        let decoder =
+            symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default()).map_err(|e| format!("decoder: {e}"))?;
         Ok(Stream {
             audio_track: track.id,
             time_base: track.codec_params.time_base.unwrap_or(TimeBase::new(1, RATE)),

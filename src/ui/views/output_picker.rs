@@ -16,12 +16,22 @@ impl App {
     pub(in crate::ui) fn output_button(&mut self, ui: &mut Ui, current: &str) {
         let p = colors();
         let remote = current != Output::Local.name();
-        let label_width = if remote { ui.painter().layout_no_wrap(current.to_string(), ty::SECONDARY.font(), p.accent).size().x.min(LABEL_MAX_WIDTH) + 8.0 } else { 0.0 };
+        let label_width = if remote {
+            ui.painter().layout_no_wrap(current.to_string(), ty::SECONDARY.font(), p.accent).size().x.min(LABEL_MAX_WIDTH) + 8.0
+        } else {
+            0.0
+        };
         let (rect, resp) = ui.allocate_exact_size(vec2(BUTTON_HEIGHT + label_width, BUTTON_HEIGHT), Sense::click());
         if resp.hovered() {
             ui.painter().rect_filled(rect, CornerRadius::same((BUTTON_HEIGHT / 2.0) as u8), p.hover);
         }
-        let color = if remote { p.accent } else if resp.hovered() { p.text } else { p.dim };
+        let color = if remote {
+            p.accent
+        } else if resp.hovered() {
+            p.text
+        } else {
+            p.dim
+        };
         let icon = Rect::from_center_size(pos2(rect.left() + BUTTON_HEIGHT / 2.0, rect.center().y), Vec2::splat(18.0));
         icons::paint(ui.painter(), icon, Icon::AirPlay, color);
         if remote {

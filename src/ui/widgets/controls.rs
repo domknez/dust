@@ -83,7 +83,10 @@ pub fn segmented(ui: &mut Ui, items: &[(Icon, &str)], selected: usize) -> Option
     let segment_width = (rect.width() - 6.0) / items.len() as f32;
     let mut clicked = None;
     for (i, (icon, label)) in items.iter().enumerate() {
-        let seg = Rect::from_min_size(pos2(rect.left() + 3.0 + i as f32 * segment_width, rect.top() + 3.0), vec2(segment_width, rect.height() - 6.0));
+        let seg = Rect::from_min_size(
+            pos2(rect.left() + 3.0 + i as f32 * segment_width, rect.top() + 3.0),
+            vec2(segment_width, rect.height() - 6.0),
+        );
         let resp = ui.interact(seg, ui.id().with(("segment", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
         let on = i == selected;
         if on {

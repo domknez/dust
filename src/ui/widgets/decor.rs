@@ -21,8 +21,15 @@ pub fn equalizer(p: &Painter, r: Rect, animated: bool) {
 /// A few brand-blue specks drifting up and right, echoing the particles in the icon.
 pub fn dust_particles(p: &Painter, origin: Pos2) {
     // (dx, dy, radius, opacity)
-    const SPECKS: [(f32, f32, f32, f32); 7] =
-        [(0.0, 0.0, 2.4, 1.0), (5.0, -4.0, 1.8, 0.85), (9.0, -1.0, 1.4, 0.7), (11.0, -8.0, 1.6, 0.6), (15.0, -4.5, 1.1, 0.5), (18.0, -10.0, 1.0, 0.4), (21.0, -6.0, 0.8, 0.3)];
+    const SPECKS: [(f32, f32, f32, f32); 7] = [
+        (0.0, 0.0, 2.4, 1.0),
+        (5.0, -4.0, 1.8, 0.85),
+        (9.0, -1.0, 1.4, 0.7),
+        (11.0, -8.0, 1.6, 0.6),
+        (15.0, -4.5, 1.1, 0.5),
+        (18.0, -10.0, 1.0, 0.4),
+        (21.0, -6.0, 0.8, 0.3),
+    ];
     for (dx, dy, r, opacity) in SPECKS {
         p.circle_filled(origin + vec2(dx, dy), r, colors().accent.gamma_multiply(opacity));
     }

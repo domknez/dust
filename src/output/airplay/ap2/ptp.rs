@@ -269,7 +269,9 @@ mod tests {
     #[test]
     fn message_sizes_match_reference_structs() {
         let m = master();
-        for (msg, len) in [(m.sync(1), 44), (m.follow_up(1, 5), 96), (m.announce(1), 76), (m.signaling(1), 106), (m.delay_resp(1, &[0; 10], 5), 54)] {
+        for (msg, len) in
+            [(m.sync(1), 44), (m.follow_up(1, 5), 96), (m.announce(1), 76), (m.signaling(1), 106), (m.delay_resp(1, &[0; 10], 5), 54)]
+        {
             assert_eq!(msg.len(), len);
             assert_eq!(u16::from_be_bytes([msg[2], msg[3]]) as usize, len);
         }

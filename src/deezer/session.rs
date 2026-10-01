@@ -10,11 +10,7 @@ const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KH
 const NO_TOKEN: &str = "null";
 
 pub fn http_agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .user_agent(USER_AGENT)
-        .timeout_connect(Duration::from_secs(10))
-        .timeout_read(Duration::from_secs(30))
-        .build()
+    ureq::AgentBuilder::new().user_agent(USER_AGENT).timeout_connect(Duration::from_secs(10)).timeout_read(Duration::from_secs(30)).build()
 }
 
 /// CSRF token plus every cookie the server set. The token is bound to the whole

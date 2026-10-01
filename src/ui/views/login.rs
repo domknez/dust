@@ -50,7 +50,11 @@ impl App {
         }
         if self.show_arl_input {
             ui.add_space(10.0);
-            let field = egui::TextEdit::singleline(&mut self.arl_input).password(true).hint_text("arl").desired_width(340.0).margin(Margin::symmetric(12, 8));
+            let field = egui::TextEdit::singleline(&mut self.arl_input)
+                .password(true)
+                .hint_text("arl")
+                .desired_width(340.0)
+                .margin(Margin::symmetric(12, 8));
             let edit = ui.add(field);
             if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !self.arl_input.trim().is_empty() {
                 let arl = self.arl_input.trim().to_string();

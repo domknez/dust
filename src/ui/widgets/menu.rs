@@ -43,7 +43,12 @@ pub fn menu_row(ui: &mut Ui, icon: Option<Icon>, title: &str, subtitle: Option<&
         }
     }
     if checked {
-        icons::paint(painter, egui::Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), Vec2::splat(14.0)), Icon::Check, colors().accent);
+        icons::paint(
+            painter,
+            egui::Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), Vec2::splat(14.0)),
+            Icon::Check,
+            colors().accent,
+        );
     }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }

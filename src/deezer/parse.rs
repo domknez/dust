@@ -40,7 +40,8 @@ pub fn track(v: &Value) -> Option<Track> {
         version if version.is_empty() => text(&v["SNG_TITLE"]),
         version => format!("{} {version}", text(&v["SNG_TITLE"])),
     };
-    let fallback = Some((number(&v["FALLBACK"]["SNG_ID"]), text(&v["FALLBACK"]["TRACK_TOKEN"]))).filter(|(id, tok)| *id != 0 && !tok.is_empty());
+    let fallback =
+        Some((number(&v["FALLBACK"]["SNG_ID"]), text(&v["FALLBACK"]["TRACK_TOKEN"]))).filter(|(id, tok)| *id != 0 && !tok.is_empty());
     Some(Track {
         id,
         title,

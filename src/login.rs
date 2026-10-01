@@ -13,12 +13,8 @@ const PREFIX: &str = "arl=";
 /// Spawn the login window and block until the user signs in or closes it.
 pub fn obtain_arl() -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let out = Command::new(exe)
-        .arg(ARG)
-        .stdin(Stdio::null())
-        .stderr(Stdio::inherit())
-        .output()
-        .map_err(|e| format!("login window: {e}"))?;
+    let out =
+        Command::new(exe).arg(ARG).stdin(Stdio::null()).stderr(Stdio::inherit()).output().map_err(|e| format!("login window: {e}"))?;
     String::from_utf8_lossy(&out.stdout)
         .lines()
         .find_map(|l| l.strip_prefix(PREFIX))

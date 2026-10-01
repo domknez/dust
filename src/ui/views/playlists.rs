@@ -31,7 +31,14 @@ impl App {
                             widgets::play_knob(ui, pos2(art.right() - 30.0, art.bottom() - 30.0), 20.0);
                         }
                         text_left(ui.painter(), pos2(rect.left(), art.bottom() + 16.0), &playlist.title, ty::TITLE.strong(), p.text, card);
-                        text_left(ui.painter(), pos2(rect.left(), art.bottom() + 36.0), &format!("{} tracks", playlist.count), ty::SECONDARY, p.dim, card);
+                        text_left(
+                            ui.painter(),
+                            pos2(rect.left(), art.bottom() + 36.0),
+                            &format!("{} tracks", playlist.count),
+                            ty::SECONDARY,
+                            p.dim,
+                            card,
+                        );
                         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                             open = Some(Coll::from_playlist(playlist));
                         }

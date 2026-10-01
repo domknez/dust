@@ -5,11 +5,11 @@
 //! - `--debug-tracks <kind> <id>`  what a home item plays (flow|mix|album|artist|playlist)
 //! - `--debug-stream <playlist> [n]`  stream resolution per track, incl. fallbacks
 
+use crate::credentials;
 use crate::deezer::{Deezer, Quality};
 use crate::output::airplay::{AirPlaySink, Device, Discovery};
 use crate::output::local::LocalSink;
 use crate::output::{RATE, Sink};
-use crate::credentials;
 use std::time::{Duration, Instant};
 
 pub enum Command {
@@ -17,8 +17,14 @@ pub enum Command {
     LoginWindow,
     Tone(Option<String>),
     DebugHome,
-    DebugTracks { kind: String, id: String },
-    DebugStream { playlist: u64, count: usize },
+    DebugTracks {
+        kind: String,
+        id: String,
+    },
+    DebugStream {
+        playlist: u64,
+        count: usize,
+    },
 }
 
 impl Command {

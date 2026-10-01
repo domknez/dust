@@ -31,7 +31,16 @@ mod tests {
     fn durations() {
         assert_eq!(mmss(245.3), "4:05");
         assert_eq!(mmss(-3.0), "0:00");
-        let t = |d| Track { id: 1, title: String::new(), artist: String::new(), album: String::new(), duration: d, token: String::new(), cover: String::new(), fallback: None };
+        let t = |d| Track {
+            id: 1,
+            title: String::new(),
+            artist: String::new(),
+            album: String::new(),
+            duration: d,
+            token: String::new(),
+            cover: String::new(),
+            fallback: None,
+        };
         assert_eq!(total_duration(&[t(3600), t(840)]), "1 hr 14 min");
         assert_eq!(total_duration(&[t(125)]), "2 min");
     }

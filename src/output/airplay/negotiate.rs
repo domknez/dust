@@ -53,10 +53,8 @@ pub fn airplay1(rtsp: &mut Rtsp, device: &Device, local: &Local, remote_ip: IpAd
         family(remote_ip)
     );
     rtsp.request("ANNOUNCE", None, &[], Some(("application/sdp", sdp.as_bytes())))?;
-    let transport = format!(
-        "RTP/AVP/UDP;unicast;interleaved=0-1;mode=record;control_port={};timing_port={}",
-        local.control_port, local.timing_port
-    );
+    let transport =
+        format!("RTP/AVP/UDP;unicast;interleaved=0-1;mode=record;control_port={};timing_port={}", local.control_port, local.timing_port);
     let resp = rtsp.request("SETUP", None, &[("Transport", transport)], None)?;
     rtsp.adopt_session(&resp);
     let t = resp.header("Transport").ok_or("SETUP: no Transport")?;
@@ -73,9 +71,10 @@ pub fn airplay2(rtsp: &mut Rtsp, device: &Device, local: &Local, remote_ip: IpAd
 
     // PTP when the receiver supports it (AirPlay 2 receivers generally won't play
     // NTP-timed streams); NTP only as a fallback, e.g. if ports 319/320 are taken.
-    let ptp = device.ptp.then(|| ptp::join(remote_ip)).and_then(|joined| {
-        joined.inspect_err(|e| eprintln!("dust: {e}; falling back to NTP timing")).ok()
-    });
+    let ptp = device
+        .ptp
+        .then(|| ptp::join(remote_ip))
+        .and_then(|joined| joined.inspect_err(|e| eprintln!("dust: {e}; falling back to NTP timing")).ok());
     let resp = rtsp.request("SETUP", None, &[], Some((PLIST, &bplist::encode(&session_setup(local, ptp.as_ref())))))?;
     rtsp.adopt_session(&resp);
     let reply = bplist::decode(&resp.body)?;

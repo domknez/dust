@@ -46,7 +46,13 @@ pub struct Coll {
 
 impl Coll {
     pub fn from_playlist(p: &Playlist) -> Self {
-        Coll { source: Source::Playlist(p.id), kind: "PLAYLIST", title: p.title.clone(), subtitle: String::new(), picture: p.picture.clone() }
+        Coll {
+            source: Source::Playlist(p.id),
+            kind: "PLAYLIST",
+            title: p.title.clone(),
+            subtitle: String::new(),
+            picture: p.picture.clone(),
+        }
     }
 
     /// None for item types we don't open (flows play directly; channels, shows, ...).
