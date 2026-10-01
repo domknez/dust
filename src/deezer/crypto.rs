@@ -2,7 +2,7 @@
 //! Blowfish-CBC encrypted with a fixed IV and a per-song key; the rest is plaintext.
 
 use blowfish::Blowfish;
-use blowfish::cipher::{BlockDecrypt, KeyInit, generic_array::GenericArray};
+use blowfish::cipher::{Block, BlockCipherDecrypt, KeyInit};
 use md5::{Digest, Md5};
 use std::io::{self, Read};
 
@@ -53,7 +53,8 @@ impl<R: Read> StripeReader<R> {
             let mut prev = IV;
             for block in self.buf.chunks_exact_mut(8) {
                 let ciphertext: [u8; 8] = block.try_into().unwrap();
-                self.cipher.decrypt_block(GenericArray::from_mut_slice(block));
+                let block: &mut Block<Blowfish> = block.try_into().expect("8-byte block");
+                self.cipher.decrypt_block(block);
                 block.iter_mut().zip(prev).for_each(|(b, p)| *b ^= p);
                 prev = ciphertext;
             }
@@ -81,7 +82,23 @@ impl<R: Read> Read for StripeReader<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use blowfish::cipher::BlockEncrypt;
+    use blowfish::cipher::BlockCipherEncrypt;
+
+    /// Known-answer vector (Eric Young's set): all-zero key and block.
+    #[test]
+    fn blowfish_known_answer() {
+        let cipher: Blowfish = Blowfish::new_from_slice(&[0u8; 8]).unwrap();
+        let mut block = Block::<Blowfish>::default();
+        cipher.encrypt_block(&mut block);
+        assert_eq!(block.as_slice(), [0x4e, 0xf9, 0x97, 0x45, 0x61, 0x98, 0xdd, 0x78]);
+    }
+
+    /// Reference computed independently (Python hashlib) for song 3135556.
+    #[test]
+    fn song_key_matches_reference() {
+        let key: String = song_key(3135556).iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(key, "6c6c666b39662c37652575603c643439");
+    }
 
     #[test]
     fn stripe_roundtrip() {
@@ -94,7 +111,8 @@ mod tests {
                 let mut prev = IV;
                 for block in chunk.chunks_exact_mut(8) {
                     block.iter_mut().zip(prev).for_each(|(b, p)| *b ^= p);
-                    cipher.encrypt_block(GenericArray::from_mut_slice(block));
+                    let array: &mut Block<Blowfish> = block.try_into().unwrap();
+                    cipher.encrypt_block(array);
                     prev = block.try_into().unwrap();
                 }
             }

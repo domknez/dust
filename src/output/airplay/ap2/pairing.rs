@@ -3,7 +3,7 @@
 //! Mirrors the client in OwnTone's pair_ap (pair_homekit.c), which interoperates
 //! with Apple and third-party AirPlay 2 receivers.
 
-use chacha20poly1305::aead::{AeadInPlace, KeyInit};
+use chacha20poly1305::aead::{AeadInOut, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce, Tag};
 use num_bigint::BigUint;
 use sha2::{Digest, Sha512};
@@ -158,7 +158,7 @@ const BLOCK_MAX: usize = 0x400;
 fn nonce(counter: u64) -> Nonce {
     let mut n = [0u8; 12];
     n[4..].copy_from_slice(&counter.to_le_bytes());
-    *Nonce::from_slice(&n)
+    Nonce::from(n)
 }
 
 pub struct Encryptor {
@@ -168,7 +168,7 @@ pub struct Encryptor {
 
 impl Encryptor {
     pub fn new(key: &[u8; 32]) -> Self {
-        Self { cipher: ChaCha20Poly1305::new(Key::from_slice(key)), counter: 0 }
+        Self { cipher: ChaCha20Poly1305::new(&Key::from(*key)), counter: 0 }
     }
 
     /// Frame: [u16 LE length][ciphertext][16-byte tag], length is the AAD.
@@ -177,7 +177,7 @@ impl Encryptor {
         for block in plain.chunks(BLOCK_MAX) {
             let len = (block.len() as u16).to_le_bytes();
             let mut buf = block.to_vec();
-            let tag = self.cipher.encrypt_in_place_detached(&nonce(self.counter), &len, &mut buf).expect("encrypt");
+            let tag = self.cipher.encrypt_inout_detached(&nonce(self.counter), &len, buf.as_mut_slice().into()).expect("encrypt");
             self.counter += 1;
             out.extend_from_slice(&len);
             out.extend_from_slice(&buf);
@@ -201,7 +201,7 @@ impl<R: Read> DecryptReader<R> {
     }
 
     pub fn enable(&mut self, key: &[u8; 32]) {
-        self.cipher = Some((ChaCha20Poly1305::new(Key::from_slice(key)), 0));
+        self.cipher = Some((ChaCha20Poly1305::new(&Key::from(*key)), 0));
     }
 }
 
@@ -217,10 +217,10 @@ impl<R: Read> Read for DecryptReader<R> {
             let n = u16::from_le_bytes(len) as usize;
             let mut buf = vec![0u8; n + 16];
             self.inner.read_exact(&mut buf)?;
-            let tag = Tag::clone_from_slice(&buf[n..]);
+            let tag = Tag::try_from(&buf[n..]).expect("16-byte tag");
             buf.truncate(n);
             cipher
-                .decrypt_in_place_detached(&nonce(*counter), &len, &mut buf, &tag)
+                .decrypt_inout_detached(&nonce(*counter), &len, buf.as_mut_slice().into(), &tag)
                 .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "control channel decrypt failed"))?;
             *counter += 1;
             self.plain = buf;
@@ -241,7 +241,7 @@ pub fn seal_audio(cipher: &ChaCha20Poly1305, header: &[u8; 12], payload: &[u8], 
     let mut out = Vec::with_capacity(12 + payload.len() + 24);
     out.extend_from_slice(header);
     let mut buf = payload.to_vec();
-    let tag = cipher.encrypt_in_place_detached(Nonce::from_slice(&n), &header[4..12], &mut buf).expect("encrypt");
+    let tag = cipher.encrypt_inout_detached(&Nonce::from(n), &header[4..12], buf.as_mut_slice().into()).expect("encrypt");
     out.extend_from_slice(&buf);
     out.extend_from_slice(&tag);
     out.extend_from_slice(&n[4..]);

@@ -8,7 +8,7 @@
 //! - [`listens`]: listen tracking and reporting to Deezer
 
 mod engine;
-mod library;
+pub mod library;
 mod listens;
 mod queue;
 mod stream;

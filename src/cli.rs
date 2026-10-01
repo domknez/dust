@@ -4,6 +4,7 @@
 //! - `--debug-home`                home page structure for the stored session
 //! - `--debug-tracks <kind> <id>`  what a home item plays (flow|mix|album|artist|playlist)
 //! - `--debug-stream <playlist> [n]`  stream resolution per track, incl. fallbacks
+//! - `--debug-decode <playlist> [quality]`  download, decrypt and decode the first track (no sound)
 
 use crate::credentials;
 use crate::deezer::{Deezer, Quality};
@@ -25,6 +26,10 @@ pub enum Command {
         playlist: u64,
         count: usize,
     },
+    DebugDecode {
+        playlist: u64,
+        quality: Quality,
+    },
 }
 
 impl Command {
@@ -40,6 +45,10 @@ impl Command {
                 playlist: args.next().and_then(|a| a.parse().ok()).unwrap_or(0),
                 count: args.next().and_then(|a| a.parse().ok()).unwrap_or(10),
             },
+            "--debug-decode" => Command::DebugDecode {
+                playlist: args.next().and_then(|a| a.parse().ok()).unwrap_or(0),
+                quality: args.next().and_then(|q| Quality::from_key(&q)).unwrap_or(Quality::Mp3_320),
+            },
             _ => return None,
         };
         Some(cmd)
@@ -53,6 +62,7 @@ impl Command {
             Command::DebugHome => debug_home(&logged_in()),
             Command::DebugTracks { kind, id } => debug_tracks(&logged_in(), &kind, &id),
             Command::DebugStream { playlist, count } => debug_stream(&logged_in(), playlist, count),
+            Command::DebugDecode { playlist, quality } => debug_decode(&logged_in(), playlist, quality),
         }
     }
 }
@@ -153,5 +163,39 @@ fn debug_stream(client: &Deezer, playlist: u64, count: usize) {
             Err(e) => format!("FAIL {e} (fallback: {:?})", t.fallback.as_ref().map(|f| f.0)),
         };
         println!("{:<50} {how}", format!("{} – {}", t.artist, t.title));
+    }
+}
+
+/// End-to-end check of the playback pipeline: resolve, download, decrypt and decode
+/// ~10 s of the first playable track, without an audio device.
+fn debug_decode(client: &Deezer, playlist: u64, quality: Quality) {
+    use crate::player::library::{Decoded, Library};
+    for track in client.playlist(playlist).expect("playlist").iter().take(5) {
+        log_info!("opening {} – {}", track.artist, track.title);
+        let mut playback = match Library::open(client, track, quality, 0.0) {
+            Ok(p) => p,
+            Err(e) => {
+                println!("{} – {}: {e}", track.artist, track.title);
+                continue;
+            }
+        };
+        log_info!("opened as {:?}", playback.format());
+        let (mut samples, mut seconds) = (Vec::new(), 0.0);
+        while seconds < 10.0 {
+            match playback.decode_next(&mut samples) {
+                Decoded::Audio { ends_at } => seconds = ends_at,
+                Decoded::Nothing => {}
+                Decoded::End => break,
+            }
+        }
+        let peak = samples.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
+        println!(
+            "{} – {}: decoded {seconds:.1} s as {:?}, {} samples, peak {peak}",
+            track.artist,
+            track.title,
+            playback.format(),
+            samples.len()
+        );
+        return;
     }
 }
