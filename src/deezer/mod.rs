@@ -12,6 +12,7 @@
 mod catalog;
 mod client;
 mod crypto;
+mod error;
 mod listens;
 mod models;
 mod parse;
@@ -22,4 +23,6 @@ pub use client::Deezer;
 pub use models::{Format, Item, Listen, Playlist, Quality, Section, Track, image_url};
 pub use streaming::StreamSource;
 
-pub type Result<T> = std::result::Result<T, String>;
+pub use error::Error;
+
+pub type Result<T> = std::result::Result<T, Error>;

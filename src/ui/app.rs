@@ -6,7 +6,7 @@ use super::state::{Coll, PlayMode, Source, View};
 use super::style::{self, Appearance, colors, metrics};
 use super::tasks::{self, Task};
 use crate::credentials;
-use crate::deezer::{Deezer, Playlist, Quality, Section, Track};
+use crate::deezer::{Deezer, Error, Playlist, Quality, Section, Track};
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
 use crate::player::{Cmd, Output, PlayerHandle, Status};
@@ -133,7 +133,7 @@ impl App {
     pub(super) fn log_in_with_browser(&mut self, ctx: &egui::Context) {
         self.login_error = None;
         self.remember_login = true;
-        self.login = tasks::spawn(ctx, || Deezer::login(&crate::login::obtain_arl()?));
+        self.login = tasks::spawn(ctx, || Deezer::login(&crate::login::obtain_arl().map_err(crate::deezer::Error::Other)?));
     }
 
     pub(super) fn log_out(&mut self) {
@@ -249,27 +249,41 @@ impl App {
             Some(Ok(client)) => self.on_logged_in(ctx, client),
             Some(Err(e)) => {
                 self.remember_login = false;
-                self.login_error = Some(e);
+                self.login_error = Some(e.to_string());
             }
             None => {}
         }
         match tasks::poll(&mut self.tracks_task) {
             Some(Ok(t)) => self.tracks = t,
-            Some(Err(e)) => self.list_error = Some(e),
+            Some(Err(e)) => self.on_load_error(e),
             None => {}
         }
-        if let Some(Ok(p)) = tasks::poll(&mut self.playlists_task) {
-            self.playlists = p;
+        match tasks::poll(&mut self.playlists_task) {
+            Some(Ok(p)) => self.playlists = p,
+            Some(Err(e)) => self.on_load_error(e),
+            None => {}
         }
         match tasks::poll(&mut self.home_task) {
             Some(Ok(h)) => self.home = h,
-            Some(Err(e)) => self.list_error = Some(e),
+            Some(Err(e)) => self.on_load_error(e),
             None => {}
         }
-        if let Some(Ok((tracks, mode))) = tasks::poll(&mut self.quick_play)
-            && !tracks.is_empty()
-        {
-            self.player.send(mode.command(tracks));
+        match tasks::poll(&mut self.quick_play) {
+            Some(Ok((tracks, mode))) if !tracks.is_empty() => self.player.send(mode.command(tracks)),
+            Some(Err(e)) => self.on_load_error(e),
+            _ => {}
+        }
+    }
+
+    /// A background load failed: an expired session sends the listener back to the
+    /// login screen with the reason; anything else is shown in place.
+    fn on_load_error(&mut self, error: Error) {
+        log_warn!("{error}");
+        if error.is_session_expired() {
+            self.log_out();
+            self.login_error = Some(error.to_string());
+        } else {
+            self.list_error = Some(error.to_string());
         }
     }
 

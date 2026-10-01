@@ -1141,6 +1141,7 @@ dependencies = [
  "sha2",
  "symphonia",
  "tao",
+ "thiserror 2.0.21",
  "ureq",
  "winresource",
  "wry",

@@ -279,7 +279,7 @@ impl Engine {
 
     fn open(&self, track: &Track, at: f64) -> Result<Stream, String> {
         let client = self.client.as_ref().ok_or("Not logged in")?;
-        let source = client.stream_source(track, self.quality)?;
+        let source = client.stream_source(track, self.quality).map_err(|e| e.to_string())?;
         Stream::open(client, source, at)
     }
 

@@ -3,7 +3,7 @@
 use super::crypto::{CHUNK, StripeReader};
 use super::models::{Format, Quality, Track};
 use super::parse::text;
-use super::{Deezer, Result};
+use super::{Deezer, Error, Result};
 use serde_json::{Value, json};
 use std::io::Read;
 
@@ -44,7 +44,7 @@ impl Deezer {
         if offset > 0 {
             req = req.set("Range", &format!("bytes={offset}-"));
         }
-        let resp = req.call().map_err(|e| format!("stream: {e}"))?;
+        let resp = req.call()?;
         let reader = StripeReader::new(resp.into_reader(), source.song_id, offset / CHUNK as u64);
         Ok((Box::new(reader), offset))
     }
@@ -52,7 +52,7 @@ impl Deezer {
     /// Fresh track token, used when a cached one was rejected.
     fn refresh_token(&self, id: u64) -> Result<String> {
         let r = self.call("song.getListData", json!({"sng_ids": [id]}))?;
-        r["data"][0]["TRACK_TOKEN"].as_str().map(str::to_string).ok_or_else(|| "No track token".into())
+        r["data"][0]["TRACK_TOKEN"].as_str().map(str::to_string).ok_or(Error::NotAvailable)
     }
 
     fn media_url(&self, token: &str, quality: Quality) -> Result<(String, Format)> {
@@ -62,20 +62,17 @@ impl Deezer {
             "media": [{"type": "FULL", "formats": formats}],
             "track_tokens": [token],
         });
-        let r: Value = self
-            .0
-            .agent
-            .post(MEDIA_API)
-            .send_json(body)
-            .map_err(|e| format!("get_url: {e}"))?
-            .into_json()
-            .map_err(|e| format!("get_url: {e}"))?;
+        let r: Value = self.0.agent.post(MEDIA_API).send_json(body)?.into_json()?;
         let item = &r["data"][0];
         if let Some(err) = item["errors"].get(0) {
-            return Err(format!("Deezer: {}", text(&err["message"])));
+            // 2002: "Track token has no sufficient rights on requested media".
+            return Err(match err["code"].as_u64() {
+                Some(2002) => Error::NotAvailable,
+                _ => Error::Api(text(&err["message"])),
+            });
         }
         let media = &item["media"][0];
-        let url = media["sources"][0]["url"].as_str().ok_or("No stream source")?;
+        let url = media["sources"][0]["url"].as_str().ok_or(Error::NotAvailable)?;
         Ok((url.to_string(), Format::from_api(media["format"].as_str())))
     }
 }

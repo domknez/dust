@@ -1,8 +1,8 @@
 //! The [`Deezer`] handle: login and authenticated gw-light calls.
 
-use super::Result;
 use super::parse::{number, text};
 use super::session::{self, Session};
+use super::{Error, Result};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
@@ -30,12 +30,12 @@ impl Deezer {
         let user = &data["USER"];
         let user_id = number(&user["USER_ID"]);
         if user_id == 0 {
-            return Err("Invalid or expired ARL".into());
+            return Err(Error::SessionExpired);
         }
         session.api_token = text(&data["checkForm"]);
         let license_token = text(&user["OPTIONS"]["license_token"]);
         if license_token.is_empty() {
-            return Err("Account has no streaming license".into());
+            return Err(Error::NoStreamingLicense);
         }
         Ok(Deezer(Arc::new(Inner {
             agent,
@@ -67,9 +67,13 @@ impl Deezer {
         let inner = &self.0;
         let mut session = inner.session.lock().unwrap();
         match session::call(&inner.agent, &inner.arl, &mut session, method, body.clone(), extra) {
-            Err(e) if e.contains("VALID_TOKEN_REQUIRED") => {
+            Err(Error::InvalidToken) => {
                 session.reset_token();
                 let data = session::call(&inner.agent, &inner.arl, &mut session, "deezer.getUserData", json!({}), &[])?;
+                // A rejected token with no logged-in user behind it: the session is gone.
+                if number(&data["USER"]["USER_ID"]) == 0 {
+                    return Err(Error::SessionExpired);
+                }
                 session.api_token = text(&data["checkForm"]);
                 session::call(&inner.agent, &inner.arl, &mut session, method, body, extra)
             }

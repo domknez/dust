@@ -48,7 +48,7 @@ impl Stream {
             Format::Mp3(kbps) if at > 0.0 => ((at * kbps as f64 * BYTES_PER_KBPS) as u64, 0.0),
             _ => (0, at),
         };
-        let (bytes, offset) = client.open_stream(&source, offset)?;
+        let (bytes, offset) = client.open_stream(&source, offset).map_err(|e| e.to_string())?;
         let base = match source.format {
             Format::Mp3(kbps) => offset as f64 / (kbps as f64 * BYTES_PER_KBPS),
             Format::Flac => 0.0,

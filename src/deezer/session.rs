@@ -1,6 +1,6 @@
 //! gw-light transport: cookie jar, CSRF (`api_token`) handling and the raw call.
 
-use super::Result;
+use super::{Error, Result};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -57,15 +57,19 @@ pub fn call(agent: &ureq::Agent, arl: &str, session: &mut Session, method: &str,
         .query("api_token", &session.api_token)
         .query_pairs(extra.iter().copied())
         .set("Cookie", &session.cookie_header(arl))
-        .send_json(body)
-        .map_err(|e| format!("{method}: {e}"))?;
+        .send_json(body)?;
     for c in resp.all("set-cookie") {
         session.store(c);
     }
-    let v: Value = resp.into_json().map_err(|e| format!("{method}: {e}"))?;
-    match &v["error"] {
-        Value::Object(o) if !o.is_empty() => Err(format!("{method}: {}", Value::Object(o.clone()))),
-        _ => Ok(v["results"].clone()),
+    results(method, resp.into_json()?)
+}
+
+/// The `results` of a gw-light reply, or its `error` object as an [`Error`].
+fn results(method: &str, reply: Value) -> Result<Value> {
+    match &reply["error"] {
+        Value::Object(o) if o.contains_key("VALID_TOKEN_REQUIRED") => Err(Error::InvalidToken),
+        Value::Object(o) if !o.is_empty() => Err(Error::Api(format!("{method}: {}", Value::Object(o.clone())))),
+        _ => Ok(reply["results"].clone()),
     }
 }
 
@@ -84,6 +88,13 @@ mod tests {
         s.store("account_id=deleted; Max-Age=0");
         assert_eq!(s.cookie_header("A"), "arl=A; dzr_uniq_id=x; sid=def");
         assert_eq!(Session::new().cookie_header(""), "");
+    }
+
+    #[test]
+    fn error_replies() {
+        assert!(matches!(results("m", json!({"error": {"VALID_TOKEN_REQUIRED": "Invalid CSRF token"}})), Err(Error::InvalidToken)));
+        assert!(matches!(results("m", json!({"error": {"DATA_ERROR": "x"}})), Err(Error::Api(_))));
+        assert_eq!(results("m", json!({"error": [], "results": {"a": 1}})).unwrap(), json!({"a": 1}));
     }
 
     /// Network test: CSRF token from getUserData must be accepted on the next call.
