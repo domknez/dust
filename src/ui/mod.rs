@@ -5,11 +5,13 @@
 //! - [`views`]: one module per screen or panel
 //! - [`widgets`]: reusable painted components
 //! - [`style`]: colours, type scale, metrics, icons
+//! - [`now_playing`]: media keys and the OS "Now Playing" widget
 //! - [`state`], [`tasks`], [`format`], [`covers`]: supporting pieces
 
 mod app;
 mod covers;
 mod format;
+mod now_playing;
 mod state;
 mod style;
 mod tasks;

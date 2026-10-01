@@ -2,6 +2,7 @@
 //! top-level panel layout. Screens are drawn by the modules in `views/`.
 
 use super::covers::Covers;
+use super::now_playing::NowPlaying;
 use super::state::{Coll, PlayMode, Source, View};
 use super::style::{self, Appearance, colors, metrics};
 use super::tasks::{self, Task};
@@ -63,6 +64,7 @@ pub struct App {
     pub(super) covers: Covers,
     pub(super) logo: egui::TextureHandle,
     _remote_control: Option<dacp::Server>,
+    now_playing: Option<NowPlaying>,
 }
 
 impl App {
@@ -83,6 +85,7 @@ impl App {
             Discovery::start(move || repaint.request_repaint()).inspect_err(|e| log_warn!("AirPlay discovery unavailable: {e}")).ok();
         let mut app = Self {
             _remote_control: start_remote_control(player.clone()),
+            now_playing: NowPlaying::start(cc, player.clone()),
             player,
             client: None,
             arl_input: String::new(),
@@ -333,6 +336,9 @@ impl eframe::App for App {
         }
         let st = self.player.status();
         self.persist_playback(&st);
+        if let Some(np) = &mut self.now_playing {
+            np.update(&st);
+        }
         let p = colors();
         egui::Panel::bottom("player")
             .exact_size(metrics::PLAYER_BAR_HEIGHT)
