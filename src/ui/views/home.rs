@@ -19,6 +19,16 @@ pub(in crate::ui) struct CardPicks {
     flow: Option<Option<String>>,
 }
 
+impl CardPicks {
+    pub(in crate::ui) fn open(&mut self, coll: Coll) {
+        self.open = Some(coll);
+    }
+
+    pub(in crate::ui) fn play(&mut self, source: Source, mode: PlayMode) {
+        self.play = Some((source, mode));
+    }
+}
+
 /// Height [`card_row`] takes: spacing, section title and one row of cards.
 pub(in crate::ui) const CARD_ROW_HEIGHT: f32 = 22.0 + 28.0 + 8.0 + metrics::HOME_CARD + metrics::CARD_TEXT;
 

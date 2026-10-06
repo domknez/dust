@@ -73,7 +73,12 @@ impl App {
                 let x = art.right() + 12.0;
                 let width = controls.left() - 8.0 - x;
                 text_left(ui.painter(), pos2(x, art.center().y - 10.0), &track.title, ty::TITLE.strong(), p.text, width);
-                text_left(ui.painter(), pos2(x, art.center().y + 10.0), &track.artist, ty::SECONDARY, p.dim, width);
+                let pos = pos2(x, art.center().y + 10.0);
+                if let (Some(artist), _) =
+                    widgets::artist_links(ui, pos, &track.artists, &track.artist, ty::SECONDARY, p.dim, p.text, width)
+                {
+                    self.pending_artist = Some(artist);
+                }
             }
             None => {
                 widgets::tile(ui, art, Icon::Note, p.surface, radius::THUMB);

@@ -43,6 +43,9 @@ impl App {
         if widgets::nav_item(ui, Icon::Grid, "Playlists", self.view == View::Playlists).clicked() {
             go = Some(View::Playlists);
         }
+        if widgets::nav_item(ui, Icon::Person, "Artists", self.view == View::Artists).clicked() {
+            go = Some(View::Artists);
+        }
         widgets::section(ui, "PLAYLISTS");
         if let Some(view) = go {
             self.open_view(&ctx, view);

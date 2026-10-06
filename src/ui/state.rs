@@ -1,6 +1,6 @@
 //! What the UI is showing and what it can open: views, collections and their sources.
 
-use crate::deezer::{self, Deezer, Item, Playlist, Track};
+use crate::deezer::{self, ArtistRef, Deezer, Item, Playlist, Track};
 use crate::player::Cmd;
 
 /// The page in the main area.
@@ -10,7 +10,25 @@ pub enum View {
     Search,
     Loved,
     Playlists,
+    /// Artists the account follows.
+    Artists,
     Collection(Box<Coll>),
+    Artist(Box<ArtistView>),
+}
+
+/// An artist page being shown: enough to draw its header before the page loads.
+#[derive(Clone, PartialEq, Debug)]
+pub struct ArtistView {
+    pub id: String,
+    pub name: String,
+    /// Picture md5 (`artist` kind on the image CDN), if known yet.
+    pub picture: Option<String>,
+}
+
+impl ArtistView {
+    pub fn from_ref(artist: &ArtistRef) -> Self {
+        ArtistView { id: artist.id.clone(), name: artist.name.clone(), picture: None }
+    }
 }
 
 /// Where a collection's tracks come from.
@@ -18,7 +36,10 @@ pub enum View {
 pub enum Source {
     Playlist(u64),
     Album(String),
+    /// Opens the artist's page; played directly, their top tracks.
     Artist(String),
+    /// The artist's popular tracks as a plain list ("Show all").
+    TopTracks(String),
     Mix(String),
 }
 
@@ -27,7 +48,7 @@ impl Source {
         match self {
             Source::Playlist(id) => client.playlist(*id),
             Source::Album(id) => client.album(id),
-            Source::Artist(id) => client.artist_top(id),
+            Source::Artist(id) | Source::TopTracks(id) => client.artist_top(id),
             Source::Mix(id) => client.mix(id),
         }
     }

@@ -168,7 +168,6 @@ pub fn artist_page(page: &Value, discography_data: &Value) -> ArtistPage {
         }
     }
     ArtistPage {
-        id: text(&data["ART_ID"]),
         name: text(&data["ART_NAME"]),
         picture: Some(text(&data["ART_PICTURE"])).filter(|p| !p.is_empty()),
         fans: number(&data["NB_FAN"]),
@@ -187,7 +186,7 @@ pub fn item(v: &Value) -> Item {
 }
 
 /// 1234567 -> "1,234,567"
-fn thousands(n: u64) -> String {
+pub fn thousands(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (i, ch) in digits.chars().enumerate() {

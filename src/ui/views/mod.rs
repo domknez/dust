@@ -1,6 +1,8 @@
 //! Screens and panels, each an `impl App` block drawing one part of the window.
 
 mod account_menu;
+mod artist;
+mod artists;
 mod collection;
 mod content;
 mod home;

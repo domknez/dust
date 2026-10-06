@@ -49,7 +49,6 @@ pub struct Item {
 /// related artists, playlists).
 #[derive(Clone, Debug, Default)]
 pub struct ArtistPage {
-    pub id: String,
     pub name: String,
     /// Picture md5 on the image CDN (`artist` kind).
     pub picture: Option<String>,

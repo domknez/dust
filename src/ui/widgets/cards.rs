@@ -2,8 +2,8 @@
 
 use super::art::cover;
 use super::menu::queue_menu;
-use super::text::{line, text_left};
-use crate::deezer::{Item, Track, image_url};
+use super::text::{artist_links, line, text_left};
+use crate::deezer::{ArtistRef, Item, Track, image_url};
 use crate::ui::covers::Covers;
 use crate::ui::format::{cover_url, mmss};
 use crate::ui::state::{Coll, PlayMode};
@@ -73,8 +73,8 @@ pub fn flow_card(ui: &mut Ui, covers: &mut Covers, it: &Item, active: bool) -> O
     resp.clicked().then(|| (it.id != "default").then(|| it.id.clone()))
 }
 
-/// One track in the queue panel.
-pub fn queue_row(ui: &Ui, covers: &mut Covers, rect: Rect, t: &Track, current: bool, show_time: bool) {
+/// One track in the queue panel. Returns the artist whose name was clicked.
+pub fn queue_row(ui: &Ui, covers: &mut Covers, rect: Rect, t: &Track, current: bool, show_time: bool) -> Option<ArtistRef> {
     let art = Rect::from_min_size(pos2(rect.left() + 6.0, rect.center().y - metrics::LIST_ART / 2.0), Vec2::splat(metrics::LIST_ART));
     cover(ui, covers, cover_url(t, metrics::THUMB_PX).as_deref(), art, radius::THUMB);
     let x = art.right() + 12.0;
@@ -82,8 +82,8 @@ pub fn queue_row(ui: &Ui, covers: &mut Covers, rect: Rect, t: &Track, current: b
     let p = colors();
     let painter = ui.painter();
     text_left(painter, pos2(x, rect.center().y - 8.0), &t.title, ty::ITEM, if current { p.accent } else { p.text }, width);
-    text_left(painter, pos2(x, rect.center().y + 10.0), &t.artist, ty::SMALL, p.dim, width);
     if show_time {
         painter.text(pos2(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, mmss(t.duration as f64), ty::SMALL.font(), p.faint);
     }
+    artist_links(ui, pos2(x, rect.center().y + 10.0), &t.artists, &t.artist, ty::SMALL, p.dim, p.text, width).0
 }
