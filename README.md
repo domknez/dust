@@ -52,7 +52,7 @@ including cover art.
 - **Speaker buttons work:** volume and play/pause/skip on the speaker control dust
 - **Mini player**: a small always-on-top strip with cover, controls
   and seek bar; drag it anywhere, double-click the cover to go back
-- **Updates itself** *(next release)*: new versions download and verify in the
+- **Updates itself**: new versions download and verify in the
   background; then *Restart to update* appears in the sidebar (or the update installs
   when you quit)
 - **Media keys and Now Playing:** keyboard and headset media keys, plus the system's
@@ -80,7 +80,7 @@ Deezer Premium required.
 - **Linux:** unpack and run `./dust` (needs WebKitGTK 4.1, ALSA and D-Bus; the archive
   includes a `.desktop` entry and icon).
 
-Later versions install themselves from inside dust *(next release)*. On Windows and
+Later versions install themselves from inside dust. On Windows and
 Linux that needs dust's folder to be writable by you (e.g. `~/.local/bin`); otherwise
 the update button opens the download page.
 
@@ -123,7 +123,7 @@ Click your name at the bottom of the sidebar:
 - **Appearance:** System, Dark or Light
 - **Streaming quality:** MP3 128, MP3 320 or FLAC
 - **Share listening with Deezer:** history, Flow and Last.fm scrobbling (on by default)
-- **Updates** *(next release)*: check automatically (on by default), or check now
+- **Updates**: check automatically (on by default), or check now
 
 dust also remembers your **volume** and your **speaker**: the last AirPlay speaker you
 picked is selected again automatically once it appears on the network (it only connects
