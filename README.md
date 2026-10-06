@@ -36,8 +36,11 @@ including cover art.
   (Chill, Focus, Workout, Party, ...), daily mixes, recently played, new releases,
   artists and albums picked for you
 - **Endless Flow:** keeps going like on Deezer, fetching more as you listen
-- **Music:** Loved tracks, playlists (list and grid), albums, artist top tracks
-- **Search:** tracks, artists, albums and playlists
+- **Music:** Loved tracks, playlists (list and grid), albums, the artists you follow
+- **Artist pages:** popular tracks and the full discography (albums, singles & EPs,
+  live & compilations), playlists featuring them and related artists; click any
+  artist name to get there
+- **Search:** tracks, artists, albums and playlists, with your own playlists first
 - **Plays more of the catalogue:** when a track isn't licensed in your region, dust uses
   the alternative version Deezer offers, like the web app does
 - **Quality:** MP3 128 / MP3 320 / FLAC (FLAC needs a HiFi plan), streamed and decoded
