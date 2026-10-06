@@ -128,9 +128,17 @@ fn writable(target: &Target) -> bool {
     ok
 }
 
-/// Download, verify and swap in `release`. `progress` goes 0..=1000 during the
-/// download. Returns what [`relaunch`] should start.
-pub fn install(release: &Release, progress: &Arc<AtomicU32>) -> Result<Restart, String> {
+/// A downloaded, verified update, unpacked next to the running copy and waiting
+/// for [`apply`].
+pub struct Staged {
+    pub version: String,
+    target: Target,
+    path: PathBuf,
+}
+
+/// Download and verify `release`, then unpack it next to the running copy so that
+/// [`apply`] only has to rename. `progress` goes 0..=1000 during the download.
+pub fn stage(release: &Release, progress: &Arc<AtomicU32>) -> Result<Staged, String> {
     let target = target().ok_or("this copy of dust can't update itself")?;
     let (name, url) = release.package().ok_or("the release has no download for this platform")?;
     let sums = agent(Some(Duration::from_secs(20)))
@@ -146,16 +154,41 @@ pub fn install(release: &Release, progress: &Arc<AtomicU32>) -> Result<Restart, 
     let file = dir.join(&name);
     let actual = download(url, &file, progress)?;
     if actual != expected {
+        let _ = std::fs::remove_dir_all(&dir);
         return Err(format!("{name}: checksum mismatch"));
     }
     log_info!("update: downloaded and verified {name}");
 
-    let result = match target {
-        Target::Bundle(bundle) => replace_bundle(&file, &bundle, &dir).map(|()| Restart(bundle)),
-        Target::Binary(exe) => replace_binary(&file, &exe).map(|()| Restart(exe)),
+    let path = staged_path(&target);
+    let unpacked = match &target {
+        Target::Bundle(_) => unpack_bundle(&file, &path, &dir),
+        Target::Binary(_) => stage_binary(&file, &path),
     };
     let _ = std::fs::remove_dir_all(&dir);
-    result
+    unpacked?;
+    Ok(Staged { version: release.version.clone(), target, path })
+}
+
+/// Swap the staged copy in place of the running one. Quick (renames only), so it
+/// can run right before quitting. Returns what [`relaunch`] should start.
+pub fn apply(staged: &Staged) -> Result<Restart, String> {
+    let (Target::Bundle(current) | Target::Binary(current)) = &staged.target;
+    let old = old_path(&staged.target);
+    let _ = remove(&old);
+    std::fs::rename(current, &old).map_err(|e| format!("moving the old version aside: {e}"))?;
+    if let Err(e) = std::fs::rename(&staged.path, current) {
+        let _ = std::fs::rename(&old, current);
+        return Err(format!("installing the new version: {e}"));
+    }
+    // A running Windows executable can't be deleted; `clean_up` gets it next time.
+    let _ = remove(&old);
+    log_info!("update: installed {}", staged.version);
+    Ok(Restart(current.clone()))
+}
+
+/// [`stage`] then [`apply`] in one go (command line).
+pub fn install(release: &Release, progress: &Arc<AtomicU32>) -> Result<Restart, String> {
+    apply(&stage(release, progress)?)
 }
 
 /// `sha256sum` output: `<hex>  <name>` per line.
@@ -190,55 +223,52 @@ fn download(url: &str, path: &Path, progress: &Arc<AtomicU32>) -> Result<String,
     Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// macOS: copy `dust.app` out of the DMG next to the running bundle, then swap.
-fn replace_bundle(dmg: &Path, bundle: &Path, work: &Path) -> Result<(), String> {
+/// macOS: copy `dust.app` out of the DMG to `dest`, next to the running bundle.
+fn unpack_bundle(dmg: &Path, dest: &Path, work: &Path) -> Result<(), String> {
     let mount = work.join("mnt");
     run("hdiutil", &["attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint", path_str(&mount)?, path_str(dmg)?])?;
-    let parent = bundle.parent().ok_or("bundle has no parent folder")?;
-    let staged = parent.join(".dust-update.app");
-    let _ = std::fs::remove_dir_all(&staged);
-    let copied = run("ditto", &[path_str(&mount.join("dust.app"))?, path_str(&staged)?]);
+    let _ = std::fs::remove_dir_all(dest);
+    let copied = run("ditto", &[path_str(&mount.join("dust.app"))?, path_str(dest)?]);
     let _ = run("hdiutil", &["detach", "-quiet", path_str(&mount)?]);
-    copied?;
-    let old = parent.join(".dust-old.app");
-    let _ = std::fs::remove_dir_all(&old);
-    std::fs::rename(bundle, &old).map_err(|e| format!("moving the old app aside: {e}"))?;
-    if let Err(e) = std::fs::rename(&staged, bundle) {
-        let _ = std::fs::rename(&old, bundle);
-        return Err(format!("installing the new app: {e}"));
-    }
-    let _ = std::fs::remove_dir_all(&old);
-    Ok(())
+    copied
 }
 
-/// Windows / Linux: a running executable can be renamed but not overwritten.
-fn replace_binary(new: &Path, exe: &Path) -> Result<(), String> {
-    let staged = exe.with_extension("new");
-    std::fs::copy(new, &staged).map_err(|e| e.to_string())?;
+/// Windows / Linux: the new executable next to the running one (which can be
+/// renamed but not overwritten while it runs).
+fn stage_binary(new: &Path, dest: &Path) -> Result<(), String> {
+    std::fs::copy(new, dest).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
-    }
-    let old = old_path(exe);
-    let _ = std::fs::remove_file(&old);
-    std::fs::rename(exe, &old).map_err(|e| format!("moving the old version aside: {e}"))?;
-    if let Err(e) = std::fs::rename(&staged, exe) {
-        let _ = std::fs::rename(&old, exe);
-        return Err(format!("installing the new version: {e}"));
+        std::fs::set_permissions(dest, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
 
-fn old_path(exe: &Path) -> PathBuf {
-    exe.with_extension("old")
+fn staged_path(target: &Target) -> PathBuf {
+    match target {
+        Target::Bundle(b) => b.with_file_name(".dust-update.app"),
+        Target::Binary(exe) => exe.with_extension("new"),
+    }
 }
 
-/// Remove what a previous update left behind (Windows keeps the old exe until the
-/// new one has started).
+fn old_path(target: &Target) -> PathBuf {
+    match target {
+        Target::Bundle(b) => b.with_file_name(".dust-old.app"),
+        Target::Binary(exe) => exe.with_extension("old"),
+    }
+}
+
+fn remove(path: &Path) -> std::io::Result<()> {
+    if path.is_dir() { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) }
+}
+
+/// Remove what an earlier session left behind: the old version (Windows can't
+/// delete a running exe) and a staged update that was never applied.
 pub fn clean_up() {
-    if let Some(Target::Binary(exe)) = target() {
-        let _ = std::fs::remove_file(old_path(&exe));
+    if let Some(target) = target() {
+        let _ = remove(&old_path(&target));
+        let _ = remove(&staged_path(&target));
     }
 }
 

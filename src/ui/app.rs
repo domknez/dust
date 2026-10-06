@@ -347,16 +347,18 @@ fn panel_frame(fill: egui::Color32, margin: Margin) -> egui::Frame {
 }
 
 impl eframe::App for App {
+    /// Quitting: a downloaded update installs now, so the next start is the new version.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.updates.apply_on_exit();
+    }
+
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         log_repaint_causes(&ctx);
         self.sync_appearance(&ctx);
         self.covers.begin_frame();
         self.poll_tasks(&ctx);
-        if let Some(restart) = self.updates.poll(&ctx) {
-            crate::update::relaunch(&restart);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        }
+        self.updates.poll(&ctx);
         if self.client.is_none() {
             self.login_screen(ui);
             return;
