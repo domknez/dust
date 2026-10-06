@@ -83,6 +83,9 @@ pub fn airplay2(rtsp: &mut Rtsp, device: &Device, local: &Local, remote_ip: IpAd
         .and_then(Value::as_u64)
         .filter(|&p| p > 0)
         .and_then(|p| TcpStream::connect_timeout(&SocketAddr::new(remote_ip, p as u16), Duration::from_secs(2)).ok());
+    if let Some(reader) = events.as_ref().and_then(|s| s.try_clone().ok()) {
+        super::ap2::events::spawn(reader, &key);
+    }
 
     rtsp.request("RECORD", None, &[], None)?;
     if ptp.is_some() {
