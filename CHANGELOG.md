@@ -2,8 +2,14 @@
 
 ## Unreleased
 
+## 0.2.0 (2026-10-06)
+
 - Mini player: a small always-on-top window with cover, transport and seek bar
   (player bar button, `⌘⇧M` / `Ctrl+Shift+M`)
+- Fixed: volume and play/pause buttons on AirPlay speakers (e.g. Sonos) arrived about
+  35 seconds late and seemed to do nothing on Macs with Docker, VPN or VM networks
+- AirPlay 2: dust now reads the speaker's event channel
+- Debug logs (`DUST_LOG=debug`) carry timestamps
 
 ## 0.1.0 (2026-10-06)
 
