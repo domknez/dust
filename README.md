@@ -54,6 +54,22 @@ including cover art.
   kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service)
 - Runs on macOS, Linux and Windows
 
+## Install
+
+Download the latest version for your platform from
+[Releases](https://github.com/domknez/dust/releases/latest): a DMG for macOS 11+ (Apple
+Silicon and Intel), a zip for Windows 10/11, and tarballs for Linux x86_64 and ARM64.
+Deezer Premium required.
+
+- **macOS:** drag dust to Applications. Releases aren't notarized by Apple yet, so the
+  first launch is blocked: open dust once, then click **Open Anyway** under System
+  Settings → Privacy & Security. After an update macOS may ask once more before dust can
+  read its saved login; choose **Always Allow**.
+- **Windows:** unzip and run `dust.exe`; on a SmartScreen warning choose
+  **More info → Run anyway**.
+- **Linux:** unpack and run `./dust` (needs WebKitGTK 4.1, ALSA and D-Bus; the archive
+  includes a `.desktop` entry and icon).
+
 ## Build
 
 ```sh
@@ -63,7 +79,12 @@ cargo build --release
 
 On macOS, run `scripts/dev-cert.sh` once and build with `scripts/build.sh`: it signs
 builds with a local "dust dev" identity so Keychain stops asking for access after every
-rebuild. (Published releases should be signed with an Apple Developer ID instead.)
+rebuild. `scripts/bundle-macos.sh` builds the universal `dust.app` and DMG into `dist/`.
+
+Releases: bump `version` in `Cargo.toml`, commit, then tag and push (`git tag v0.2.0 &&
+git push origin v0.2.0`). The Release workflow builds every platform and publishes the
+GitHub Release. Adding the Apple secrets listed in `.github/workflows/release.yml` makes
+it sign with a Developer ID and notarize.
 
 Linux needs ALSA, D-Bus and WebKitGTK headers:
 `sudo apt install libasound2-dev libdbus-1-dev libwebkit2gtk-4.1-dev pkg-config`.
