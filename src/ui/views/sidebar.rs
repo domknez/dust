@@ -20,6 +20,7 @@ impl App {
         ui.add_space(18.0);
         self.navigation(ui);
         self.playlist_list(ui);
+        self.update_button(ui);
         self.account_card(ui);
     }
 
@@ -52,7 +53,7 @@ impl App {
         let ctx = ui.ctx().clone();
         let p = colors();
         let mut open = None;
-        let height = (ui.available_height() - FOOTER).max(0.0);
+        let height = (ui.available_height() - FOOTER - self.update_button_height()).max(0.0);
         egui::ScrollArea::vertical().max_height(height).auto_shrink([false, false]).show(ui, |ui| {
             if self.playlists_task.is_some() {
                 ui.spinner();

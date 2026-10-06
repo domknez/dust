@@ -6,6 +6,7 @@
 //! - [`widgets`]: reusable painted components
 //! - [`style`]: colours, type scale, metrics, icons
 //! - [`now_playing`]: media keys and the OS "Now Playing" widget
+//! - [`updates`]: background update checks and installs
 //! - [`state`], [`tasks`], [`format`], [`covers`]: supporting pieces
 
 mod app;
@@ -15,6 +16,7 @@ mod now_playing;
 mod state;
 mod style;
 mod tasks;
+mod updates;
 mod views;
 mod widgets;
 

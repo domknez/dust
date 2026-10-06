@@ -25,6 +25,16 @@ impl App {
             if widgets::menu_row(ui, None, "Share listening with Deezer", Some(sub), self.report_listens, colors().text).clicked() {
                 self.toggle_report_listens();
             }
+            ui.add_space(8.0);
+            widgets::caption(ui, "UPDATES");
+            let auto = self.updates.auto;
+            if widgets::menu_row(ui, None, "Check automatically", Some("Asks GitHub about new versions"), auto, colors().text).clicked() {
+                self.updates.set_auto(!auto);
+            }
+            let status = self.updates.status();
+            if widgets::menu_row(ui, Some(Icon::Refresh), "Check now", Some(&status), false, colors().text).clicked() {
+                self.updates.check_now(ui.ctx());
+            }
             widgets::divider(ui);
             if widgets::menu_row(ui, Some(Icon::LogOut), "Log out", None, false, colors().danger).clicked() {
                 self.log_out();
