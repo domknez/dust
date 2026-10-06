@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=dust
+GenericName=Music Player
+Comment=Lightweight Deezer client with AirPlay output
+Exec=dust
+Icon=dust
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=deezer;music;airplay;
