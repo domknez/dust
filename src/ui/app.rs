@@ -6,6 +6,7 @@ use super::now_playing::NowPlaying;
 use super::state::{Coll, PlayMode, Source, View};
 use super::style::{self, Appearance, colors, metrics};
 use super::tasks::{self, Task};
+use super::updates::Updates;
 use crate::credentials;
 use crate::deezer::{Deezer, Error, Playlist, Quality, SearchResults, Section, Track};
 use crate::output::airplay::Discovery;
@@ -70,6 +71,7 @@ pub struct App {
     pub(super) logo: egui::TextureHandle,
     _remote_control: Option<dacp::Server>,
     now_playing: Option<NowPlaying>,
+    pub(super) updates: Updates,
 }
 
 impl App {
@@ -81,6 +83,7 @@ impl App {
         let report_listens = saved.get("report_listens").is_none_or(|v| v != "false");
         let volume = saved.get("volume").and_then(|v| v.parse::<f32>().ok()).map_or(0.5, |v| v.clamp(0.0, 1.0));
         let restore_output = saved.get("output").filter(|o| !o.is_empty()).cloned();
+        let auto_update = saved.get("auto_update").is_none_or(|v| v != "false");
         style::install_fonts(ctx);
         style::apply(ctx, appearance.is_dark(ctx));
 
@@ -91,6 +94,7 @@ impl App {
         let mut app = Self {
             _remote_control: start_remote_control(player.clone()),
             now_playing: NowPlaying::start(cc, player.clone()),
+            updates: Updates::new(auto_update),
             player,
             client: None,
             arl_input: String::new(),
@@ -343,12 +347,18 @@ fn panel_frame(fill: egui::Color32, margin: Margin) -> egui::Frame {
 }
 
 impl eframe::App for App {
+    /// Quitting: a downloaded update installs now, so the next start is the new version.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.updates.apply_on_exit();
+    }
+
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         log_repaint_causes(&ctx);
         self.sync_appearance(&ctx);
         self.covers.begin_frame();
         self.poll_tasks(&ctx);
+        self.updates.poll(&ctx);
         if self.client.is_none() {
             self.login_screen(ui);
             return;

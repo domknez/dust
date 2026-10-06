@@ -16,6 +16,7 @@ mod output;
 mod player;
 mod settings;
 mod ui;
+mod update;
 
 fn main() -> eframe::Result {
     match cli::Command::parse(std::env::args().skip(1)) {

@@ -6,7 +6,9 @@
 | Windows 10/11 (x64) | `dust-…-windows-x64.zip` |
 | Linux x86_64 / ARM64 | `dust-…-linux-x86_64.tar.gz` / `dust-…-linux-aarch64.tar.gz` |
 
-Deezer Premium required. `SHA256SUMS.txt` lists checksums of every file.
+Deezer Premium required. `SHA256SUMS.txt` lists checksums of every file. The bare
+`.exe` and `linux-…` binaries are what dust's in-app updater downloads; use the
+archives above to install.
 
 **macOS:** open the DMG and drag dust to Applications. dust isn't notarized by Apple yet,
 so the first launch is blocked: open it once, then go to **System Settings → Privacy &

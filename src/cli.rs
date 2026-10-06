@@ -2,6 +2,8 @@
 //!
 //! - `--tone [speaker | ip:port]`  4 s test tone on an output
 //! - `--list-speakers`            AirPlay speakers found on the network (silent)
+//! - `--check-update`             is a newer release out, and can this copy install it
+//! - `--self-update`              install the latest release in place (no relaunch)
 //! - `--debug-home`                home page structure for the stored session
 //! - `--debug-search <query>`      search results: track count and card sections
 //! - `--debug-tracks <kind> <id>`  what a home item plays (flow|mix|album|artist|playlist)
@@ -20,6 +22,8 @@ pub enum Command {
     LoginWindow,
     Tone(Option<String>),
     ListSpeakers,
+    CheckUpdate,
+    SelfUpdate,
     DebugHome,
     DebugSearch(String),
     DebugTracks {
@@ -45,6 +49,8 @@ impl Command {
             crate::login::ARG => Command::LoginWindow,
             "--tone" => Command::Tone(args.next()),
             "--list-speakers" => Command::ListSpeakers,
+            "--check-update" => Command::CheckUpdate,
+            "--self-update" => Command::SelfUpdate,
             "--debug-home" => Command::DebugHome,
             "--debug-search" => Command::DebugSearch(args.collect::<Vec<_>>().join(" ")),
             "--debug-tracks" => Command::DebugTracks { kind: args.next().unwrap_or_default(), id: args.next().unwrap_or_default() },
@@ -68,6 +74,8 @@ impl Command {
             Command::LoginWindow => crate::login::run_window(),
             Command::Tone(target) => tone(target),
             Command::ListSpeakers => list_speakers(),
+            Command::CheckUpdate => check_update(),
+            Command::SelfUpdate => self_update(),
             Command::DebugHome => debug_home(&logged_in()),
             Command::DebugSearch(query) => debug_search(&logged_in(), &query),
             Command::DebugTracks { kind, id } => debug_tracks(&logged_in(), &kind, &id),
@@ -121,6 +129,31 @@ fn list_speakers() {
         let addrs: Vec<String> = d.addrs.iter().map(|a| a.to_string()).collect();
         let note = if d.supported { "" } else { "  (unsupported)" };
         println!("{:<24} {protocol:<10} {}{note}", d.name, addrs.join(", "));
+    }
+}
+
+fn check_update() {
+    match crate::update::check() {
+        Ok(Some(release)) => {
+            println!("dust {} is available (you have {})", release.version, crate::update::CURRENT);
+            println!("installs in place: {}", crate::update::can_install(&release));
+            println!("{}", release.page);
+        }
+        Ok(None) => println!("dust {} is the latest version", crate::update::CURRENT),
+        Err(e) => println!("check failed: {e}"),
+    }
+}
+
+fn self_update() {
+    let release = match crate::update::check() {
+        Ok(Some(release)) => release,
+        Ok(None) => return println!("dust {} is the latest version", crate::update::CURRENT),
+        Err(e) => return println!("check failed: {e}"),
+    };
+    let progress = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    match crate::update::install(&release, &progress) {
+        Ok(_) => println!("installed dust {}; start it again to use it", release.version),
+        Err(e) => println!("update failed: {e}"),
     }
 }
 
