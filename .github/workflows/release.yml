@@ -103,14 +103,18 @@ jobs:
       - name: Package
         run: |
           name="dust-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}"
-          mkdir -p "dist/$name"
-          cp target/release/dust README.md LICENSE assets/linux/dust.desktop "dist/$name/"
-          cp assets/dust-icon-pack/png/dust-256.png "dist/$name/dust.png"
-          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          mkdir -p "stage/$name" dist
+          cp target/release/dust README.md LICENSE assets/linux/dust.desktop "stage/$name/"
+          cp assets/dust-icon-pack/png/dust-256.png "stage/$name/dust.png"
+          tar -C stage -czf "dist/$name.tar.gz" "$name"
+          # Bare binary for in-app updates.
+          cp target/release/dust "dist/$name"
       - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}
-          path: dist/*.tar.gz
+          path: |
+            dist/*.tar.gz
+            dist/dust-*-linux-${{ matrix.arch }}
 
   windows:
     name: Windows (x64)
@@ -128,10 +132,14 @@ jobs:
           mkdir -p "dist/$name"
           cp target/release/dust.exe README.md LICENSE "dist/$name/"
           cd dist && 7z a "$name.zip" "$name" >/dev/null
+          # Bare executable for in-app updates.
+          cp "$name/dust.exe" "$name.exe"
       - uses: actions/upload-artifact@v7
         with:
           name: windows
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*.exe
 
   release:
     name: publish
