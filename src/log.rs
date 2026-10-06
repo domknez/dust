@@ -5,6 +5,7 @@
 //! Use the macros: `log_error!`, `log_warn!`, `log_info!`, `log_debug!`, `log_trace!`.
 
 use std::sync::OnceLock;
+use std::time::Instant;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Level {
@@ -43,7 +44,10 @@ pub fn enabled(level: Level) -> bool {
 
 #[doc(hidden)]
 pub fn write(level: Level, args: std::fmt::Arguments) {
-    eprintln!("dust [{}]: {args}", format!("{level:?}").to_lowercase());
+    // Seconds since the first log line: enough to line up events across threads.
+    static START: OnceLock<Instant> = OnceLock::new();
+    let t = START.get_or_init(Instant::now).elapsed().as_secs_f64();
+    eprintln!("dust {t:9.3} [{}]: {args}", format!("{level:?}").to_lowercase());
 }
 
 #[macro_export]
