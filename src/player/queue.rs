@@ -188,6 +188,7 @@ mod tests {
             id,
             title: id.to_string(),
             artist: String::new(),
+            artists: Vec::new(),
             album: String::new(),
             duration: 1,
             token: String::new(),

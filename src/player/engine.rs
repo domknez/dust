@@ -443,6 +443,7 @@ mod tests {
             id,
             title: format!("t{id}"),
             artist: String::new(),
+            artists: Vec::new(),
             album: String::new(),
             duration: secs,
             token: String::new(),
