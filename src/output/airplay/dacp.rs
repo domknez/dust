@@ -3,10 +3,10 @@
 //! `iTunes_Ctrl_<DACP-ID>._dacp._tcp` via mDNS and issue plain HTTP requests such as
 //! `GET /ctrl-int/1/setproperty?dmcp.device-volume=-12.5`.
 
-use mdns_sd::{ServiceDaemon, ServiceInfo};
+use mdns_sd::{IfKind, ServiceDaemon, ServiceInfo};
 use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::OnceLock;
+use std::net::{IpAddr, TcpListener, TcpStream};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 /// Process-wide DACP id, sent to receivers as `DACP-ID` / `Client-Instance`.
@@ -51,35 +51,103 @@ fn parse(path: &str) -> Option<Remote> {
     })
 }
 
-pub struct Server {
-    _daemon: ServiceDaemon,
+/// Where button presses go: set by [`start`], also fed by the AirPlay 2 event channel.
+type Handler = Box<dyn Fn(Remote) + Send>;
+static HANDLER: Mutex<Option<Handler>> = Mutex::new(None);
+
+/// Hand a button press to the app (no-op before [`start`]).
+pub fn deliver(remote: Remote) {
+    if let Some(handler) = HANDLER.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        handler(remote);
+    }
+}
+
+/// Our mDNS advertisement, shared so a new AirPlay session can narrow it down.
+struct Advert {
+    daemon: ServiceDaemon,
+    port: u16,
+    fullname: String,
+}
+
+static ADVERT: Mutex<Option<Advert>> = Mutex::new(None);
+
+impl Advert {
+    fn register(&mut self, ip: IpAddr) -> Result<(), String> {
+        let host = format!("dust-{}.local.", id()[..8].to_ascii_lowercase());
+        let props = [("txtvers", "1"), ("Ver", "131075"), ("DbId", id()), ("OSsi", "0x1F5")];
+        let name = format!("iTunes_Ctrl_{}", id());
+        let info = ServiceInfo::new("_dacp._tcp.local.", &name, &host, ip, self.port, &props[..]).map_err(|e| e.to_string())?;
+        self.fullname = info.get_fullname().to_string();
+        self.daemon.register(info).map_err(|e| e.to_string())
+    }
+
+    fn unregister(&self) {
+        if let Ok(done) = self.daemon.unregister(&self.fullname) {
+            let _ = done.recv_timeout(Duration::from_millis(500));
+        }
+    }
+}
+
+/// Advertise the remote-control service only on the interface that reaches the
+/// receiver we just connected to, with just that address, and announce it now.
+/// Advertising every interface (VPNs, container bridges, loopback) made receivers
+/// such as Sonos take ~25 s to reach us, so button presses arrived in late bursts.
+pub fn advertise_on(local_ip: IpAddr) {
+    let mut advert = ADVERT.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(advert) = advert.as_mut() else { return };
+    let _ = advert.daemon.disable_interface(IfKind::All);
+    let _ = advert.daemon.enable_interface(IfKind::Addr(local_ip));
+    if !advert.fullname.is_empty() {
+        advert.unregister();
+    }
+    match advert.register(local_ip) {
+        Ok(()) => log_debug!("dacp: advertised on {local_ip}:{}", advert.port),
+        Err(e) => log_warn!("dacp: re-advertising failed: {e}"),
+    }
+}
+
+/// Keeps the remote-control service running; withdraws its mDNS record on drop,
+/// so receivers don't keep a dead remote around.
+pub struct Server;
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        if let Some(advert) = ADVERT.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            if !advert.fullname.is_empty() {
+                advert.unregister();
+            }
+            let _ = advert.daemon.shutdown();
+        }
+    }
 }
 
 /// Start listening and advertise ourselves. `on_command` runs on the server thread.
 pub fn start(on_command: impl Fn(Remote) + Send + 'static) -> Result<Server, String> {
+    *HANDLER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(on_command));
     let listener = TcpListener::bind("0.0.0.0:0").map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let daemon = ServiceDaemon::new().map_err(|e| e.to_string())?;
-    let host = format!("dust-{}.local.", id()[..8].to_ascii_lowercase());
-    let props = [("txtvers", "1"), ("Ver", "131075"), ("DbId", id()), ("OSsi", "0x1F5")];
-    let info = ServiceInfo::new("_dacp._tcp.local.", &format!("iTunes_Ctrl_{}", id()), &host, "", port, &props[..])
-        .map_err(|e| e.to_string())?
-        .enable_addr_auto();
-    daemon.register(info).map_err(|e| e.to_string())?;
+    // Not advertised until an AirPlay session starts (see `advertise_on`): an
+    // all-interfaces record would be cached by receivers, which then try its
+    // unreachable addresses first.
+    let advert = Advert { daemon, port, fullname: String::new() };
+    *ADVERT.lock().unwrap_or_else(|e| e.into_inner()) = Some(advert);
 
     std::thread::Builder::new()
         .name("dacp".into())
         .spawn(move || {
+            // A connection per receiver, kept open: they reuse it for later presses.
             for stream in listener.incoming().flatten() {
-                handle(stream, &on_command);
+                log_debug!("dacp: connection from {:?}", stream.peer_addr().ok());
+                let _ = std::thread::Builder::new().name("dacp-conn".into()).spawn(move || handle(stream));
             }
         })
         .map_err(|e| e.to_string())?;
-    Ok(Server { _daemon: daemon })
+    Ok(Server)
 }
 
-fn handle(stream: TcpStream, on_command: &impl Fn(Remote)) {
-    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+fn handle(stream: TcpStream) {
+    stream.set_read_timeout(Some(Duration::from_secs(600))).ok();
     let Ok(read) = stream.try_clone() else { return };
     let mut reader = BufReader::new(read);
     let mut writer = stream;
@@ -97,7 +165,7 @@ fn handle(stream: TcpStream, on_command: &impl Fn(Remote)) {
         let command = parse(path);
         log_debug!("dacp: {path} -> {command:?}");
         if let Some(c) = command {
-            on_command(c);
+            deliver(c);
         }
         let status = if command.is_some() { "204 No Content" } else { "404 Not Found" };
         let resp = format!("HTTP/1.1 {status}\r\nDAAP-Server: dust\r\nContent-Length: 0\r\n\r\n");

@@ -41,6 +41,7 @@ impl AirPlaySink {
         let remote_ip = stream.peer_addr().map_err(|e| e.to_string())?.ip();
         let session_id = fastrand::u32(..);
         let user_agent = if device.ap2 { "AirPlay/381.13" } else { "iTunes/11.0.4 (Windows; N)" };
+        super::dacp::advertise_on(local_ip);
         let mut rtsp = Rtsp::new(stream, format!("rtsp://{local_ip}/{session_id}"), user_agent, super::dacp::id().to_string())?;
 
         let any: IpAddr = if local_ip.is_ipv4() { [0, 0, 0, 0].into() } else { Ipv6Addr::UNSPECIFIED.into() };
@@ -166,6 +167,7 @@ impl Sink for AirPlaySink {
     fn set_volume(&mut self, volume: f32) {
         // AirPlay volume: -30.0 (quiet) ..= 0.0 dB, -144 = mute.
         let db = if volume <= 0.001 { -144.0 } else { -30.0 + 30.0 * volume.clamp(0.0, 1.0) };
+        log_debug!("airplay: volume {volume:.3} -> {db:.1} dB");
         let body = format!("volume: {db:.6}\r\n");
         let _ = self.rtsp.request("SET_PARAMETER", None, &[], Some(("text/parameters", body.as_bytes())));
     }
@@ -176,6 +178,10 @@ impl Drop for AirPlaySink {
         self.shared.playing.store(false, Ordering::Release);
         let _ = self.rtsp.request("TEARDOWN", None, &[], None);
         self.shared.running.store(false, Ordering::Release);
+        // Ends the event channel reader, which holds its own handle to the socket.
+        if let Some(events) = &self._events {
+            let _ = events.shutdown(std::net::Shutdown::Both);
+        }
         for t in self.threads.drain(..) {
             let _ = t.join();
         }
