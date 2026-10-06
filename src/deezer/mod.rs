@@ -22,7 +22,8 @@ mod session;
 mod streaming;
 
 pub use client::Deezer;
-pub use models::{Format, Item, Listen, Playlist, Quality, SearchResults, Section, Track, image_url};
+pub use models::{ArtistPage, ArtistRef, Format, Item, Listen, Playlist, Quality, SearchResults, Section, Track, image_url};
+pub use parse::thousands;
 pub use streaming::StreamSource;
 
 pub use error::Error;

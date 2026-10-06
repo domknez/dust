@@ -35,6 +35,7 @@ mod tests {
             id: 1,
             title: String::new(),
             artist: String::new(),
+            artists: Vec::new(),
             album: String::new(),
             duration: d,
             token: String::new(),

@@ -3,12 +3,12 @@
 
 use super::covers::Covers;
 use super::now_playing::NowPlaying;
-use super::state::{Coll, PlayMode, Source, View};
+use super::state::{ArtistView, Coll, PlayMode, Source, View};
 use super::style::{self, Appearance, colors, metrics};
 use super::tasks::{self, Task};
 use super::updates::Updates;
 use crate::credentials;
-use crate::deezer::{Deezer, Error, Playlist, Quality, SearchResults, Section, Track};
+use crate::deezer::{ArtistPage, Deezer, Error, Item, Playlist, Quality, SearchResults, Section, Track};
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
 use crate::player::{Cmd, Output, PlayerHandle, Status};
@@ -42,6 +42,12 @@ pub struct App {
     pub(super) playlists: Vec<Playlist>,
     pub(super) playlists_task: Task<Vec<Playlist>>,
     pub(super) home: Vec<Section>,
+    /// The artist page being shown (for `View::Artist`), once loaded.
+    pub(super) artist_page: Option<ArtistPage>,
+    pub(super) artist_task: Task<ArtistPage>,
+    /// Followed artists, as cards (for `View::Artists`).
+    pub(super) followed: Vec<Item>,
+    pub(super) followed_task: Task<Vec<Item>>,
     pub(super) home_task: Task<Vec<Section>>,
     /// Tracks fetched to play straight from a home card.
     pub(super) quick_play: Task<(Vec<Track>, PlayMode)>,
@@ -55,6 +61,8 @@ pub struct App {
     pub(super) unmuted_volume: f32,
     /// In mini player mode: the full window's size, restored on the way back.
     pub(super) mini_player: Option<egui::Vec2>,
+    /// An artist name was clicked somewhere this frame; opened after drawing.
+    pub(super) pending_artist: Option<crate::deezer::ArtistRef>,
 
     // Settings
     pub(super) quality: Quality,
@@ -113,6 +121,10 @@ impl App {
             playlists: Vec::new(),
             playlists_task: None,
             home: Vec::new(),
+            artist_page: None,
+            artist_task: None,
+            followed: Vec::new(),
+            followed_task: None,
             home_task: None,
             quick_play: None,
             show_queue: false,
@@ -121,6 +133,7 @@ impl App {
             volume_drag: None,
             unmuted_volume: volume,
             mini_player: None,
+            pending_artist: None,
             quality,
             appearance,
             report_listens,
@@ -187,13 +200,25 @@ impl App {
             }
             return;
         }
+        if view == View::Artists {
+            if self.followed.is_empty() && self.followed_task.is_none() {
+                self.followed_task = tasks::spawn(ctx, move || client.favorite_artists());
+            }
+            return;
+        }
+        if let View::Artist(artist) = &view {
+            let id = artist.id.clone();
+            self.artist_page = None;
+            self.artist_task = tasks::spawn(ctx, move || client.artist(&id));
+            return;
+        }
         self.tracks.clear();
         self.search_sections.clear();
         // Replacing a task drops its receiver, so a stale result never lands.
         self.tracks_task = None;
         self.search_task = None;
         match view {
-            View::Home | View::Playlists => {}
+            View::Home | View::Playlists | View::Artists | View::Artist(_) => {}
             View::Search if self.search.trim().is_empty() => {}
             View::Search => {
                 let query = self.search.trim().to_string();
@@ -210,8 +235,17 @@ impl App {
         self.tracks_task.is_some() || self.search_task.is_some()
     }
 
+    /// Open a collection; artists get their full page instead of a track list.
     pub(super) fn open_collection(&mut self, ctx: &egui::Context, coll: Coll) {
+        if let Source::Artist(id) = &coll.source {
+            let picture = coll.picture.as_ref().map(|(_, md5)| md5.clone());
+            return self.open_artist(ctx, ArtistView { id: id.clone(), name: coll.title.clone(), picture });
+        }
         self.open_view(ctx, View::Collection(Box::new(coll)));
+    }
+
+    pub(super) fn open_artist(&mut self, ctx: &egui::Context, artist: ArtistView) {
+        self.open_view(ctx, View::Artist(Box::new(artist)));
     }
 
     /// Fetch a collection and play/queue it without opening it.
@@ -283,7 +317,24 @@ impl App {
             None => {}
         }
         match tasks::poll(&mut self.search_task) {
-            Some(Ok(results)) => (self.tracks, self.search_sections) = (results.tracks, results.sections),
+            Some(Ok(results)) => {
+                self.tracks = results.tracks;
+                self.search_sections = results.sections;
+                // The listener's own playlists first.
+                if let Some(own) = own_playlists(&self.playlists, &self.searched) {
+                    self.search_sections.insert(0, own);
+                }
+            }
+            Some(Err(e)) => self.on_load_error(e),
+            None => {}
+        }
+        match tasks::poll(&mut self.artist_task) {
+            Some(Ok(page)) => self.artist_page = Some(page),
+            Some(Err(e)) => self.on_load_error(e),
+            None => {}
+        }
+        match tasks::poll(&mut self.followed_task) {
+            Some(Ok(artists)) => self.followed = artists,
             Some(Err(e)) => self.on_load_error(e),
             None => {}
         }
@@ -323,6 +374,24 @@ impl App {
             style::apply(ctx, dark);
         }
     }
+}
+
+/// The account's playlists whose title contains `query` (case-insensitive), as a
+/// search section; `None` when nothing matches.
+fn own_playlists(playlists: &[Playlist], query: &str) -> Option<Section> {
+    let query = query.trim().to_lowercase();
+    let items: Vec<Item> = playlists
+        .iter()
+        .filter(|p| !query.is_empty() && p.title.to_lowercase().contains(&query))
+        .map(|p| Item {
+            kind: "playlist".into(),
+            id: p.id.to_string(),
+            title: p.title.clone(),
+            subtitle: format!("{} tracks", p.count),
+            picture: p.picture.clone(),
+        })
+        .collect();
+    (!items.is_empty()).then(|| Section { title: "Your playlists".into(), layout: "search".into(), items })
 }
 
 /// Speaker buttons (volume, play/pause, skip) come back to us over DACP.
@@ -375,6 +444,11 @@ impl eframe::App for App {
         let p = colors();
         if self.mini_player.is_some() {
             egui::CentralPanel::default().frame(panel_frame(p.bar, Margin::ZERO)).show(ui, |ui| self.mini_player(ui, &st));
+            // An artist link in the mini player opens the full window on their page.
+            if let Some(artist) = self.pending_artist.take() {
+                self.toggle_mini_player(&ctx);
+                self.open_artist(&ctx, ArtistView::from_ref(&artist));
+            }
             return;
         }
         egui::Panel::bottom("player")
@@ -401,10 +475,30 @@ impl eframe::App for App {
         egui::CentralPanel::default()
             .frame(panel_frame(p.bg, Margin { left: margin, right: margin, top: 0, bottom: 0 }))
             .show(ui, |ui| self.content(ui, &st));
+        if let Some(artist) = self.pending_artist.take() {
+            self.open_artist(&ctx, ArtistView::from_ref(&artist));
+        }
     }
 }
 
 /// DUST_LOG=trace: print what requested each frame (to hunt idle redraws).
 fn log_repaint_causes(ctx: &egui::Context) {
     log_trace!("frame {}: {:?}", ctx.cumulative_pass_nr(), ctx.repaint_causes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn own_playlists_match_case_insensitively() {
+        let p = |id, title: &str| Playlist { id, title: title.into(), count: 3, picture: None };
+        let mine = [p(1, "Rock Essentials"), p(2, "Rock & Chill"), p(3, "trip-hop mix")];
+        let found = own_playlists(&mine, "  rock ").unwrap();
+        assert_eq!(found.title, "Your playlists");
+        assert_eq!(found.items.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(), ["1", "2"]);
+        assert_eq!(found.items[0].subtitle, "3 tracks");
+        assert!(own_playlists(&mine, "jazz").is_none());
+        assert!(own_playlists(&mine, "").is_none());
+    }
 }

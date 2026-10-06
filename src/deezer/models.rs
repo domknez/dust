@@ -1,10 +1,20 @@
 //! Data types returned by the client.
 
+/// An artist named on a track or album, so the name can link to their page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArtistRef {
+    pub id: String,
+    pub name: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct Track {
     pub id: u64,
     pub title: String,
+    /// All artists joined for display ("A, B").
     pub artist: String,
+    /// The same artists, each linkable; empty when Deezer didn't say.
+    pub artists: Vec<ArtistRef>,
     pub album: String,
     pub duration: u32,
     pub token: String,
@@ -33,6 +43,18 @@ pub struct Item {
     pub subtitle: String,
     /// (`cover`|`playlist`|`artist`|..., md5) on Deezer's image CDN.
     pub picture: Option<(String, String)>,
+}
+
+/// An artist's page: header, popular tracks and card sections (discography,
+/// related artists, playlists).
+#[derive(Clone, Debug, Default)]
+pub struct ArtistPage {
+    pub name: String,
+    /// Picture md5 on the image CDN (`artist` kind).
+    pub picture: Option<String>,
+    pub fans: u64,
+    pub top: Vec<Track>,
+    pub sections: Vec<Section>,
 }
 
 /// Search hits: tracks, plus artist, album and playlist card sections.

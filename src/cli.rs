@@ -6,6 +6,8 @@
 //! - `--self-update`              install the latest release in place (no relaunch)
 //! - `--debug-home`                home page structure for the stored session
 //! - `--debug-search <query>`      search results: track count and card sections
+//! - `--debug-api <method> [json]` raw gw-light reply, for exploring the API
+//! - `--debug-artist <id>`         an artist page: top tracks and card sections
 //! - `--debug-tracks <kind> <id>`  what a home item plays (flow|mix|album|artist|playlist)
 //! - `--debug-stream <playlist> [n]`  stream resolution per track, incl. fallbacks
 //! - `--debug-decode <playlist> [quality] [start s]`  decrypt and decode 10 s of the first track (no sound)
@@ -26,6 +28,11 @@ pub enum Command {
     SelfUpdate,
     DebugHome,
     DebugSearch(String),
+    DebugArtist(String),
+    DebugApi {
+        method: String,
+        body: String,
+    },
     DebugTracks {
         kind: String,
         id: String,
@@ -52,6 +59,10 @@ impl Command {
             "--check-update" => Command::CheckUpdate,
             "--self-update" => Command::SelfUpdate,
             "--debug-home" => Command::DebugHome,
+            "--debug-api" => {
+                Command::DebugApi { method: args.next().unwrap_or_default(), body: args.next().unwrap_or_else(|| "{}".into()) }
+            }
+            "--debug-artist" => Command::DebugArtist(args.next().unwrap_or_default()),
             "--debug-search" => Command::DebugSearch(args.collect::<Vec<_>>().join(" ")),
             "--debug-tracks" => Command::DebugTracks { kind: args.next().unwrap_or_default(), id: args.next().unwrap_or_default() },
             "--debug-stream" => Command::DebugStream {
@@ -78,6 +89,8 @@ impl Command {
             Command::SelfUpdate => self_update(),
             Command::DebugHome => debug_home(&logged_in()),
             Command::DebugSearch(query) => debug_search(&logged_in(), &query),
+            Command::DebugArtist(id) => debug_artist(&logged_in(), &id),
+            Command::DebugApi { method, body } => debug_api(&logged_in(), &method, &body),
             Command::DebugTracks { kind, id } => debug_tracks(&logged_in(), &kind, &id),
             Command::DebugStream { playlist, count } => debug_stream(&logged_in(), playlist, count),
             Command::DebugDecode { playlist, quality, start } => debug_decode(&logged_in(), playlist, quality, start),
@@ -202,6 +215,30 @@ fn debug_search(client: &Deezer, query: &str) {
         for it in sec.items.iter().take(4) {
             println!("  - {}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
         }
+    }
+}
+
+fn debug_artist(client: &Deezer, id: &str) {
+    let page = client.artist(id).expect("artist");
+    println!("{} ({} fans), picture {:?}", page.name, page.fans, page.picture);
+    println!("{} top tracks", page.top.len());
+    page.top
+        .iter()
+        .take(3)
+        .for_each(|t| println!("  {} – {} {:?}", t.artist, t.title, t.artists.iter().map(|a| &a.id).collect::<Vec<_>>()));
+    for sec in page.sections {
+        println!("\n## {} ({} items)", sec.title, sec.items.len());
+        for it in sec.items.iter().take(4) {
+            println!("  - {}:{} | {} | {}", it.kind, it.id, it.title, it.subtitle);
+        }
+    }
+}
+
+fn debug_api(client: &Deezer, method: &str, body: &str) {
+    let body = serde_json::from_str(body).expect("body must be JSON");
+    match client.call_raw(method, body) {
+        Ok(reply) => println!("{}", serde_json::to_string_pretty(&reply).unwrap_or_default()),
+        Err(e) => println!("error: {e}"),
     }
 }
 

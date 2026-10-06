@@ -18,6 +18,8 @@ pub enum Icon {
     Home,
     Heart,
     Grid,
+    /// Head and shoulders: artists.
+    Person,
     Refresh,
     Note,
     Sun,
@@ -147,6 +149,11 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             for (x, y) in [(0.14, 0.14), (0.54, 0.14), (0.14, 0.54), (0.54, 0.54)] {
                 painter.rect_filled(Rect::from_min_size(p(r, x, y), vec2(w * 0.32, w * 0.32)), 2.0, color);
             }
+        }
+        Icon::Person => {
+            painter.circle_filled(p(r, 0.5, 0.32), w * 0.18, color);
+            let shoulders: Vec<Pos2> = arc(p(r, 0.5, 0.92), w * 0.36, PI, 2.0 * PI);
+            painter.add(Shape::convex_polygon(shoulders, color, Stroke::NONE));
         }
         Icon::Refresh => {
             let c = p(r, 0.5, 0.5);

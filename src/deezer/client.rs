@@ -62,6 +62,11 @@ impl Deezer {
         self.call_with(method, body, &[])
     }
 
+    /// Any gw-light method, for diagnostics (`--debug-api`).
+    pub fn call_raw(&self, method: &str, body: Value) -> Result<Value> {
+        self.call(method, body)
+    }
+
     /// Authenticated call; refreshes an expired CSRF token once and retries.
     pub(super) fn call_with(&self, method: &str, body: Value, extra: &[(&str, &str)]) -> Result<Value> {
         let inner = &self.0;

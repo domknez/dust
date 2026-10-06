@@ -1,6 +1,6 @@
 //! Building models from gw-light JSON, which mixes strings and numbers freely.
 
-use super::models::{Item, Playlist, Section, Track};
+use super::models::{ArtistPage, ArtistRef, Item, Playlist, Section, Track};
 use serde_json::Value;
 
 /// String field, tolerating numbers and nulls.
@@ -32,10 +32,12 @@ pub fn track(v: &Value) -> Option<Track> {
     if id == 0 || token.is_empty() {
         return None; // user uploads (negative ids) or unavailable tracks
     }
+    // Every credited name is shown; only those with an id become links.
     let artist = match v["ARTISTS"].as_array() {
         Some(a) if !a.is_empty() => a.iter().map(|a| text(&a["ART_NAME"])).collect::<Vec<_>>().join(", "),
         _ => text(&v["ART_NAME"]),
     };
+    let artists = artists(v);
     let title = match text(&v["VERSION"]) {
         version if version.is_empty() => text(&v["SNG_TITLE"]),
         version => format!("{} {version}", text(&v["SNG_TITLE"])),
@@ -46,12 +48,23 @@ pub fn track(v: &Value) -> Option<Track> {
         id,
         title,
         artist,
+        artists,
         album: text(&v["ALB_TITLE"]),
         duration: number(&v["DURATION"]) as u32,
         token,
         cover: text(&v["ALB_PICTURE"]),
         fallback,
     })
+}
+
+/// `ARTISTS` (or the lone `ART_ID`/`ART_NAME`) of a track or album.
+pub fn artists(v: &Value) -> Vec<ArtistRef> {
+    let one =
+        |a: &Value| Some(ArtistRef { id: text(&a["ART_ID"]), name: text(&a["ART_NAME"]) }).filter(|a| !a.id.is_empty() && a.id != "0");
+    match v["ARTISTS"].as_array() {
+        Some(list) if !list.is_empty() => list.iter().filter_map(one).collect(),
+        _ => one(v).into_iter().collect(),
+    }
 }
 
 pub fn tracks(v: &Value) -> Vec<Track> {
@@ -80,11 +93,12 @@ const SEARCH_SECTION_ITEMS: usize = 24;
 
 /// A search result list (`ARTIST`, `ALBUM`, `PLAYLIST` data) as a card section.
 pub fn search_section(title: &str, kind: &str, data: &Value) -> Section {
-    let items = data.as_array().map(|a| a.iter().filter_map(|v| search_item(kind, v)).take(SEARCH_SECTION_ITEMS).collect());
+    let items = data.as_array().map(|a| a.iter().filter_map(|v| card_item(kind, v)).take(SEARCH_SECTION_ITEMS).collect());
     Section { title: title.into(), layout: "search".into(), items: items.unwrap_or_default() }
 }
 
-fn search_item(kind: &str, v: &Value) -> Option<Item> {
+/// An artist, album or playlist from gw-light data as a card.
+pub fn card_item(kind: &str, v: &Value) -> Option<Item> {
     let (id, title, picture) = match kind {
         "artist" => (&v["ART_ID"], &v["ART_NAME"], picture(&"artist".into(), &v["ART_PICTURE"])),
         "album" => (&v["ALB_ID"], &v["ALB_TITLE"], picture(&"cover".into(), &v["ALB_PICTURE"])),
@@ -99,6 +113,69 @@ fn search_item(kind: &str, v: &Value) -> Option<Item> {
     Some(Item { kind: kind.into(), id, title, subtitle, picture })
 }
 
+/// Releases grouped like Deezer's artist page: albums, singles and EPs, then live
+/// albums and compilations, each newest first.
+pub fn discography(data: &Value) -> Vec<Section> {
+    let mut groups: [(&str, Vec<(String, Item)>); 3] =
+        [("Albums", Vec::new()), ("Singles & EPs", Vec::new()), ("Live & compilations", Vec::new())];
+    for v in data.as_array().into_iter().flatten() {
+        let id = text(&v["ALB_ID"]);
+        if id.is_empty() {
+            continue;
+        }
+        let subtypes = &v["SUBTYPES"];
+        let (group, kind) = if subtypes["isLive"].as_bool() == Some(true) {
+            (2, "Live")
+        } else if subtypes["isCompilation"].as_bool() == Some(true) {
+            (2, "Compilation")
+        } else {
+            match text(&v["TYPE"]).as_str() {
+                "1" => (0, "Album"),
+                "3" => (1, "EP"),
+                _ => (1, "Single"),
+            }
+        };
+        let date = Some(text(&v["ORIGINAL_RELEASE_DATE"])).filter(|d| !d.is_empty()).unwrap_or_else(|| text(&v["PHYSICAL_RELEASE_DATE"]));
+        let subtitle = match date.get(..4) {
+            Some(year) => format!("{year} · {kind}"),
+            None => kind.to_string(),
+        };
+        let picture = picture(&"cover".into(), &v["ALB_PICTURE"]);
+        groups[group].1.push((date, Item { kind: "album".into(), id, title: text(&v["ALB_TITLE"]), subtitle, picture }));
+    }
+    groups
+        .into_iter()
+        .filter(|(_, items)| !items.is_empty())
+        .map(|(title, mut dated)| {
+            // ISO dates sort as text; the sort is stable, so ties keep Deezer's order.
+            dated.sort_by(|a, b| b.0.cmp(&a.0));
+            Section { title: title.into(), layout: "artist".into(), items: dated.into_iter().map(|(_, item)| item).collect() }
+        })
+        .collect()
+}
+
+/// `deezer.pageArtist` plus the full discography.
+pub fn artist_page(page: &Value, discography_data: &Value) -> ArtistPage {
+    let data = &page["DATA"];
+    let cards = |kind: &str, list: &Value| {
+        list.as_array().map(|a| a.iter().filter_map(|v| card_item(kind, v)).collect::<Vec<_>>()).unwrap_or_default()
+    };
+    let mut sections = discography(discography_data);
+    for (title, kind, key) in [("Featured in", "playlist", "RELATED_PLAYLIST"), ("Fans also like", "artist", "RELATED_ARTISTS")] {
+        let items = cards(kind, &page[key]["data"]);
+        if !items.is_empty() {
+            sections.push(Section { title: title.into(), layout: "artist".into(), items });
+        }
+    }
+    ArtistPage {
+        name: text(&data["ART_NAME"]),
+        picture: Some(text(&data["ART_PICTURE"])).filter(|p| !p.is_empty()),
+        fans: number(&data["NB_FAN"]),
+        top: tracks(&page["TOP"]["data"]),
+        sections,
+    }
+}
+
 pub fn item(v: &Value) -> Item {
     let picture = v["pictures"].get(0).and_then(|p| picture(&p["type"], &p["md5"]));
     let (kind, id, data) = (text(&v["type"]), text(&v["id"]), &v["data"]);
@@ -109,7 +186,7 @@ pub fn item(v: &Value) -> Item {
 }
 
 /// 1234567 -> "1,234,567"
-fn thousands(n: u64) -> String {
+pub fn thousands(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (i, ch) in digits.chars().enumerate() {
@@ -198,6 +275,32 @@ mod tests {
         let playlists = json!([{"PLAYLIST_ID": "9", "TITLE": "Mix", "PICTURE_TYPE": "playlist", "PLAYLIST_PICTURE": "f", "NB_SONG": 3}]);
         assert_eq!(search_section("Playlists", "playlist", &playlists).items[0].subtitle, "3 tracks");
         assert!(search_section("Artists", "artist", &json!(null)).items.is_empty());
+    }
+
+    #[test]
+    fn discography_groups() {
+        let data = json!([
+            {"ALB_ID": "1", "ALB_TITLE": "RAM", "TYPE": "1", "ORIGINAL_RELEASE_DATE": "2013-05-17", "ALB_PICTURE": "a", "SUBTYPES": {}},
+            {"ALB_ID": "2", "ALB_TITLE": "Get Lucky", "TYPE": "0", "ORIGINAL_RELEASE_DATE": "2013-04-19", "SUBTYPES": {}},
+            {"ALB_ID": "3", "ALB_TITLE": "Alive 2007", "TYPE": "1", "SUBTYPES": {"isLive": true}},
+            {"ALB_ID": "4", "ALB_TITLE": "Sampler", "TYPE": "3", "PHYSICAL_RELEASE_DATE": "1997-01-01", "SUBTYPES": {}}
+        ]);
+        let sections = discography(&data);
+        let titles: Vec<&str> = sections.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(titles, ["Albums", "Singles & EPs", "Live & compilations"]);
+        assert_eq!(sections[0].items[0].subtitle, "2013 · Album");
+        assert_eq!(sections[1].items.iter().map(|i| i.subtitle.as_str()).collect::<Vec<_>>(), ["2013 · Single", "1997 · EP"]);
+        let reversed = json!([{"ALB_ID": "5", "TYPE": "3", "ORIGINAL_RELEASE_DATE": "1997-01-01"}, {"ALB_ID": "6", "TYPE": "0", "ORIGINAL_RELEASE_DATE": "2023-01-01"}]);
+        assert_eq!(discography(&reversed)[0].items[0].id, "6");
+        assert_eq!(sections[2].items[0].subtitle, "Live");
+    }
+
+    #[test]
+    fn track_artists_link() {
+        let t = track(&json!({"SNG_ID": "7", "TRACK_TOKEN": "x", "ARTISTS": [{"ART_ID": "27", "ART_NAME": "Daft Punk"}, {"ART_ID": "0", "ART_NAME": "?"}]})).unwrap();
+        assert_eq!(t.artists, [ArtistRef { id: "27".into(), name: "Daft Punk".into() }]);
+        let t = track(&json!({"SNG_ID": "8", "TRACK_TOKEN": "x", "ART_ID": "13", "ART_NAME": "Eminem"})).unwrap();
+        assert_eq!((t.artist.as_str(), t.artists.len()), ("Eminem", 1));
     }
 
     #[test]

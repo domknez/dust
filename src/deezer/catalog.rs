@@ -1,7 +1,7 @@
 //! Browsing the catalogue: search, the user's library, the home page and what its
 //! items open (albums, artists, mixes, Flow).
 
-use super::models::{Playlist, SearchResults, Section, Track};
+use super::models::{ArtistPage, Item, Playlist, SearchResults, Section, Track};
 use super::{Deezer, Result, parse};
 use serde_json::json;
 
@@ -58,6 +58,23 @@ impl Deezer {
     pub fn album(&self, id: &str) -> Result<Vec<Track>> {
         let r = self.call("deezer.pageAlbum", json!({"alb_id": id, "lang": "en", "header": true, "tab": 0}))?;
         Ok(parse::tracks(&r["SONGS"]["data"]))
+    }
+
+    /// Everything on an artist's page, including the whole discography.
+    pub fn artist(&self, id: &str) -> Result<ArtistPage> {
+        let page = self.call("deezer.pageArtist", json!({"art_id": id, "lang": "en", "tab": 0}))?;
+        let discography =
+            self.call("album.getDiscography", json!({"art_id": id, "nb": 500, "nb_songs": 0, "start": 0, "filter_role_id": [0]}))?;
+        Ok(parse::artist_page(&page, &discography["data"]))
+    }
+
+    /// Artists the account follows, as cards.
+    pub fn favorite_artists(&self) -> Result<Vec<Item>> {
+        let r = self.call("deezer.pageProfile", json!({"user_id": self.0.user_id, "tab": "artists", "nb": 2000}))?;
+        Ok(r["TAB"]["artists"]["data"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|v| parse::card_item("artist", v)).collect())
+            .unwrap_or_default())
     }
 
     pub fn artist_top(&self, id: &str) -> Result<Vec<Track>> {

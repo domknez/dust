@@ -37,7 +37,9 @@ impl App {
             widgets::caption(ui, "NOW PLAYING");
             let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::QUEUE_ROW), Sense::hover());
             ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), colors().hover);
-            widgets::queue_row(ui, &mut self.covers, rect, &queue[current], true, true);
+            if let Some(artist) = widgets::queue_row(ui, &mut self.covers, rect, &queue[current], true, true) {
+                self.pending_artist = Some(artist);
+            }
             ui.add_space(10.0);
         }
         if upcoming == 0 {
@@ -81,7 +83,9 @@ impl App {
         }
         // A remove button replaces the duration on hover.
         let show_remove = resp.hovered() && self.queue_drag.is_none();
-        widgets::queue_row(ui, &mut self.covers, rect, track, false, !show_remove);
+        if let Some(artist) = widgets::queue_row(ui, &mut self.covers, rect, track, false, !show_remove) {
+            self.pending_artist = Some(artist);
+        }
         let remove = Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), Vec2::splat(24.0));
         let over_remove = resp.hover_pos().is_some_and(|pos| remove.contains(pos));
         if show_remove {

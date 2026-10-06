@@ -59,7 +59,12 @@ impl App {
             let x = art.right() + 14.0;
             let width = area.right() - x;
             text_left(ui.painter(), pos2(x, area.center().y - 9.0), &track.title, ty::TITLE.strong(), colors().text, width);
-            text_left(ui.painter(), pos2(x, area.center().y + 11.0), &track.artist, ty::SECONDARY, colors().dim, width);
+            let pos = pos2(x, area.center().y + 11.0);
+            if let (Some(artist), _) =
+                widgets::artist_links(ui, pos, &track.artists, &track.artist, ty::SECONDARY, colors().dim, colors().text, width)
+            {
+                self.pending_artist = Some(artist);
+            }
         }
         if st.state == State::Loading {
             let spot = Rect::from_center_size(pos2(area.left() + art_size / 2.0, area.center().y), Vec2::splat(art_size));

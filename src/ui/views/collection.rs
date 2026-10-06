@@ -1,11 +1,12 @@
 //! Track lists: search results, Loved tracks and opened collections. A header
 //! (artwork, title, Play/Shuffle) scrolls with a virtualised track table.
 
-use crate::deezer::image_url;
+use crate::deezer::{ArtistRef, Track, image_url};
 use crate::player::{Cmd, State, Status};
 use crate::ui::app::App;
+use crate::ui::covers::Covers;
 use crate::ui::format::{cover_url, mmss, total_duration};
-use crate::ui::state::{PlayMode, View};
+use crate::ui::state::{ArtistView, PlayMode, Source, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::views::home::{CARD_ROW_HEIGHT, CardPicks, card_row};
@@ -34,14 +35,18 @@ struct Header {
 
 /// Actions picked in the table this frame.
 #[derive(Default)]
-struct Picked {
-    play: Option<(usize, bool)>,
-    queue: Option<(usize, PlayMode)>,
-    cards: CardPicks,
+pub(super) struct Picked {
+    /// Play from this row (shuffled or not).
+    pub play: Option<(usize, bool)>,
+    pub queue: Option<(usize, PlayMode)>,
+    /// The playing row's number was clicked: pause/resume.
+    pub toggle: bool,
+    pub artist: Option<ArtistRef>,
+    pub cards: CardPicks,
 }
 
 /// X positions of the table columns.
-struct Columns {
+pub(super) struct Columns {
     index: f32,
     art: f32,
     title: f32,
@@ -50,7 +55,7 @@ struct Columns {
 }
 
 impl Columns {
-    fn new(left: f32, width: f32) -> Self {
+    pub(super) fn new(left: f32, width: f32) -> Self {
         Columns {
             index: left + 8.0,
             art: left + 48.0,
@@ -100,12 +105,18 @@ impl App {
             for i in first..last {
                 let rect =
                     Rect::from_min_size(origin + vec2(0.0, header_height + i as f32 * metrics::TRACK_ROW), vec2(width, metrics::TRACK_ROW));
-                self.track_row(ui, i, rect, &columns, playing_id, playing, &mut picked);
+                track_row(ui, &mut self.covers, &self.tracks[i], i, rect, &columns, (playing_id, playing), &mut picked);
             }
         });
 
         let ctx = ui.ctx().clone();
         self.apply_card_picks(&ctx, picked.cards);
+        if picked.toggle {
+            self.player.send(Cmd::Toggle);
+        }
+        if let Some(artist) = picked.artist {
+            self.open_artist(&ctx, ArtistView::from_ref(&artist));
+        }
         if let Some((i, mode)) = picked.queue {
             self.player.send(mode.command(vec![self.tracks[i].clone()]));
         }
@@ -131,7 +142,7 @@ impl App {
                 tile: None,
                 round: coll.round(),
             },
-            View::Home | View::Search | View::Playlists => Header::default(),
+            View::Home | View::Search | View::Playlists | View::Artists | View::Artist(_) => Header::default(),
         }
     }
 
@@ -167,6 +178,14 @@ impl App {
         }
     }
 
+    /// The artist of an album page when every track lists them (not compilations).
+    fn album_artist(&self) -> Option<ArtistRef> {
+        let View::Collection(coll) = &self.view else { return None };
+        let Source::Album(_) = coll.source else { return None };
+        let main = self.tracks.first()?.artists.first()?.clone();
+        self.tracks.iter().all(|t| t.artists.iter().any(|a| a.id == main.id)).then_some(main)
+    }
+
     fn collection_header(&mut self, ui: &mut Ui, head: Rect, picked: &mut Picked) {
         let p = colors();
         let Header { kind, title, subtitle, art, tile, round } = self.header();
@@ -183,12 +202,25 @@ impl App {
         text_left(ui.painter(), pos2(x, head.top() + 82.0), &title, ty::HERO, p.text, width);
         let count = self.tracks.len();
         let stats = (count > 0).then(|| format!("{count} tracks · {}", total_duration(&self.tracks)));
-        let meta = match (subtitle.is_empty(), stats) {
-            (true, Some(stats)) => stats,
-            (false, Some(stats)) => format!("{subtitle}  ·  {stats}"),
-            (_, None) => subtitle,
-        };
-        text_left(ui.painter(), pos2(x, head.top() + 124.0), &meta, ty::ITEM, p.dim, width);
+        let meta_pos = pos2(x, head.top() + 124.0);
+        match self.album_artist() {
+            // Album by one artist: their name links to the artist page.
+            Some(artist) => {
+                let (clicked, right) = widgets::artist_links(ui, meta_pos, &[artist], "", ty::ITEM, p.dim, p.text, width);
+                picked.artist = clicked;
+                if let Some(stats) = stats {
+                    text_left(ui.painter(), pos2(right, meta_pos.y), &format!("  ·  {stats}"), ty::ITEM, p.dim, x + width - right);
+                }
+            }
+            None => {
+                let meta = match (subtitle.is_empty(), stats) {
+                    (true, Some(stats)) => stats,
+                    (false, Some(stats)) => format!("{subtitle}  ·  {stats}"),
+                    (_, None) => subtitle,
+                };
+                text_left(ui.painter(), meta_pos, &meta, ty::ITEM, p.dim, width);
+            }
+        }
         let buttons = Rect::from_min_size(pos2(x, head.top() + 152.0), vec2(width, 44.0));
         ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
             if count > 0 && widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {
@@ -199,58 +231,63 @@ impl App {
             }
         });
     }
+}
 
-    #[allow(clippy::too_many_arguments)]
-    fn track_row(
-        &mut self,
-        ui: &mut Ui,
-        i: usize,
-        rect: Rect,
-        columns: &Columns,
-        playing_id: Option<u64>,
-        playing: bool,
-        picked: &mut Picked,
-    ) {
-        let p = colors();
-        let resp = ui.interact(rect, ui.id().with(("row", i)), Sense::click());
-        let track = &self.tracks[i];
-        let current = playing_id == Some(track.id);
-        let hovered = resp.hovered();
-        if hovered {
-            ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.hover);
-        }
-        let cy = rect.center().y;
-        let index = Rect::from_center_size(pos2(columns.index + 14.0, cy), Vec2::splat(14.0));
-        if hovered {
-            icons::paint(ui.painter(), index, if current && playing { Icon::Pause } else { Icon::Play }, p.text);
-        } else if current {
-            widgets::equalizer(ui.painter(), index, playing);
+/// One row of a track table: number (or equalizer / play icon), artwork, title,
+/// linked artists, album, duration. Clicks and menu choices go into `picked`.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn track_row(
+    ui: &mut Ui,
+    covers: &mut Covers,
+    track: &Track,
+    i: usize,
+    rect: Rect,
+    columns: &Columns,
+    (playing_id, playing): (Option<u64>, bool),
+    picked: &mut Picked,
+) {
+    let p = colors();
+    let resp = ui.interact(rect, ui.id().with(("row", i)), Sense::click());
+    let current = playing_id == Some(track.id);
+    let hovered = resp.hovered();
+    if hovered {
+        ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.hover);
+    }
+    let cy = rect.center().y;
+    let index = Rect::from_center_size(pos2(columns.index + 14.0, cy), Vec2::splat(14.0));
+    if hovered {
+        icons::paint(ui.painter(), index, if current && playing { Icon::Pause } else { Icon::Play }, p.text);
+    } else if current {
+        widgets::equalizer(ui.painter(), index, playing);
+    } else {
+        ui.painter().text(index.center(), Align2::CENTER_CENTER, (i + 1).to_string(), ty::BODY.font(), p.faint);
+    }
+    let art = Rect::from_min_size(pos2(columns.art, cy - metrics::TRACK_ART / 2.0), Vec2::splat(metrics::TRACK_ART));
+    widgets::cover(ui, covers, cover_url(track, metrics::THUMB_PX).as_deref(), art, radius::THUMB);
+    let title_width = columns.album.unwrap_or(columns.time - 60.0) - columns.title - 16.0;
+    text_left(ui.painter(), pos2(columns.title, cy - 9.0), &track.title, ty::TITLE, if current { p.accent } else { p.text }, title_width);
+    let (artist, _) =
+        widgets::artist_links(ui, pos2(columns.title, cy + 10.0), &track.artists, &track.artist, ty::SECONDARY, p.dim, p.text, title_width);
+    if artist.is_some() {
+        picked.artist = artist;
+    }
+    let painter = ui.painter();
+    if let Some(album) = columns.album {
+        text_left(painter, pos2(album, cy), &track.album, ty::BODY, p.dim, columns.time - album - 70.0);
+    }
+    painter.text(pos2(columns.time, cy), Align2::RIGHT_CENTER, mmss(track.duration as f64), ty::BODY.font(), p.dim);
+
+    // Double-click a row, or click its number, to play from there.
+    let clicked_number = resp.clicked() && resp.interact_pointer_pos().is_some_and(|pt| pt.x < columns.art);
+    if resp.double_clicked() || clicked_number {
+        if current && clicked_number {
+            picked.toggle = true;
         } else {
-            ui.painter().text(index.center(), Align2::CENTER_CENTER, (i + 1).to_string(), ty::BODY.font(), p.faint);
+            picked.play = Some((i, false));
         }
-        let art = Rect::from_min_size(pos2(columns.art, cy - metrics::TRACK_ART / 2.0), Vec2::splat(metrics::TRACK_ART));
-        widgets::cover(ui, &mut self.covers, cover_url(track, metrics::THUMB_PX).as_deref(), art, radius::THUMB);
-        let painter = ui.painter();
-        let title_width = columns.album.unwrap_or(columns.time - 60.0) - columns.title - 16.0;
-        text_left(painter, pos2(columns.title, cy - 9.0), &track.title, ty::TITLE, if current { p.accent } else { p.text }, title_width);
-        text_left(painter, pos2(columns.title, cy + 10.0), &track.artist, ty::SECONDARY, p.dim, title_width);
-        if let Some(album) = columns.album {
-            text_left(painter, pos2(album, cy), &track.album, ty::BODY, p.dim, columns.time - album - 70.0);
-        }
-        painter.text(pos2(columns.time, cy), Align2::RIGHT_CENTER, mmss(track.duration as f64), ty::BODY.font(), p.dim);
-
-        // Double-click a row, or click its number, to play from there.
-        let clicked_number = resp.clicked() && resp.interact_pointer_pos().is_some_and(|pt| pt.x < columns.art);
-        if resp.double_clicked() || clicked_number {
-            if current && clicked_number {
-                self.player.send(Cmd::Toggle);
-            } else {
-                picked.play = Some((i, false));
-            }
-        }
-        if let Some(mode) = widgets::queue_menu(&resp) {
-            picked.queue = Some((i, mode));
-        }
+    }
+    if let Some(mode) = widgets::queue_menu(&resp) {
+        picked.queue = Some((i, mode));
     }
 }
 

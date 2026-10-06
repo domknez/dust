@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Artist pages: popular tracks, the full discography (albums, singles & EPs, live &
+  compilations), playlists featuring the artist and related artists
+- Click any artist name (track lists, queue, player bar, mini player, album header) to
+  open their page
+- Artists in the sidebar: the artists you follow on Deezer
+- Search shows your own matching playlists first
+
 ## 0.3.0 (2026-10-06)
 
 - Self-update: new releases download in the background and are checked against
