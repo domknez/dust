@@ -52,9 +52,9 @@ including cover art.
 - **Speaker buttons work:** volume and play/pause/skip on the speaker control dust
 - **Mini player**: a small always-on-top strip with cover, controls
   and seek bar; drag it anywhere, double-click the cover to go back
-- **Updates itself** *(next release)*: when a new version is out, an *Update* button
-  appears in the sidebar; one click downloads it, verifies its checksum, installs it
-  and restarts dust
+- **Updates itself** *(next release)*: new versions download and verify in the
+  background; then *Restart to update* appears in the sidebar (or the update installs
+  when you quit)
 - **Media keys and Now Playing:** keyboard and headset media keys, plus the system's
   Now Playing controls with cover art (macOS Control Center, Windows media overlay,
   Linux MPRIS)

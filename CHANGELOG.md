@@ -2,8 +2,9 @@
 
 ## Unreleased
 
-- Self-update: an *Update* button in the sidebar downloads the new release, checks it
-  against `SHA256SUMS.txt`, installs it and restarts dust (macOS from 0.2.0 on;
+- Self-update: new releases download in the background and are checked against
+  `SHA256SUMS.txt`; *Restart to update* in the sidebar swaps them in and reopens dust,
+  and a downloaded update also installs when dust quits (macOS from 0.2.0 on;
   Windows and Linux once a release carries the bare binaries). Check automatically or
   from the account menu; `--check-update` / `--self-update` on the command line
 
