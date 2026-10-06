@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0 (2026-10-06)
+
 - Artist pages: popular tracks, the full discography (albums, singles & EPs, live &
   compilations), playlists featuring the artist and related artists
 - Click any artist name (track lists, queue, player bar, mini player, album header) to
