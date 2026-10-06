@@ -5,6 +5,7 @@ mod collection;
 mod content;
 mod home;
 mod login;
+mod mini_player;
 mod output_picker;
 mod player_bar;
 mod playlists;

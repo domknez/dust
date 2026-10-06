@@ -50,6 +50,8 @@ including cover art.
 - **Last.fm scrobbling, history and Flow learning:** dust reports what you listen to
   back to Deezer, exactly like Deezer's own apps
 - **Speaker buttons work:** volume and play/pause/skip on the speaker control dust
+- **Mini player** *(next release)*: a small always-on-top strip with cover, controls
+  and seek bar; drag it anywhere, double-click the cover to go back
 - **Media keys and Now Playing:** keyboard and headset media keys, plus the system's
   Now Playing controls with cover art (macOS Control Center, Windows media overlay,
   Linux MPRIS)
@@ -175,6 +177,7 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 
 - `Space`: play/pause
 - `⌘F` / `Ctrl+F`: search
+- `⌘⇧M` / `Ctrl+Shift+M`: mini player on/off *(next release)*
 - Double-click a track, or click its number: play from there
 - Home cards: click to open, click the round play button to play right away
 - Right-click a track or card: *Play next* / *Add to queue*

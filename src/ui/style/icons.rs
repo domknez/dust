@@ -25,6 +25,10 @@ pub enum Icon {
     Check,
     LogOut,
     Queue,
+    /// Small window over a big one: switch to the mini player.
+    MiniPlayer,
+    /// Corner brackets: back to the full window.
+    Expand,
     Close,
     /// Small up/down chevrons: "opens a menu".
     Chevrons,
@@ -179,6 +183,18 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             }
             line(p(r, 0.12, 0.84), p(r, 0.46, 0.84));
             poly(vec![p(r, 0.66, 0.6), p(r, 0.92, 0.76), p(r, 0.66, 0.92)]);
+        }
+        Icon::MiniPlayer => {
+            let thin = Stroke::new(stroke.width * 0.8, color);
+            painter.rect_stroke(Rect::from_min_max(p(r, 0.1, 0.18), p(r, 0.9, 0.82)), 2.0, thin, eframe::egui::StrokeKind::Middle);
+            painter.rect_filled(Rect::from_min_max(p(r, 0.48, 0.5), p(r, 0.8, 0.72)), 1.0, color);
+        }
+        Icon::Expand => {
+            let s = Stroke::new(stroke.width, color);
+            for (x, y, dx, dy) in [(0.16, 0.16, 1.0, 1.0), (0.84, 0.16, -1.0, 1.0), (0.16, 0.84, 1.0, -1.0), (0.84, 0.84, -1.0, -1.0)] {
+                let corner = p(r, x, y);
+                painter.add(Shape::line(vec![corner + vec2(0.0, dy * w * 0.24), corner, corner + vec2(dx * w * 0.24, 0.0)], s));
+            }
         }
         Icon::Close => {
             line(p(r, 0.22, 0.22), p(r, 0.78, 0.78));

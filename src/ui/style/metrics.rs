@@ -7,6 +7,13 @@ pub const MIN_WINDOW_SIZE: [f32; 2] = [760.0, 480.0];
 /// Room for the macOS traffic lights over the full-size content view.
 pub const TOP_INSET: f32 = if cfg!(target_os = "macos") { 34.0 } else { 14.0 };
 
+// Mini player
+pub const MINI_PLAYER_ART: f32 = 56.0;
+/// Space above the artwork (clears the macOS traffic lights).
+pub const MINI_PLAYER_INSET: f32 = if cfg!(target_os = "macos") { 30.0 } else { 14.0 };
+/// Artwork row, seek bar and bottom padding.
+pub const MINI_PLAYER_SIZE: [f32; 2] = [400.0, MINI_PLAYER_INSET + MINI_PLAYER_ART + 36.0];
+
 // Panels
 pub const SIDEBAR_WIDTH: f32 = 248.0;
 pub const QUEUE_WIDTH: f32 = 340.0;

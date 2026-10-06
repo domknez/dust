@@ -1,6 +1,7 @@
 //! Player bar: now playing on the left, transport and progress in the middle,
 //! queue, output and volume on the right.
 
+use super::mini_player::MINI_PLAYER_HINT;
 use crate::player::{Cmd, State, Status};
 use crate::ui::app::App;
 use crate::ui::format::{cover_url, mmss};
@@ -16,7 +17,7 @@ const SIDE_MAX: f32 = 360.0;
 const PROGRESS_MAX_WIDTH: f32 = 560.0;
 const VOLUME_WIDTH: f32 = 104.0;
 /// Progress refresh while playing.
-const TICK: Duration = Duration::from_millis(500);
+pub(in crate::ui) const TICK: Duration = Duration::from_millis(500);
 
 impl App {
     pub(in crate::ui) fn player_bar(&mut self, ui: &mut Ui, st: &Status) {
@@ -41,6 +42,9 @@ impl App {
             if widgets::icon_button(ui, Icon::Queue, 18.0, color).on_hover_text("Queue").clicked() {
                 self.show_queue = !self.show_queue;
             }
+            if widgets::icon_button(ui, Icon::MiniPlayer, 18.0, colors().dim).on_hover_text(MINI_PLAYER_HINT).clicked() {
+                self.toggle_mini_player(ui.ctx());
+            }
         });
         if st.state == State::Playing {
             ui.ctx().request_repaint_after(TICK);
@@ -63,8 +67,13 @@ impl App {
         }
     }
 
-    fn transport(&mut self, ui: &mut Ui, area: Rect, st: &Status) {
+    pub(in crate::ui) fn transport(&mut self, ui: &mut Ui, area: Rect, st: &Status) {
         let controls = Rect::from_center_size(pos2(area.center().x, area.top() + 30.0), vec2(160.0, 40.0));
+        self.transport_buttons(ui, controls, st);
+    }
+
+    /// Previous, play/pause and next, laid out left to right in `controls`.
+    pub(in crate::ui) fn transport_buttons(&mut self, ui: &mut Ui, controls: Rect, st: &Status) {
         ui.scope_builder(UiBuilder::new().max_rect(controls).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
             if widgets::icon_button(ui, Icon::Prev, 16.0, colors().dim).clicked() {
@@ -87,6 +96,13 @@ impl App {
         ui.painter().text(pos2(row.left(), row.center().y), Align2::RIGHT_CENTER, mmss(position), font.clone(), color);
         ui.painter().text(pos2(row.right(), row.center().y), Align2::LEFT_CENTER, mmss(duration), font, color);
         let slider = Rect::from_min_max(pos2(row.left() + 10.0, row.top()), pos2(row.right() - 10.0, row.bottom()));
+        self.seek_slider(ui, slider, st);
+    }
+
+    /// Click or drag to seek; the position follows the drag until release.
+    pub(in crate::ui) fn seek_slider(&mut self, ui: &mut Ui, slider: Rect, st: &Status) {
+        let duration = st.track.as_ref().map_or(0.0, |t| t.duration as f64);
+        let position = self.seek_drag.map(|f| f as f64 * duration).unwrap_or(st.position).min(duration);
         ui.scope_builder(UiBuilder::new().max_rect(slider), |ui| {
             let mut fraction = if duration > 0.0 { (position / duration) as f32 } else { 0.0 };
             let resp = widgets::thin_slider(ui, &mut fraction, slider.width(), duration > 0.0);

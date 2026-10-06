@@ -52,6 +52,8 @@ pub struct App {
     pub(super) seek_drag: Option<f32>,
     pub(super) volume_drag: Option<f32>,
     pub(super) unmuted_volume: f32,
+    /// In mini player mode: the full window's size, restored on the way back.
+    pub(super) mini_player: Option<egui::Vec2>,
 
     // Settings
     pub(super) quality: Quality,
@@ -114,6 +116,7 @@ impl App {
             seek_drag: None,
             volume_drag: None,
             unmuted_volume: volume,
+            mini_player: None,
             quality,
             appearance,
             report_listens,
@@ -353,12 +356,17 @@ impl eframe::App for App {
         if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(Key::Space)) {
             self.player.send(Cmd::Toggle);
         }
+        self.mini_player_shortcut(&ctx);
         let st = self.player.status();
         self.persist_playback(&st);
         if let Some(np) = &mut self.now_playing {
             np.update(&st);
         }
         let p = colors();
+        if self.mini_player.is_some() {
+            egui::CentralPanel::default().frame(panel_frame(p.bar, Margin::ZERO)).show(ui, |ui| self.mini_player(ui, &st));
+            return;
+        }
         egui::Panel::bottom("player")
             .exact_size(metrics::PLAYER_BAR_HEIGHT)
             .resizable(false)
