@@ -95,10 +95,19 @@ On macOS, run `scripts/dev-cert.sh` once and build with `scripts/build.sh`: it s
 builds with a local "dust dev" identity so Keychain stops asking for access after every
 rebuild. `scripts/bundle-macos.sh` builds the universal `dust.app` and DMG into `dist/`.
 
-Releases: bump `version` in `Cargo.toml`, commit, then tag and push (`git tag v0.2.0 &&
-git push origin v0.2.0`). The Release workflow builds every platform and publishes the
-GitHub Release. Adding the Apple secrets listed in `.github/workflows/release.yml` makes
-it sign with a Developer ID and notarize.
+Releases:
+
+- **Merging a pull request into `main` releases it.** The Auto release workflow bumps
+  the minor version, moves the CHANGELOG's *Unreleased* notes under it (or uses the PR
+  title), commits, and tags; the tag starts the Release workflow. PR labels:
+  `release:patch`, `release:major`, or `no-release` to merge without releasing.
+- **Direct pushes to `main` don't release.** To release by hand:
+  `scripts/bump-version.py minor` (or `patch`, `major`, `0.5.0`), commit, then
+  `git tag v<version> && git push origin main v<version>`.
+
+The Release workflow builds every platform and publishes the GitHub Release. Adding the
+Apple secrets listed in `.github/workflows/release.yml` makes it sign with a Developer ID
+and notarize.
 
 Linux needs ALSA, D-Bus and WebKitGTK headers:
 `sudo apt install libasound2-dev libdbus-1-dev libwebkit2gtk-4.1-dev pkg-config`.
