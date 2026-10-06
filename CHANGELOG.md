@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Self-update: an *Update* button in the sidebar downloads the new release, checks it
+  against `SHA256SUMS.txt`, installs it and restarts dust (macOS from 0.2.0 on;
+  Windows and Linux once a release carries the bare binaries). Check automatically or
+  from the account menu; `--check-update` / `--self-update` on the command line
+
 ## 0.2.0 (2026-10-06)
 
 - Mini player: a small always-on-top window with cover, transport and seek bar
