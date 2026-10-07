@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.9.1 (2026-10-07)
+
 - Fixed: after the Mac slept, AirPlay speakers could stay missing for up to an hour.
   dust now searches again when the computer wakes, when its network changes and
   whenever you open the speaker menu
