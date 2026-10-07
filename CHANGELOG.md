@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.0 (2026-10-07)
+
 - The queue survives a restart: dust brings it back paused at the same track and
   position (and Flow keeps going if that's what was playing)
 
