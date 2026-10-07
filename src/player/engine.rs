@@ -52,6 +52,8 @@ pub struct Engine {
     resume_seek: bool,
     last_publish: Instant,
     alive: bool,
+    /// A restored queue waiting for play: the position to start the current track at.
+    restored_at: Option<f64>,
 }
 
 impl Engine {
@@ -79,6 +81,7 @@ impl Engine {
             resume_seek: false,
             last_publish: Instant::now(),
             alive: true,
+            restored_at: None,
         }
     }
 
@@ -150,6 +153,13 @@ impl Engine {
                 }
             }
             Cmd::ClearUpcoming => self.queue.clear_upcoming(),
+            Cmd::Restore { tracks, index, position, flow } => {
+                if self.queue.is_empty() && self.stream.is_none() && index < tracks.len() {
+                    self.queue.replace(tracks, index);
+                    self.queue.flow = flow.map(|mood| Flow { mood });
+                    self.restored_at = Some(position);
+                }
+            }
         }
         self.publish(true);
     }
@@ -166,7 +176,8 @@ impl Engine {
     fn toggle(&mut self) {
         if self.stream.is_none() {
             if !self.queue.is_empty() {
-                self.start_track(0.0);
+                let at = self.restored_at.unwrap_or(0.0);
+                self.start_track(at);
             }
         } else if self.playing {
             self.playing = false;
@@ -242,6 +253,7 @@ impl Engine {
 
     /// (Re)start the current queue entry at `at` seconds, skipping unplayable tracks.
     fn start_track(&mut self, at: f64) {
+        self.restored_at = None;
         self.listens.finish(self.library.as_deref());
         self.stream = None;
         self.pending.clear();
@@ -310,6 +322,13 @@ impl Engine {
     }
 
     fn seek(&mut self, t: f64) {
+        // Restored and not started yet: just move where play will begin.
+        if self.stream.is_none()
+            && let Some(at) = self.restored_at.as_mut()
+        {
+            *at = t.max(0.0);
+            return;
+        }
         self.listens.seeked();
         let Some(stream) = self.stream.as_mut() else { return };
         let t = t.max(0.0);
@@ -401,12 +420,14 @@ impl Engine {
 
     fn publish(&mut self, repaint: bool) {
         self.last_publish = Instant::now();
-        let position = self.position();
+        let position = self.restored_at.unwrap_or_else(|| self.position());
+        let restored = self.restored_at.is_some();
         let mut st = self.status.lock().unwrap();
         st.position = position;
-        st.track = self.queue.current().cloned().filter(|_| self.stream.is_some() || self.playing);
+        st.track = self.queue.current().cloned().filter(|_| self.stream.is_some() || self.playing || restored);
         st.state = match (&self.stream, self.playing) {
             (None, true) => State::Loading,
+            (None, false) if restored => State::Paused,
             (None, false) => State::Stopped,
             (Some(_), true) => State::Playing,
             (Some(_), false) => State::Paused,
@@ -569,6 +590,32 @@ mod tests {
 
     fn now_playing(e: &Engine) -> Option<u64> {
         e.stream.as_ref().map(|s| s.song_id())
+    }
+
+    #[test]
+    fn restored_queue_waits_paused_then_resumes_at_its_position() {
+        let (mut e, _library, _tx) = engine(FakeLibrary::default());
+        let tracks = vec![track(1, 200), track(2, 200)];
+        e.handle(Cmd::Restore { tracks, index: 1, position: 80.0, flow: Some(Some("chill".into())) });
+        {
+            let st = e.status.lock().unwrap();
+            assert_eq!((st.state, st.track.as_ref().map(|t| t.id), st.position), (State::Paused, Some(2), 80.0));
+            assert_eq!(st.flow.as_deref(), Some("chill"));
+        }
+        assert_eq!(now_playing(&e), None, "nothing streams before play");
+        e.handle(Cmd::Seek(95.0));
+        assert_eq!(e.status.lock().unwrap().position, 95.0, "seeking while restored moves the start");
+        e.handle(Cmd::Toggle);
+        assert_eq!(now_playing(&e), Some(2));
+        assert_eq!(e.stream.as_ref().map(|s| s.written()), Some(95.0), "starts where it was");
+    }
+
+    #[test]
+    fn restore_never_replaces_a_live_queue() {
+        let (mut e, _library, _tx) = engine(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 200)], 0));
+        e.handle(Cmd::Restore { tracks: vec![track(7, 200)], index: 0, position: 10.0, flow: None });
+        assert_eq!(now_playing(&e), Some(1));
     }
 
     #[test]

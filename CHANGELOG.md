@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The queue survives a restart: dust brings it back paused at the same track and
+  position (and Flow keeps going if that's what was playing)
+
 ## 0.7.1 (2026-10-07)
 
 - The search field shows when it's active: accent ring, lighter background and accent

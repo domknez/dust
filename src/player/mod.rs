@@ -11,6 +11,7 @@ mod engine;
 pub mod library;
 mod listens;
 mod queue;
+pub mod saved;
 mod stream;
 
 use crate::deezer::{Deezer, Quality, Track};
@@ -68,6 +69,14 @@ pub enum Cmd {
     JumpTo(usize),
     /// Drop everything after the current track (and stop endless Flow).
     ClearUpcoming,
+    /// Put back a queue saved by an earlier session, paused at a position; play
+    /// continues from there. `flow`: Some(mood) when it was endless Flow.
+    Restore {
+        tracks: Vec<Track>,
+        index: usize,
+        position: f64,
+        flow: Option<Option<String>>,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]

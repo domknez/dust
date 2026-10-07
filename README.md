@@ -49,6 +49,7 @@ including cover art.
 - **Quality:** MP3 128 / MP3 320 / FLAC (FLAC needs a HiFi plan), streamed and decoded
   on the fly — nothing is written to disk
 - **Queue:** see what's next, jump to any track, reorder by dragging, remove, clear;
+  it survives a restart (paused where you left off);
   right-click any track or card → *Play next* / *Add to queue*
 - **Seeking** (HTTP range jumps for MP3), shuffle
 - **AirPlay 2 and AirPlay 1** output with automatic discovery — Sonos (incl. Era 100/300),
@@ -147,6 +148,8 @@ when you press play).
 The update check asks GitHub's public releases API for the latest version at startup
 and every 6 hours; nothing about you or your listening is sent. Turn it off with
 **Check automatically** and dust contacts only Deezer and your speakers.
+
+The queue is saved in `queue.json` next to it and comes back, paused, when dust starts.
 
 Choices are saved in `settings.conf` in your config directory
 (`~/Library/Application Support/dust` on macOS, `%APPDATA%\dust` on Windows,

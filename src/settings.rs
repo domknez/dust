@@ -3,6 +3,11 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+/// dust's folder in the platform config directory.
+pub fn dir() -> Option<PathBuf> {
+    path().and_then(|p| p.parent().map(|d| d.to_path_buf()))
+}
+
 fn path() -> Option<PathBuf> {
     let env = |k| std::env::var_os(k).map(PathBuf::from);
     let base = if cfg!(target_os = "macos") {

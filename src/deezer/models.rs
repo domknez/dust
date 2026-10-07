@@ -7,7 +7,7 @@ pub struct ArtistRef {
     pub name: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Track {
     pub id: u64,
     pub title: String,

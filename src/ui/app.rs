@@ -12,7 +12,7 @@ use crate::credentials;
 use crate::deezer::{self, ArtistPage, Deezer, Error, Item, Likes, Link, Playlist, Quality, SearchResults, Section, Track};
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
-use crate::player::{Cmd, Output, PlayerHandle, Status};
+use crate::player::{Cmd, Output, PlayerHandle, Status, saved};
 use crate::settings;
 use eframe::egui::{self, Key, Margin, Ui};
 
@@ -92,6 +92,12 @@ pub struct App {
     _remote_control: Option<dacp::Server>,
     now_playing: Option<NowPlaying>,
     pub(super) updates: Updates,
+    /// What the saved queue file last reflected (queue snapshot, index, Flow);
+    /// None until the saved queue was offered to the player after login, so the
+    /// empty startup queue never overwrites it.
+    queue_saved: Option<(usize, usize, Option<String>)>,
+    /// A restore was sent and the player hasn't shown the queue yet.
+    restore_pending: bool,
 }
 
 impl App {
@@ -115,6 +121,8 @@ impl App {
             _remote_control: start_remote_control(player.clone()),
             now_playing: NowPlaying::start(cc, player.clone()),
             updates: Updates::new(auto_update),
+            queue_saved: None,
+            restore_pending: false,
             player,
             client: None,
             arl_input: String::new(),
@@ -202,6 +210,15 @@ impl App {
         self.player.send(Cmd::Client(client.clone()));
         self.player.send(Cmd::Quality(self.quality));
         self.player.send(Cmd::ReportListens(self.report_listens));
+        // Bring back the queue from last time, paused where it was.
+        if self.queue_saved.is_none() {
+            if let Some(s) = saved::load() {
+                log_info!("restoring a queue of {} tracks", s.tracks.len());
+                self.player.send(Cmd::Restore { tracks: s.tracks, index: s.index, position: s.position, flow: s.flow });
+                self.restore_pending = true;
+            }
+            self.queue_saved = Some((0, usize::MAX, None));
+        }
         let c = client.clone();
         self.playlists_task = tasks::spawn(ctx, move || c.playlists());
         let c = client.clone();
@@ -332,6 +349,23 @@ impl App {
         settings::set("output", &remembered);
         self.restore_output = None;
         self.player.send(Cmd::Output(output));
+    }
+
+    /// Keep `queue.json` in step with the queue (after the restore was offered).
+    fn save_queue_if_changed(&mut self, st: &Status) {
+        // Until the player shows the restored queue, its (empty) queue isn't news.
+        if self.restore_pending {
+            if st.queue.is_empty() {
+                return;
+            }
+            self.restore_pending = false;
+        }
+        let Some(last) = &self.queue_saved else { return };
+        let key = (std::sync::Arc::as_ptr(&st.queue) as usize, st.index, st.flow.clone());
+        if *last != key {
+            saved::save(st);
+            self.queue_saved = Some(key);
+        }
     }
 
     /// Save volume once it settles (not on every slider step) and reselect the
@@ -485,6 +519,10 @@ fn panel_frame(fill: egui::Color32, margin: Margin) -> egui::Frame {
 impl eframe::App for App {
     /// Quitting: a downloaded update installs now, so the next start is the new version.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // Once more with the exact position, to resume right there next time.
+        if self.queue_saved.is_some() && !self.restore_pending {
+            saved::save(&self.player.status());
+        }
         self.updates.apply_on_exit();
     }
 
@@ -505,6 +543,7 @@ impl eframe::App for App {
         self.mini_player_shortcut(&ctx);
         let st = self.player.status();
         self.persist_playback(&st);
+        self.save_queue_if_changed(&st);
         if let Some(np) = &mut self.now_playing {
             np.update(&st);
         }
