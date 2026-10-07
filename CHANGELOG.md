@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.7.1 (2026-10-07)
+
 - The search field shows when it's active: accent ring, lighter background and accent
   icon while typing, a faint ring on hover; clicking anywhere on it focuses it
 
