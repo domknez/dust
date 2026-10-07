@@ -208,10 +208,13 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 
 - `Space`: play/pause
 - `⌘F` / `Ctrl+F`: search
+- `⌘←` / `⌘→` (`Alt+←` / `Alt+→` on Windows and Linux), or the mouse's side buttons:
+  back / forward between pages
 - `⌘⇧M` / `Ctrl+Shift+M`: mini player on/off
 - Double-click a track, or click its number: play from there
 - Home cards: click to open, click the round play button to play right away
-- Right-click a track or card: *Play next* / *Add to queue*
+- Right-click a track, card or playlist: *Play next* / *Add to queue*; album and
+  playlist pages also have an *Add to queue* button
 - Queue button (next to AirPlay): open the queue; drag rows to reorder
 
 ## Project structure

@@ -5,12 +5,15 @@ use crate::ui::app::App;
 use crate::ui::state::View;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, typography as ty};
+use crate::ui::widgets;
 use eframe::egui::{self, CornerRadius, Key, KeyboardShortcut, Modifiers, Rect, RichText, Sense, Ui, Vec2, pos2, vec2};
 
 impl App {
     pub(in crate::ui) fn content(&mut self, ui: &mut Ui, st: &Status) {
         ui.add_space(metrics::TOP_INSET);
         ui.horizontal(|ui| {
+            self.history_buttons(ui);
+            ui.add_space(6.0);
             self.search_field(ui);
             if let Some(e) = &st.error {
                 ui.add_space(12.0);
@@ -27,6 +30,28 @@ impl App {
             View::Artist(artist) => {
                 let artist = artist.as_ref().clone();
                 self.artist_view(ui, st, &artist);
+            }
+        }
+    }
+
+    /// ‹ › next to the search field; dimmed when there's nowhere to go.
+    fn history_buttons(&mut self, ui: &mut Ui) {
+        let ctx = ui.ctx().clone();
+        let p = colors();
+        let shortcut = if cfg!(target_os = "macos") { ("⌘←", "⌘→") } else { ("Alt+←", "Alt+→") };
+        ui.spacing_mut().item_spacing.x = 2.0;
+        for (icon, enabled, hint, back) in [
+            (Icon::ChevronLeft, self.history.can_go_back(), format!("Back ({})", shortcut.0), true),
+            (Icon::ChevronRight, self.history.can_go_forward(), format!("Forward ({})", shortcut.1), false),
+        ] {
+            let color = if enabled { p.dim } else { p.faint.gamma_multiply(0.6) };
+            let resp = widgets::icon_button(ui, icon, 16.0, color);
+            if enabled && resp.on_hover_text(hint).clicked() {
+                if back {
+                    self.go_back(&ctx);
+                } else {
+                    self.go_forward(&ctx);
+                }
             }
         }
     }

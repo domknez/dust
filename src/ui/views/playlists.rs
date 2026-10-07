@@ -2,7 +2,7 @@
 
 use crate::ui::app::App;
 use crate::ui::format::playlist_url;
-use crate::ui::state::Coll;
+use crate::ui::state::{Coll, Source};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
 use eframe::egui::{self, CornerRadius, Rect, Sense, Ui, Vec2, pos2, vec2};
@@ -16,6 +16,7 @@ impl App {
         text_left(ui.painter(), ui.cursor().min + vec2(0.0, 18.0), "Playlists", ty::PAGE_TITLE, p.text, 400.0);
         ui.add_space(52.0);
         let mut open = None;
+        let mut queue = None;
         let card = metrics::GRID_CARD;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             let per_row = (((ui.available_width() + GAP) / (card + GAP)).floor() as usize).max(1);
@@ -39,6 +40,9 @@ impl App {
                             p.dim,
                             card,
                         );
+                        if let Some(mode) = widgets::queue_menu(&resp) {
+                            queue = Some((Source::Playlist(playlist.id), mode));
+                        }
                         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                             open = Some(Coll::from_playlist(playlist));
                         }
@@ -49,6 +53,9 @@ impl App {
         });
         if let Some(coll) = open {
             self.open_collection(&ctx, coll);
+        }
+        if let Some((source, mode)) = queue {
+            self.play_source(&ctx, source, mode);
         }
     }
 }

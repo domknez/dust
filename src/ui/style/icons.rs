@@ -38,6 +38,9 @@ pub enum Icon {
     Close,
     /// Small up/down chevrons: "opens a menu".
     Chevrons,
+    /// Back / forward.
+    ChevronLeft,
+    ChevronRight,
 }
 
 fn p(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -227,6 +230,11 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
         Icon::Close => {
             line(p(r, 0.22, 0.22), p(r, 0.78, 0.78));
             line(p(r, 0.78, 0.22), p(r, 0.22, 0.78));
+        }
+        Icon::ChevronLeft | Icon::ChevronRight => {
+            let flip = |x: f32| if icon == Icon::ChevronRight { 1.0 - x } else { x };
+            let s = Stroke::new(stroke.width * 1.1, color);
+            painter.add(Shape::line(vec![p(r, flip(0.62), 0.2), p(r, flip(0.32), 0.5), p(r, flip(0.62), 0.8)], s));
         }
         Icon::Chevrons => {
             let s = Stroke::new(stroke.width, color);

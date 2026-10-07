@@ -2,6 +2,7 @@
 //! top-level panel layout. Screens are drawn by the modules in `views/`.
 
 use super::covers::Covers;
+use super::history::{History, Visit};
 use super::likes::{self, LikeState};
 use super::now_playing::NowPlaying;
 use super::state::{ArtistView, Coll, PlayMode, Source, View};
@@ -92,6 +93,9 @@ pub struct App {
     _remote_control: Option<dacp::Server>,
     now_playing: Option<NowPlaying>,
     pub(super) updates: Updates,
+    pub(super) history: History,
+    /// When a whole list was last added to the queue (for the button's confirmation).
+    pub(super) queued_flash: Option<std::time::Instant>,
     /// What the saved queue file last reflected (queue snapshot, index, Flow);
     /// None until the saved queue was offered to the player after login, so the
     /// empty startup queue never overwrites it.
@@ -121,6 +125,8 @@ impl App {
             _remote_control: start_remote_control(player.clone()),
             now_playing: NowPlaying::start(cc, player.clone()),
             updates: Updates::new(auto_update),
+            history: History::default(),
+            queued_flash: None,
             queue_saved: None,
             restore_pending: false,
             player,
@@ -229,8 +235,16 @@ impl App {
 
     // ------------------------------------------------------------ navigation
 
-    /// Switch the main area to `view`, loading its content in the background.
+    /// Go to `view`, remembering the current page for Back.
     pub(super) fn open_view(&mut self, ctx: &egui::Context, view: View) {
+        let query = if view == View::Search { self.search.trim().to_string() } else { String::new() };
+        let current = self.current_visit();
+        self.history.leave(current, &Visit { view: view.clone(), query });
+        self.show_view(ctx, view);
+    }
+
+    /// Switch the main area to `view`, loading its content in the background.
+    pub(super) fn show_view(&mut self, ctx: &egui::Context, view: View) {
         let Some(client) = self.client.clone() else { return };
         self.view = view.clone();
         self.list_error = None;
@@ -541,6 +555,9 @@ impl eframe::App for App {
             self.player.send(Cmd::Toggle);
         }
         self.mini_player_shortcut(&ctx);
+        if self.mini_player.is_none() {
+            self.history_input(&ctx);
+        }
         let st = self.player.status();
         self.persist_playback(&st);
         self.save_queue_if_changed(&st);

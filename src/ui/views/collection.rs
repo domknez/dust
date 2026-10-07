@@ -15,6 +15,8 @@ use eframe::egui::{self, Align2, Color32, CornerRadius, Rect, Sense, Ui, UiBuild
 
 /// Search page: title and result count, then card rows, then the table captions.
 const SEARCH_TOP: f32 = 64.0;
+/// How long "Add to queue" reads "Added ✓".
+const QUEUED_FLASH: std::time::Duration = std::time::Duration::from_secs(2);
 const SEARCH_TRACKS_TITLE: f32 = 50.0;
 const CAPTIONS: f32 = 32.0;
 const COLLECTION_HEADER: f32 = 268.0;
@@ -46,6 +48,8 @@ pub(super) struct Picked {
     pub album: Option<Coll>,
     /// A heart was clicked (track row or page header).
     pub like: Option<Likeable>,
+    /// The header's "Add to queue": the whole list.
+    pub queue_all: bool,
     pub cards: CardPicks,
 }
 
@@ -129,6 +133,10 @@ impl App {
         }
         if let Some(what) = picked.like {
             self.toggle_like(&ctx, what);
+        }
+        if picked.queue_all && !self.tracks.is_empty() {
+            self.player.send(Cmd::Enqueue(self.tracks.clone()));
+            self.queued_flash = Some(std::time::Instant::now());
         }
         if let Some((i, mode)) = picked.queue {
             self.player.send(mode.command(vec![self.tracks[i].clone()]));
@@ -241,6 +249,17 @@ impl App {
             }
             if count > 1 && widgets::pill(ui, "Shuffle", Some(Icon::Shuffle), false).clicked() {
                 picked.play = Some((0, true));
+            }
+            if count > 0 {
+                // Briefly confirms, since the queue panel may be closed.
+                let just_added = self.queued_flash.is_some_and(|t| t.elapsed() < QUEUED_FLASH);
+                let (label, icon) = if just_added { ("Added ✓", Icon::Check) } else { ("Add to queue", Icon::Queue) };
+                if widgets::pill(ui, label, Some(icon), false).on_hover_text("Add every track to the end of the queue").clicked() {
+                    picked.queue_all = true;
+                }
+                if just_added {
+                    ui.ctx().request_repaint_after(QUEUED_FLASH);
+                }
             }
             // Albums can be liked from their header.
             if let View::Collection(coll) = &self.view

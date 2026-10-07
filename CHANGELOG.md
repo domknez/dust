@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Back / forward between pages: ‹ › next to the search field, `⌘←` / `⌘→` (`Alt+←` /
+  `Alt+→` on Windows and Linux) and the mouse's side buttons; searches come back
+  with their results
+- Add a whole playlist or album to the queue: *Add to queue* on its page, or
+  right-click your playlists in the sidebar and on the Playlists page
+
 ## 0.8.0 (2026-10-07)
 
 - The queue survives a restart: dust brings it back paused at the same track and

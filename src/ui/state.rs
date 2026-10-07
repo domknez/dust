@@ -4,7 +4,7 @@ use crate::deezer::{self, ArtistRef, Deezer, Item, Playlist, Track};
 use crate::player::Cmd;
 
 /// The page in the main area.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum View {
     Home,
     Search,

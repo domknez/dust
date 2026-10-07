@@ -32,6 +32,8 @@ impl App {
         }
         if widgets::nav_item(ui, Icon::Search, "Search", self.view == View::Search).clicked() {
             // Search opens empty; the query field is in the main area.
+            let current = self.current_visit();
+            self.history.leave(current, &crate::ui::history::Visit { view: View::Search, query: String::new() });
             self.view = View::Search;
             self.tracks.clear();
             self.searched.clear();
@@ -59,6 +61,7 @@ impl App {
         let ctx = ui.ctx().clone();
         let p = colors();
         let mut open = None;
+        let mut queue = None;
         let height = (ui.available_height() - FOOTER - self.update_button_height()).max(0.0);
         egui::ScrollArea::vertical().max_height(height).auto_shrink([false, false]).show(ui, |ui| {
             if self.playlists_task.is_some() {
@@ -77,6 +80,9 @@ impl App {
                 let title_color = if selected { p.text } else { p.dim };
                 text_left(ui.painter(), pos2(x, rect.center().y - 8.0), &playlist.title, ty::ITEM, title_color, width);
                 text_left(ui.painter(), pos2(x, rect.center().y + 9.0), &format!("{} tracks", playlist.count), ty::CAPTION, p.faint, width);
+                if let Some(mode) = widgets::queue_menu(&resp) {
+                    queue = Some((Source::Playlist(playlist.id), mode));
+                }
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                     open = Some(Coll::from_playlist(playlist));
                 }
@@ -84,6 +90,9 @@ impl App {
         });
         if let Some(coll) = open {
             self.open_collection(&ctx, coll);
+        }
+        if let Some((source, mode)) = queue {
+            self.play_source(&ctx, source, mode);
         }
         // Soft fade where the list meets the account card.
         let edge = ui.cursor().min.y;
