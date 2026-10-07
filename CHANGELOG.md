@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.1 (2026-10-07)
+
 - Fixed: buttons that open a web page did nothing, e.g. the update button when dust
   can't install an update itself ("dust x.y.z is out") and "Update failed"
 
