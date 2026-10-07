@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.9.2 (2026-10-07)
+
 - Fixed: losing the network path to an AirPlay speaker (e.g. unplugging Ethernet so the
   Mac falls back to Wi-Fi) froze dust for up to a minute and left the speaker silent.
   dust now notices, reconnects over the current network and carries on where it was
