@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed: dragging (or just holding) the volume slider sent the volume to AirPlay
+  speakers about 60 times a second; now only real changes are sent
+
 ## 0.4.0 (2026-10-06)
 
 - Artist pages: popular tracks, the full discography (albums, singles & EPs, live &

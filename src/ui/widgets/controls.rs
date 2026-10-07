@@ -58,8 +58,13 @@ pub fn thin_slider(ui: &mut Ui, value: &mut f32, width: f32, enabled: bool) -> R
         && (resp.dragged() || resp.clicked())
         && let Some(pointer) = resp.interact_pointer_pos()
     {
-        *value = ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-        resp.mark_changed();
+        let new = ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+        // Only a real change counts; a held, still mouse would otherwise report one
+        // every frame.
+        if new != *value {
+            *value = new;
+            resp.mark_changed();
+        }
     }
     let p = colors();
     let track = Rect::from_center_size(rect.center(), vec2(rect.width(), if active { 5.0 } else { 3.0 }));
