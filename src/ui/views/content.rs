@@ -38,7 +38,7 @@ impl App {
         icons::paint(ui.painter(), icon, Icon::Search, colors().dim);
         let input = Rect::from_min_max(pos2(rect.left() + 38.0, rect.top() + 9.0), pos2(rect.right() - 14.0, rect.bottom() - 7.0));
         let field = egui::TextEdit::singleline(&mut self.search)
-            .hint_text("Search tracks, artists, albums")
+            .hint_text("Search, or paste a Deezer link")
             .frame(egui::Frame::new())
             .text_color(colors().text);
         let edit = ui.put(input, field);

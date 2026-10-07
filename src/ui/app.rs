@@ -8,7 +8,7 @@ use super::style::{self, Appearance, colors, metrics};
 use super::tasks::{self, Task};
 use super::updates::Updates;
 use crate::credentials;
-use crate::deezer::{ArtistPage, Deezer, Error, Item, Playlist, Quality, SearchResults, Section, Track};
+use crate::deezer::{self, ArtistPage, Deezer, Error, Item, Link, Playlist, Quality, SearchResults, Section, Track};
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
 use crate::player::{Cmd, Output, PlayerHandle, Status};
@@ -38,6 +38,8 @@ pub struct App {
     /// Artist, album and playlist cards of the current search.
     pub(super) search_sections: Vec<Section>,
     pub(super) search_task: Task<SearchResults>,
+    /// A Deezer link pasted into search, being resolved.
+    pub(super) link_task: Task<Link>,
     pub(super) list_error: Option<String>,
     pub(super) playlists: Vec<Playlist>,
     pub(super) playlists_task: Task<Vec<Playlist>>,
@@ -117,6 +119,7 @@ impl App {
             tracks_task: None,
             search_sections: Vec::new(),
             search_task: None,
+            link_task: None,
             list_error: None,
             playlists: Vec::new(),
             playlists_task: None,
@@ -217,9 +220,16 @@ impl App {
         // Replacing a task drops its receiver, so a stale result never lands.
         self.tracks_task = None;
         self.search_task = None;
+        self.link_task = None;
         match view {
             View::Home | View::Playlists | View::Artists | View::Artist(_) => {}
             View::Search if self.search.trim().is_empty() => {}
+            // A pasted Deezer link opens what it points at instead of searching.
+            View::Search if deezer::is_link(&self.search) => {
+                let link = self.search.trim().to_string();
+                self.searched.clear();
+                self.link_task = tasks::spawn(ctx, move || client.resolve_link(&link));
+            }
             View::Search => {
                 let query = self.search.trim().to_string();
                 self.searched = query.clone();
@@ -232,7 +242,21 @@ impl App {
 
     /// A track list is on its way.
     pub(super) fn loading_tracks(&self) -> bool {
-        self.tracks_task.is_some() || self.search_task.is_some()
+        self.tracks_task.is_some() || self.search_task.is_some() || self.link_task.is_some()
+    }
+
+    fn open_link(&mut self, ctx: &egui::Context, link: Link) {
+        self.search.clear();
+        match link {
+            Link::Album { id, title, artist, picture } => {
+                let picture = picture.map(|md5| ("cover".to_string(), md5));
+                self.open_collection(ctx, Coll { source: Source::Album(id), kind: "ALBUM", title, subtitle: artist, picture });
+            }
+            Link::Artist { id } => self.open_artist(ctx, ArtistView { id, name: String::new(), picture: None }),
+            Link::Playlist { id, title, picture } => {
+                self.open_collection(ctx, Coll { source: Source::Playlist(id), kind: "PLAYLIST", title, subtitle: String::new(), picture });
+            }
+        }
     }
 
     /// Open a collection; artists get their full page instead of a track list.
@@ -313,6 +337,11 @@ impl App {
         }
         match tasks::poll(&mut self.tracks_task) {
             Some(Ok(t)) => self.tracks = t,
+            Some(Err(e)) => self.on_load_error(e),
+            None => {}
+        }
+        match tasks::poll(&mut self.link_task) {
+            Some(Ok(link)) => self.open_link(ctx, link),
             Some(Err(e)) => self.on_load_error(e),
             None => {}
         }
