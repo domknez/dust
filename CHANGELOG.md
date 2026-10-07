@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.1 (2026-10-07)
+
 - Fixed: dragging (or just holding) the volume slider sent the volume to AirPlay
   speakers about 60 times a second; now only real changes are sent
 
