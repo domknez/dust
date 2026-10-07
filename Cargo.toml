@@ -9,7 +9,7 @@ repository = "https://github.com/domknez/dust"
 [dependencies]
 blowfish = "0.10"
 cpal = "0.18"
-eframe = { version = "0.36", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"] }
+eframe = { version = "0.36", default-features = false, features = ["glow", "default_fonts", "links", "wayland", "x11"] }
 fastrand = "2"
 keyring-core = "1"
 md-5 = "0.11"
