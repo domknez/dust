@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.1 (2026-10-07)
+
 - Fixed: the heart on a track row flickered while the pointer was over it; queue rows
   also stay highlighted over their artist names
 
