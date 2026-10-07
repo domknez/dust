@@ -16,6 +16,8 @@ pub struct Track {
     /// The same artists, each linkable; empty when Deezer didn't say.
     pub artists: Vec<ArtistRef>,
     pub album: String,
+    /// Deezer album id, so the album name and cover can open it; empty if unknown.
+    pub album_id: String,
     pub duration: u32,
     pub token: String,
     /// Album cover id (md5) on Deezer's image CDN.

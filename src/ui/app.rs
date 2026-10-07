@@ -65,6 +65,8 @@ pub struct App {
     pub(super) mini_player: Option<egui::Vec2>,
     /// An artist name was clicked somewhere this frame; opened after drawing.
     pub(super) pending_artist: Option<crate::deezer::ArtistRef>,
+    /// Same for an album (player bar or mini player title / cover).
+    pub(super) pending_album: Option<Coll>,
 
     // Settings
     pub(super) quality: Quality,
@@ -137,6 +139,7 @@ impl App {
             unmuted_volume: volume,
             mini_player: None,
             pending_artist: None,
+            pending_album: None,
             quality,
             appearance,
             report_listens,
@@ -478,6 +481,10 @@ impl eframe::App for App {
                 self.toggle_mini_player(&ctx);
                 self.open_artist(&ctx, ArtistView::from_ref(&artist));
             }
+            if let Some(album) = self.pending_album.take() {
+                self.toggle_mini_player(&ctx);
+                self.open_collection(&ctx, album);
+            }
             return;
         }
         egui::Panel::bottom("player")
@@ -506,6 +513,9 @@ impl eframe::App for App {
             .show(ui, |ui| self.content(ui, &st));
         if let Some(artist) = self.pending_artist.take() {
             self.open_artist(&ctx, ArtistView::from_ref(&artist));
+        }
+        if let Some(album) = self.pending_album.take() {
+            self.open_collection(&ctx, album);
         }
     }
 }

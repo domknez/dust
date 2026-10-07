@@ -190,6 +190,7 @@ mod tests {
             artist: String::new(),
             artists: Vec::new(),
             album: String::new(),
+            album_id: String::new(),
             duration: 1,
             token: String::new(),
             cover: String::new(),

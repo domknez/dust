@@ -87,6 +87,9 @@ impl App {
             };
             self.open_collection(&ctx, coll);
         }
+        if let Some(album) = picked.album {
+            self.open_collection(&ctx, album);
+        }
         if let Some(other) = picked.artist {
             self.open_artist(&ctx, ArtistView::from_ref(&other));
         }

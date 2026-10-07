@@ -5,6 +5,7 @@ use super::mini_player::MINI_PLAYER_HINT;
 use crate::player::{Cmd, State, Status};
 use crate::ui::app::App;
 use crate::ui::format::{cover_url, mmss};
+use crate::ui::state::Coll;
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
@@ -58,7 +59,32 @@ impl App {
             widgets::cover(ui, &mut self.covers, cover_url(track, metrics::NOW_PLAYING_PX).as_deref(), art, radius::THUMB);
             let x = art.right() + 14.0;
             let width = area.right() - x;
-            text_left(ui.painter(), pos2(x, area.center().y - 9.0), &track.title, ty::TITLE.strong(), colors().text, width);
+            // Cover and title open the album.
+            let album = Coll::album_of(track);
+            let cover = ui.interact(art, ui.id().with("now-playing-cover"), egui::Sense::click());
+            let title_pos = pos2(x, area.center().y - 9.0);
+            let title_clicked = match &album {
+                Some(_) => {
+                    widgets::text_link(
+                        ui,
+                        "now-playing-title",
+                        title_pos,
+                        &track.title,
+                        ty::TITLE.strong(),
+                        colors().text,
+                        colors().text,
+                        width,
+                    )
+                    .0
+                }
+                None => {
+                    text_left(ui.painter(), title_pos, &track.title, ty::TITLE.strong(), colors().text, width);
+                    false
+                }
+            };
+            if album.is_some() && (title_clicked || cover.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()) {
+                self.pending_album = album;
+            }
             let pos = pos2(x, area.center().y + 11.0);
             if let (Some(artist), _) =
                 widgets::artist_links(ui, pos, &track.artists, &track.artist, ty::SECONDARY, colors().dim, colors().text, width)

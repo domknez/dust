@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Click the track title or cover in the player bar (or the title in the mini player) to
+  open its album; album names in track lists open the album too
+
 ## 0.5.0 (2026-10-07)
 
 - Paste a Deezer link into search to open it: albums, artists, playlists, tracks (opens

@@ -37,6 +37,7 @@ mod tests {
             artist: String::new(),
             artists: Vec::new(),
             album: String::new(),
+            album_id: String::new(),
             duration: d,
             token: String::new(),
             cover: String::new(),
