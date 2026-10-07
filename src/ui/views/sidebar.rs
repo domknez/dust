@@ -43,6 +43,9 @@ impl App {
         if widgets::nav_item(ui, Icon::Grid, "Playlists", self.view == View::Playlists).clicked() {
             go = Some(View::Playlists);
         }
+        if widgets::nav_item(ui, Icon::Disc, "Albums", self.view == View::Albums).clicked() {
+            go = Some(View::Albums);
+        }
         if widgets::nav_item(ui, Icon::Person, "Artists", self.view == View::Artists).clicked() {
             go = Some(View::Artists);
         }

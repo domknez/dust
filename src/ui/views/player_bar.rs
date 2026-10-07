@@ -2,6 +2,7 @@
 //! queue, output and volume on the right.
 
 use super::mini_player::MINI_PLAYER_HINT;
+use crate::deezer::Likeable;
 use crate::player::{Cmd, State, Status};
 use crate::ui::app::App;
 use crate::ui::format::{cover_url, mmss};
@@ -58,7 +59,14 @@ impl App {
             let art = Rect::from_min_size(pos2(area.left(), area.center().y - art_size / 2.0), Vec2::splat(art_size));
             widgets::cover(ui, &mut self.covers, cover_url(track, metrics::NOW_PLAYING_PX).as_deref(), art, radius::THUMB);
             let x = art.right() + 14.0;
-            let width = area.right() - x;
+            // Heart for the playing track at the end of the column.
+            let heart = Rect::from_center_size(pos2(area.right() - 16.0, area.center().y), Vec2::splat(30.0));
+            let what = Likeable::Track(track.id);
+            let liked = self.likes.likes.contains(&what);
+            if ui.scope_builder(UiBuilder::new().max_rect(heart), |ui| widgets::heart_button(ui, liked, 16.0)).inner.clicked() {
+                self.pending_like = Some(what);
+            }
+            let width = heart.left() - 8.0 - x;
             // Cover and title open the album.
             let album = Coll::album_of(track);
             let cover = ui.interact(art, ui.id().with("now-playing-cover"), egui::Sense::click());

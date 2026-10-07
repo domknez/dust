@@ -15,6 +15,20 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, size: f32, color: Color32) -> Respon
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// Heart that likes / unlikes: filled in the accent colour when liked.
+pub fn heart_button(ui: &mut Ui, liked: bool, size: f32) -> Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size + 12.0), Sense::click());
+    let p = colors();
+    let (icon, color) = match (liked, resp.hovered()) {
+        (true, _) => (Icon::Heart, p.accent),
+        (false, true) => (Icon::HeartOutline, p.text),
+        (false, false) => (Icon::HeartOutline, p.dim),
+    };
+    icons::paint(ui.painter(), Rect::from_center_size(rect.center(), Vec2::splat(size)), icon, color);
+    let hint = if liked { "Remove from your likes" } else { "Like" };
+    resp.on_hover_text(hint).on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 /// Round play/pause button in the text colour.
 pub fn play_circle(ui: &mut Ui, playing: bool, size: f32) -> Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());

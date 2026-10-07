@@ -2,13 +2,14 @@
 //! top-level panel layout. Screens are drawn by the modules in `views/`.
 
 use super::covers::Covers;
+use super::likes::{self, LikeState};
 use super::now_playing::NowPlaying;
 use super::state::{ArtistView, Coll, PlayMode, Source, View};
 use super::style::{self, Appearance, colors, metrics};
 use super::tasks::{self, Task};
 use super::updates::Updates;
 use crate::credentials;
-use crate::deezer::{self, ArtistPage, Deezer, Error, Item, Link, Playlist, Quality, SearchResults, Section, Track};
+use crate::deezer::{self, ArtistPage, Deezer, Error, Item, Likes, Link, Playlist, Quality, SearchResults, Section, Track};
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
 use crate::player::{Cmd, Output, PlayerHandle, Status};
@@ -50,6 +51,11 @@ pub struct App {
     /// Followed artists, as cards (for `View::Artists`).
     pub(super) followed: Vec<Item>,
     pub(super) followed_task: Task<Vec<Item>>,
+    /// Liked albums, as cards (for `View::Albums`).
+    pub(super) favorite_albums: Vec<Item>,
+    pub(super) favorite_albums_task: Task<Vec<Item>>,
+    pub(super) likes: LikeState,
+    likes_task: Task<Likes>,
     pub(super) home_task: Task<Vec<Section>>,
     /// Tracks fetched to play straight from a home card.
     pub(super) quick_play: Task<(Vec<Track>, PlayMode)>,
@@ -67,6 +73,8 @@ pub struct App {
     pub(super) pending_artist: Option<crate::deezer::ArtistRef>,
     /// Same for an album (player bar or mini player title / cover).
     pub(super) pending_album: Option<Coll>,
+    /// A heart outside the content area (player bar) was clicked.
+    pub(super) pending_like: Option<deezer::Likeable>,
 
     // Settings
     pub(super) quality: Quality,
@@ -130,6 +138,10 @@ impl App {
             artist_task: None,
             followed: Vec::new(),
             followed_task: None,
+            favorite_albums: Vec::new(),
+            favorite_albums_task: None,
+            likes: LikeState::default(),
+            likes_task: None,
             home_task: None,
             quick_play: None,
             show_queue: false,
@@ -140,6 +152,7 @@ impl App {
             mini_player: None,
             pending_artist: None,
             pending_album: None,
+            pending_like: None,
             quality,
             appearance,
             report_listens,
@@ -176,6 +189,9 @@ impl App {
         self.tracks.clear();
         self.playlists.clear();
         self.home.clear();
+        self.followed.clear();
+        self.favorite_albums.clear();
+        self.likes = LikeState::default();
     }
 
     fn on_logged_in(&mut self, ctx: &egui::Context, client: Deezer) {
@@ -188,6 +204,8 @@ impl App {
         self.player.send(Cmd::ReportListens(self.report_listens));
         let c = client.clone();
         self.playlists_task = tasks::spawn(ctx, move || c.playlists());
+        let c = client.clone();
+        self.likes_task = tasks::spawn(ctx, move || likes::load(&c));
         self.client = Some(client);
         self.open_view(ctx, View::Home);
     }
@@ -203,6 +221,12 @@ impl App {
             // Cached; the refresh button clears it to force a reload.
             if self.home.is_empty() && self.home_task.is_none() {
                 self.home_task = tasks::spawn(ctx, move || client.home());
+            }
+            return;
+        }
+        if view == View::Albums {
+            if self.favorite_albums.is_empty() && self.favorite_albums_task.is_none() {
+                self.favorite_albums_task = tasks::spawn(ctx, move || client.favorite_albums());
             }
             return;
         }
@@ -225,7 +249,7 @@ impl App {
         self.search_task = None;
         self.link_task = None;
         match view {
-            View::Home | View::Playlists | View::Artists | View::Artist(_) => {}
+            View::Home | View::Playlists | View::Artists | View::Albums | View::Artist(_) => {}
             View::Search if self.search.trim().is_empty() => {}
             // A pasted Deezer link opens what it points at instead of searching.
             View::Search if deezer::is_link(&self.search) => {
@@ -365,6 +389,17 @@ impl App {
             Some(Err(e)) => self.on_load_error(e),
             None => {}
         }
+        match tasks::poll(&mut self.likes_task) {
+            Some(Ok(likes)) => self.likes.likes = likes,
+            Some(Err(e)) => log_warn!("loading likes: {e}"),
+            None => {}
+        }
+        match tasks::poll(&mut self.favorite_albums_task) {
+            Some(Ok(albums)) => self.favorite_albums = albums,
+            Some(Err(e)) => self.on_load_error(e),
+            None => {}
+        }
+        self.poll_likes();
         match tasks::poll(&mut self.followed_task) {
             Some(Ok(artists)) => self.followed = artists,
             Some(Err(e)) => self.on_load_error(e),
@@ -516,6 +551,9 @@ impl eframe::App for App {
         }
         if let Some(album) = self.pending_album.take() {
             self.open_collection(&ctx, album);
+        }
+        if let Some(what) = self.pending_like.take() {
+            self.toggle_like(&ctx, what);
         }
     }
 }

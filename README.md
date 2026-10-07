@@ -36,7 +36,9 @@ including cover art.
   (Chill, Focus, Workout, Party, ...), daily mixes, recently played, new releases,
   artists and albums picked for you
 - **Endless Flow:** keeps going like on Deezer, fetching more as you listen
-- **Music:** Loved tracks, playlists (list and grid), albums, the artists you follow
+- **Music:** Loved tracks, playlists (list and grid), your albums, the artists you follow
+- **Likes:** heart tracks (in any list or the player bar) and albums, follow artists;
+  synced with your Deezer account
 - **Artist pages:** popular tracks and the full discography (albums, singles & EPs,
   live & compilations), playlists featuring them and related artists; click any
   artist name to get there

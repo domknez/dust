@@ -17,6 +17,10 @@ pub enum Icon {
     Search,
     Home,
     Heart,
+    /// Heart outline: "not liked yet".
+    HeartOutline,
+    /// A record: albums.
+    Disc,
     Grid,
     /// Head and shoulders: artists.
     Person,
@@ -144,6 +148,23 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             painter.circle_filled(p(r, 0.33, 0.38), rr, color);
             painter.circle_filled(p(r, 0.67, 0.38), rr, color);
             poly(vec![p(r, 0.15, 0.46), p(r, 0.85, 0.46), p(r, 0.5, 0.86)]);
+        }
+        Icon::HeartOutline => {
+            // The classic heart curve, scaled into the icon square.
+            let pts: Vec<Pos2> = (0..48)
+                .map(|i| {
+                    let t = i as f32 / 48.0 * 2.0 * PI;
+                    let x = 16.0 * t.sin().powi(3);
+                    let y = 13.0 * t.cos() - 5.0 * (2.0 * t).cos() - 2.0 * (3.0 * t).cos() - (4.0 * t).cos();
+                    p(r, 0.5 + x / 36.0, 0.47 - y / 36.0)
+                })
+                .collect();
+            painter.add(Shape::closed_line(pts, Stroke::new((w * 0.08).max(1.3), color)));
+        }
+        Icon::Disc => {
+            let c = p(r, 0.5, 0.5);
+            painter.circle_stroke(c, w * 0.38, Stroke::new((w * 0.08).max(1.3), color));
+            painter.circle_filled(c, w * 0.11, color);
         }
         Icon::Grid => {
             for (x, y) in [(0.14, 0.14), (0.54, 0.14), (0.14, 0.54), (0.54, 0.54)] {

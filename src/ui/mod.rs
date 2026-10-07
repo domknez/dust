@@ -12,6 +12,7 @@
 mod app;
 mod covers;
 mod format;
+mod likes;
 mod now_playing;
 mod state;
 mod style;

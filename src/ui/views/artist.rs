@@ -4,7 +4,7 @@
 
 use super::collection::{Columns, Picked, track_row};
 use super::home::card_row;
-use crate::deezer::{Track, image_url, thousands};
+use crate::deezer::{Likeable, Track, image_url, thousands};
 use crate::player::{Cmd, State, Status};
 use crate::ui::app::App;
 use crate::ui::state::{ArtistView, Coll, Source};
@@ -44,7 +44,8 @@ impl App {
                 let columns = Columns::new(ui.cursor().left(), width);
                 for (i, track) in page.top.iter().take(POPULAR).enumerate() {
                     let (rect, _) = ui.allocate_exact_size(vec2(width, metrics::TRACK_ROW), Sense::hover());
-                    track_row(ui, &mut self.covers, track, i, rect, &columns, now, &mut picked);
+                    let liked = self.likes.likes.tracks.contains(&track.id);
+                    track_row(ui, &mut self.covers, track, i, rect, &columns, now, liked, &mut picked);
                 }
                 if page.top.len() > POPULAR {
                     ui.add_space(6.0);
@@ -90,6 +91,9 @@ impl App {
         if let Some(album) = picked.album {
             self.open_collection(&ctx, album);
         }
+        if let Some(what) = picked.like {
+            self.toggle_like(&ctx, what);
+        }
         if let Some(other) = picked.artist {
             self.open_artist(&ctx, ArtistView::from_ref(&other));
         }
@@ -121,6 +125,18 @@ impl App {
             }
             if has_top && widgets::pill(ui, "Shuffle", Some(Icon::Shuffle), false).clicked() {
                 picked.play = Some((0, true));
+            }
+            let what = Likeable::Artist(artist.id.clone());
+            let following = self.likes.likes.contains(&what);
+            if widgets::pill(
+                ui,
+                if following { "Following" } else { "Follow" },
+                Some(if following { Icon::Heart } else { Icon::HeartOutline }),
+                false,
+            )
+            .clicked()
+            {
+                picked.like = Some(what);
             }
         });
     }

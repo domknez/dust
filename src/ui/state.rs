@@ -12,6 +12,8 @@ pub enum View {
     Playlists,
     /// Artists the account follows.
     Artists,
+    /// Albums the account has liked.
+    Albums,
     Collection(Box<Coll>),
     Artist(Box<ArtistView>),
 }

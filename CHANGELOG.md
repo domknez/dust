@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Likes: heart tracks in any track list or in the player bar, like albums from their
+  page, follow artists from theirs; synced with your Deezer account
+- Albums in the sidebar: the albums you like
+
 ## 0.6.0 (2026-10-07)
 
 - Click the track title or cover in the player bar (or the title in the mini player) to

@@ -1,7 +1,7 @@
 //! Track lists: search results, Loved tracks and opened collections. A header
 //! (artwork, title, Play/Shuffle) scrolls with a virtualised track table.
 
-use crate::deezer::{ArtistRef, Track, image_url};
+use crate::deezer::{ArtistRef, Likeable, Track, image_url};
 use crate::player::{Cmd, State, Status};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
@@ -44,12 +44,15 @@ pub(super) struct Picked {
     pub artist: Option<ArtistRef>,
     /// An album name was clicked.
     pub album: Option<Coll>,
+    /// A heart was clicked (track row or page header).
+    pub like: Option<Likeable>,
     pub cards: CardPicks,
 }
 
 /// X positions of the table columns.
 pub(super) struct Columns {
     index: f32,
+    heart: f32,
     art: f32,
     title: f32,
     album: Option<f32>,
@@ -60,6 +63,7 @@ impl Columns {
     pub(super) fn new(left: f32, width: f32) -> Self {
         Columns {
             index: left + 8.0,
+            heart: left + width - 78.0,
             art: left + 48.0,
             title: left + 104.0,
             album: (width > ALBUM_COLUMN_MIN_WIDTH).then_some(left + width * 0.58),
@@ -107,7 +111,8 @@ impl App {
             for i in first..last {
                 let rect =
                     Rect::from_min_size(origin + vec2(0.0, header_height + i as f32 * metrics::TRACK_ROW), vec2(width, metrics::TRACK_ROW));
-                track_row(ui, &mut self.covers, &self.tracks[i], i, rect, &columns, (playing_id, playing), &mut picked);
+                let liked = self.likes.likes.tracks.contains(&self.tracks[i].id);
+                track_row(ui, &mut self.covers, &self.tracks[i], i, rect, &columns, (playing_id, playing), liked, &mut picked);
             }
         });
 
@@ -121,6 +126,9 @@ impl App {
         }
         if let Some(album) = picked.album {
             self.open_collection(&ctx, album);
+        }
+        if let Some(what) = picked.like {
+            self.toggle_like(&ctx, what);
         }
         if let Some((i, mode)) = picked.queue {
             self.player.send(mode.command(vec![self.tracks[i].clone()]));
@@ -147,7 +155,7 @@ impl App {
                 tile: None,
                 round: coll.round(),
             },
-            View::Home | View::Search | View::Playlists | View::Artists | View::Artist(_) => Header::default(),
+            View::Home | View::Search | View::Playlists | View::Artists | View::Albums | View::Artist(_) => Header::default(),
         }
     }
 
@@ -234,6 +242,15 @@ impl App {
             if count > 1 && widgets::pill(ui, "Shuffle", Some(Icon::Shuffle), false).clicked() {
                 picked.play = Some((0, true));
             }
+            // Albums can be liked from their header.
+            if let View::Collection(coll) = &self.view
+                && let Source::Album(id) = &coll.source
+            {
+                let what = Likeable::Album(id.clone());
+                if widgets::heart_button(ui, self.likes.likes.contains(&what), 20.0).clicked() {
+                    picked.like = Some(what);
+                }
+            }
         });
     }
 }
@@ -249,6 +266,7 @@ pub(super) fn track_row(
     rect: Rect,
     columns: &Columns,
     (playing_id, playing): (Option<u64>, bool),
+    liked: bool,
     picked: &mut Picked,
 ) {
     let p = colors();
@@ -291,6 +309,14 @@ pub(super) fn track_row(
         }
     }
     painter.text(pos2(columns.time, cy), Align2::RIGHT_CENTER, mmss(track.duration as f64), ty::BODY.font(), p.dim);
+    // Heart: always shown when liked, on hover otherwise.
+    if liked || hovered {
+        let heart = Rect::from_center_size(pos2(columns.heart, cy), Vec2::splat(28.0));
+        let resp = ui.scope_builder(UiBuilder::new().max_rect(heart), |ui| widgets::heart_button(ui, liked, 15.0)).inner;
+        if resp.clicked() {
+            picked.like = Some(Likeable::Track(track.id));
+        }
+    }
 
     // Double-click a row, or click its number, to play from there.
     let clicked_number = resp.clicked() && resp.interact_pointer_pos().is_some_and(|pt| pt.x < columns.art);

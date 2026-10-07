@@ -23,6 +23,7 @@ mod prefetch;
 mod session;
 mod streaming;
 
+pub use catalog::{Likeable, Likes};
 pub use client::Deezer;
 pub use links::{Link, is_link};
 pub use models::{ArtistPage, ArtistRef, Format, Item, Listen, Playlist, Quality, SearchResults, Section, Track, image_url};
