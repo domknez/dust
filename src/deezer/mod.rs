@@ -8,12 +8,14 @@
 //! - [`models`] / [`parse`]: data types and their construction from API JSON
 //! - [`crypto`]: the `BF_CBC_STRIPE` stream cipher
 //! - [`prefetch`]: stall-proof network reads for streams
+//! - [`links`]: Deezer links pasted into search
 //! - [`session`]: cookies, CSRF token and the raw gw-light transport
 
 mod catalog;
 mod client;
 mod crypto;
 mod error;
+mod links;
 mod listens;
 mod models;
 mod parse;
@@ -22,6 +24,7 @@ mod session;
 mod streaming;
 
 pub use client::Deezer;
+pub use links::{Link, is_link};
 pub use models::{ArtistPage, ArtistRef, Format, Item, Listen, Playlist, Quality, SearchResults, Section, Track, image_url};
 pub use parse::thousands;
 pub use streaming::StreamSource;

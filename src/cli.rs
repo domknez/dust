@@ -8,6 +8,7 @@
 //! - `--debug-search <query>`      search results: track count and card sections
 //! - `--debug-api <method> [json]` raw gw-light reply, for exploring the API
 //! - `--debug-artist <id>`         an artist page: top tracks and card sections
+//! - `--debug-link <url>`          what a pasted Deezer link resolves to
 //! - `--debug-tracks <kind> <id>`  what a home item plays (flow|mix|album|artist|playlist)
 //! - `--debug-stream <playlist> [n]`  stream resolution per track, incl. fallbacks
 //! - `--debug-decode <playlist> [quality] [start s]`  decrypt and decode 10 s of the first track (no sound)
@@ -29,6 +30,7 @@ pub enum Command {
     DebugHome,
     DebugSearch(String),
     DebugArtist(String),
+    DebugLink(String),
     DebugApi {
         method: String,
         body: String,
@@ -62,6 +64,7 @@ impl Command {
             "--debug-api" => {
                 Command::DebugApi { method: args.next().unwrap_or_default(), body: args.next().unwrap_or_else(|| "{}".into()) }
             }
+            "--debug-link" => Command::DebugLink(args.next().unwrap_or_default()),
             "--debug-artist" => Command::DebugArtist(args.next().unwrap_or_default()),
             "--debug-search" => Command::DebugSearch(args.collect::<Vec<_>>().join(" ")),
             "--debug-tracks" => Command::DebugTracks { kind: args.next().unwrap_or_default(), id: args.next().unwrap_or_default() },
@@ -90,6 +93,7 @@ impl Command {
             Command::DebugHome => debug_home(&logged_in()),
             Command::DebugSearch(query) => debug_search(&logged_in(), &query),
             Command::DebugArtist(id) => debug_artist(&logged_in(), &id),
+            Command::DebugLink(url) => println!("{:?}", logged_in().resolve_link(&url)),
             Command::DebugApi { method, body } => debug_api(&logged_in(), &method, &body),
             Command::DebugTracks { kind, id } => debug_tracks(&logged_in(), &kind, &id),
             Command::DebugStream { playlist, count } => debug_stream(&logged_in(), playlist, count),

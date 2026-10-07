@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Paste a Deezer link into search to open it: albums, artists, playlists, tracks (opens
+  their album) and share links. Handy for brand-new releases Deezer's search doesn't
+  list yet
+
 ## 0.4.1 (2026-10-07)
 
 - Fixed: dragging (or just holding) the volume slider sent the volume to AirPlay

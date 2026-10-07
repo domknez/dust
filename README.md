@@ -40,7 +40,8 @@ including cover art.
 - **Artist pages:** popular tracks and the full discography (albums, singles & EPs,
   live & compilations), playlists featuring them and related artists; click any
   artist name to get there
-- **Search:** tracks, artists, albums and playlists, with your own playlists first
+- **Search:** tracks, artists, albums and playlists, with your own playlists first; or
+  paste a Deezer link (album, artist, playlist, track, or a share link) to open it
 - **Plays more of the catalogue:** when a track isn't licensed in your region, dust uses
   the alternative version Deezer offers, like the web app does
 - **Quality:** MP3 128 / MP3 320 / FLAC (FLAC needs a HiFi plan), streamed and decoded
@@ -195,6 +196,7 @@ opening the window:
 ```sh
 dust --debug-home                          # home page sections
 dust --debug-search "daft punk"            # search results
+dust --debug-link <deezer url>             # what a pasted link opens
 dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, silently
 ```
 
