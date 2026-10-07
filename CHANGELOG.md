@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The search field shows when it's active: accent ring, lighter background and accent
+  icon while typing, a faint ring on hover; clicking anywhere on it focuses it
+
 ## 0.7.0 (2026-10-07)
 
 - Likes: heart tracks in any track list or in the player bar, like albums from their

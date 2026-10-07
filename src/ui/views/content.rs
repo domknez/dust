@@ -32,17 +32,38 @@ impl App {
     }
 
     fn search_field(&mut self, ui: &mut Ui) {
+        let p = colors();
         let [width, height] = metrics::SEARCH_FIELD;
-        let (rect, _) = ui.allocate_exact_size(vec2(width.min(ui.available_width()), height), Sense::hover());
-        ui.painter().rect_filled(rect, CornerRadius::same((height / 2.0) as u8), colors().surface);
+        let id = ui.id().with("search-field");
+        let (rect, pill) = ui.allocate_exact_size(vec2(width.min(ui.available_width()), height), Sense::click());
+        // Clicking anywhere on the pill (icon, padding) puts the cursor in the field.
+        if pill.clicked() {
+            ui.memory_mut(|m| m.request_focus(id));
+        }
+        let focused = ui.memory(|m| m.has_focus(id));
+        let radius = CornerRadius::same((height / 2.0) as u8);
+        ui.painter().rect_filled(rect, radius, if focused { p.raised } else { p.surface });
+        // Accent ring while typing, a faint one on hover.
+        let ring = match (focused, pill.hovered()) {
+            (true, _) => Some(egui::Stroke::new(1.5, p.accent)),
+            (false, true) => Some(egui::Stroke::new(1.0, p.line)),
+            (false, false) => None,
+        };
+        if let Some(stroke) = ring {
+            ui.painter().rect_stroke(rect, radius, stroke, egui::StrokeKind::Inside);
+        }
         let icon = Rect::from_center_size(pos2(rect.left() + 20.0, rect.center().y), Vec2::splat(15.0));
-        icons::paint(ui.painter(), icon, Icon::Search, colors().dim);
+        icons::paint(ui.painter(), icon, Icon::Search, if focused { p.accent } else { p.dim });
         let input = Rect::from_min_max(pos2(rect.left() + 38.0, rect.top() + 9.0), pos2(rect.right() - 14.0, rect.bottom() - 7.0));
         let field = egui::TextEdit::singleline(&mut self.search)
+            .id(id)
             .hint_text("Search, or paste a Deezer link")
             .frame(egui::Frame::new())
-            .text_color(colors().text);
+            .text_color(p.text);
         let edit = ui.put(input, field);
+        if pill.hovered() || edit.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+        }
         if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::F))) {
             edit.request_focus();
         }
