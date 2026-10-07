@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.0 (2026-10-07)
+
 - Tracks that can't be played yet (e.g. an album's unreleased songs) are greyed out,
   with the date they become available on hover; Play, Shuffle and Add to queue skip
   them
