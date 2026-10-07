@@ -149,11 +149,10 @@ The update check asks GitHub's public releases API for the latest version at sta
 and every 6 hours; nothing about you or your listening is sent. Turn it off with
 **Check automatically** and dust contacts only Deezer and your speakers.
 
-The queue is saved in `queue.json` next to it and comes back, paused, when dust starts.
-
 Choices are saved in `settings.conf` in your config directory
 (`~/Library/Application Support/dust` on macOS, `%APPDATA%\dust` on Windows,
 `~/.config/dust` on Linux).
+The queue is saved next to it, in `queue.json`, and comes back paused when dust starts.
 
 ## Last.fm scrobbling and listening history
 
