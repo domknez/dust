@@ -29,6 +29,8 @@ pub struct AirPlaySink {
     shared: Arc<Shared>,
     producer: rtrb::Producer<i16>,
     threads: Vec<JoinHandle<()>>,
+    /// Last volume sent, in tenths of a dB, so repeats aren't sent again.
+    volume_sent: Option<i32>,
 }
 
 impl AirPlaySink {
@@ -90,7 +92,7 @@ impl AirPlaySink {
         let sh = shared.clone();
         threads.push(transport::spawn("airplay-audio", move || transport::audio_loop(out, consumer, &sh)));
 
-        let mut sink = Self { rtsp, _events: events, _ptp: ptp, shared, producer, threads };
+        let mut sink = Self { rtsp, _events: events, _ptp: ptp, shared, producer, threads, volume_sent: None };
         sink.set_volume(volume);
         Ok(sink)
     }
@@ -167,6 +169,11 @@ impl Sink for AirPlaySink {
     fn set_volume(&mut self, volume: f32) {
         // AirPlay volume: -30.0 (quiet) ..= 0.0 dB, -144 = mute.
         let db = if volume <= 0.001 { -144.0 } else { -30.0 + 30.0 * volume.clamp(0.0, 1.0) };
+        let tenths = (db * 10.0_f32).round() as i32;
+        if self.volume_sent == Some(tenths) {
+            return;
+        }
+        self.volume_sent = Some(tenths);
         log_debug!("airplay: volume {volume:.3} -> {db:.1} dB");
         let body = format!("volume: {db:.6}\r\n");
         let _ = self.rtsp.request("SET_PARAMETER", None, &[], Some(("text/parameters", body.as_bytes())));
