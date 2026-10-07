@@ -78,11 +78,13 @@ impl App {
     fn upcoming_row(&mut self, ui: &mut Ui, i: usize, track: &crate::deezer::Track, picked: &mut Picked) {
         let p = colors();
         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::QUEUE_ROW), Sense::click_and_drag());
-        if resp.hovered() || self.queue_drag == Some(i) {
+        // Pointer anywhere in the row, also over its artist links.
+        let hovered = ui.rect_contains_pointer(rect);
+        if hovered || self.queue_drag == Some(i) {
             ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.hover);
         }
         // A remove button replaces the duration on hover.
-        let show_remove = resp.hovered() && self.queue_drag.is_none();
+        let show_remove = hovered && self.queue_drag.is_none();
         if let Some(artist) = widgets::queue_row(ui, &mut self.covers, rect, track, false, !show_remove) {
             self.pending_artist = Some(artist);
         }

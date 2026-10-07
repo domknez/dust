@@ -293,7 +293,9 @@ pub(super) fn track_row(
     let p = colors();
     let resp = ui.interact(rect, ui.id().with(("row", i)), Sense::click());
     let current = playing_id == Some(track.id);
-    let hovered = resp.hovered();
+    // Pointer anywhere in the row, including over its own heart and links: asking
+    // `hovered()` would flip to false over the heart and make it flicker.
+    let hovered = ui.rect_contains_pointer(rect);
     let available = track.available;
     let resp = if available { resp } else { resp.on_hover_text(unavailable_note(track)) };
     if hovered && available {

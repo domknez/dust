@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed: the heart on a track row flickered while the pointer was over it; queue rows
+  also stay highlighted over their artist names
+
 ## 0.10.0 (2026-10-07)
 
 - Tracks that can't be played yet (e.g. an album's unreleased songs) are greyed out,
