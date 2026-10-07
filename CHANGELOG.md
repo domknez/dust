@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0 (2026-10-07)
+
 - Paste a Deezer link into search to open it: albums, artists, playlists, tracks (opens
   their album) and share links. Handy for brand-new releases Deezer's search doesn't
   list yet

@@ -1,6 +1,6 @@
 [package]
 name = "dust"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2024"
 description = "Free and open source, ultra-lightweight Deezer desktop client with AirPlay 2 output"
 license = "MIT"
