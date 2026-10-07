@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.9.0 (2026-10-07)
+
 - Back / forward between pages: ‹ › next to the search field, `⌘←` / `⌘→` (`Alt+←` /
   `Alt+→` on Windows and Linux) and the mouse's side buttons; searches come back
   with their results
