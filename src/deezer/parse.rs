@@ -44,6 +44,11 @@ pub fn track(v: &Value) -> Option<Track> {
     };
     let fallback =
         Some((number(&v["FALLBACK"]["SNG_ID"]), text(&v["FALLBACK"]["TRACK_TOKEN"]))).filter(|(id, tok)| *id != 0 && !tok.is_empty());
+    // Not streamable on a subscription yet (e.g. an album's unreleased tracks),
+    // unless Deezer offers another version.
+    let rights = &v["RIGHTS"];
+    let blocked = rights["STREAM_SUB_AVAILABLE"].as_bool() == Some(false) && fallback.is_none();
+    let available_from = if blocked { text(&rights["STREAM_SUB"]) } else { String::new() };
     Some(Track {
         id,
         title,
@@ -55,6 +60,8 @@ pub fn track(v: &Value) -> Option<Track> {
         token,
         cover: text(&v["ALB_PICTURE"]),
         fallback,
+        available: !blocked,
+        available_from,
     })
 }
 
@@ -304,6 +311,19 @@ mod tests {
         assert_eq!((t.artist.as_str(), t.artists.len(), t.album_id.as_str()), ("Eminem", 1, "302127"));
         let t = track(&json!({"SNG_ID": "9", "TRACK_TOKEN": "x", "ALB_ID": 0})).unwrap();
         assert!(t.album_id.is_empty());
+    }
+
+    #[test]
+    fn unreleased_tracks_are_unavailable() {
+        let rights = |ok: bool, from: &str| json!({"STREAM_SUB_AVAILABLE": ok, "STREAM_SUB": from});
+        let t = track(&json!({"SNG_ID": "1", "TRACK_TOKEN": "x", "RIGHTS": rights(false, "2026-11-20")})).unwrap();
+        assert_eq!((t.available, t.available_from.as_str()), (false, "2026-11-20"));
+        let t = track(&json!({"SNG_ID": "2", "TRACK_TOKEN": "x", "RIGHTS": rights(true, "2000-01-01")})).unwrap();
+        assert!(t.available && t.available_from.is_empty());
+        assert!(track(&json!({"SNG_ID": "3", "TRACK_TOKEN": "x"})).unwrap().available, "no rights info: assume playable");
+        let fallback =
+            json!({"SNG_ID": "4", "TRACK_TOKEN": "x", "RIGHTS": rights(false, ""), "FALLBACK": {"SNG_ID": 5, "TRACK_TOKEN": "y"}});
+        assert!(track(&fallback).unwrap().available, "a regional fallback still plays");
     }
 
     #[test]

@@ -7,7 +7,7 @@ use super::home::card_row;
 use crate::deezer::{Likeable, Track, image_url, thousands};
 use crate::player::{Cmd, State, Status};
 use crate::ui::app::App;
-use crate::ui::state::{ArtistView, Coll, Source};
+use crate::ui::state::{ArtistView, Coll, Source, playable_from};
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, typography as ty};
 use crate::ui::widgets::{self, text_left};
@@ -62,9 +62,8 @@ impl App {
         self.apply_card_picks(&ctx, picked.cards);
         let top: &[Track] = self.artist_page.as_ref().map_or(&[], |p| &p.top);
         if let Some((i, shuffle)) = picked.play
-            && !top.is_empty()
+            && let Some((mut queue, i)) = playable_from(top, i)
         {
-            let mut queue = top.to_vec();
             if shuffle {
                 fastrand::shuffle(&mut queue);
             }

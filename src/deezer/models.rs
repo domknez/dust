@@ -25,6 +25,11 @@ pub struct Track {
     /// Alternative version (id, token) Deezer offers when this one isn't licensed
     /// in the listener's region, e.g. a different remaster.
     pub fallback: Option<(u64, String)>,
+    /// Streamable now (or through `fallback`). False e.g. for tracks of an album
+    /// that isn't out yet.
+    pub available: bool,
+    /// When it becomes streamable (`YYYY-MM-DD`), if Deezer says; empty otherwise.
+    pub available_from: String,
 }
 
 #[derive(Clone, Debug)]

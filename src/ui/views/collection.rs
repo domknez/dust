@@ -5,8 +5,8 @@ use crate::deezer::{ArtistRef, Likeable, Track, image_url};
 use crate::player::{Cmd, State, Status};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
-use crate::ui::format::{cover_url, mmss, total_duration};
-use crate::ui::state::{ArtistView, Coll, PlayMode, Source, View};
+use crate::ui::format::{cover_url, mmss, release_date, total_duration};
+use crate::ui::state::{ArtistView, Coll, PlayMode, Source, View, playable_from};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::views::home::{CARD_ROW_HEIGHT, CardPicks, card_row};
@@ -135,14 +135,16 @@ impl App {
             self.toggle_like(&ctx, what);
         }
         if picked.queue_all && !self.tracks.is_empty() {
-            self.player.send(Cmd::Enqueue(self.tracks.clone()));
+            let playable: Vec<Track> = self.tracks.iter().filter(|t| t.available).cloned().collect();
+            self.player.send(Cmd::Enqueue(playable));
             self.queued_flash = Some(std::time::Instant::now());
         }
         if let Some((i, mode)) = picked.queue {
             self.player.send(mode.command(vec![self.tracks[i].clone()]));
         }
-        if let Some((i, shuffle)) = picked.play {
-            let mut queue = self.tracks.clone();
+        if let Some((i, shuffle)) = picked.play
+            && let Some((mut queue, i)) = playable_from(&self.tracks, i)
+        {
             if shuffle {
                 fastrand::shuffle(&mut queue);
             }
@@ -292,12 +294,14 @@ pub(super) fn track_row(
     let resp = ui.interact(rect, ui.id().with(("row", i)), Sense::click());
     let current = playing_id == Some(track.id);
     let hovered = resp.hovered();
-    if hovered {
+    let available = track.available;
+    let resp = if available { resp } else { resp.on_hover_text(unavailable_note(track)) };
+    if hovered && available {
         ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.hover);
     }
     let cy = rect.center().y;
     let index = Rect::from_center_size(pos2(columns.index + 14.0, cy), Vec2::splat(14.0));
-    if hovered {
+    if hovered && available {
         icons::paint(ui.painter(), index, if current && playing { Icon::Pause } else { Icon::Play }, p.text);
     } else if current {
         widgets::equalizer(ui.painter(), index, playing);
@@ -306,10 +310,27 @@ pub(super) fn track_row(
     }
     let art = Rect::from_min_size(pos2(columns.art, cy - metrics::TRACK_ART / 2.0), Vec2::splat(metrics::TRACK_ART));
     widgets::cover(ui, covers, cover_url(track, metrics::THUMB_PX).as_deref(), art, radius::THUMB);
+    if !available {
+        // Faded artwork, like the text.
+        ui.painter().rect_filled(art, CornerRadius::same(radius::THUMB), p.bg.gamma_multiply(0.65));
+    }
     let title_width = columns.album.unwrap_or(columns.time - 60.0) - columns.title - 16.0;
-    text_left(ui.painter(), pos2(columns.title, cy - 9.0), &track.title, ty::TITLE, if current { p.accent } else { p.text }, title_width);
-    let (artist, _) =
-        widgets::artist_links(ui, pos2(columns.title, cy + 10.0), &track.artists, &track.artist, ty::SECONDARY, p.dim, p.text, title_width);
+    let (title_color, sub_color) = match (available, current) {
+        (false, _) => (p.faint, p.faint),
+        (true, true) => (p.accent, p.dim),
+        (true, false) => (p.text, p.dim),
+    };
+    text_left(ui.painter(), pos2(columns.title, cy - 9.0), &track.title, ty::TITLE, title_color, title_width);
+    let (artist, _) = widgets::artist_links(
+        ui,
+        pos2(columns.title, cy + 10.0),
+        &track.artists,
+        &track.artist,
+        ty::SECONDARY,
+        sub_color,
+        p.text,
+        title_width,
+    );
     if artist.is_some() {
         picked.artist = artist;
     }
@@ -327,7 +348,7 @@ pub(super) fn track_row(
             }
         }
     }
-    painter.text(pos2(columns.time, cy), Align2::RIGHT_CENTER, mmss(track.duration as f64), ty::BODY.font(), p.dim);
+    painter.text(pos2(columns.time, cy), Align2::RIGHT_CENTER, mmss(track.duration as f64), ty::BODY.font(), sub_color);
     // Heart: always shown when liked, on hover otherwise.
     if liked || hovered {
         let heart = Rect::from_center_size(pos2(columns.heart, cy), Vec2::splat(28.0));
@@ -337,6 +358,9 @@ pub(super) fn track_row(
         }
     }
 
+    if !available {
+        return;
+    }
     // Double-click a row, or click its number, to play from there.
     let clicked_number = resp.clicked() && resp.interact_pointer_pos().is_some_and(|pt| pt.x < columns.art);
     if resp.double_clicked() || clicked_number {
@@ -348,6 +372,14 @@ pub(super) fn track_row(
     }
     if let Some(mode) = widgets::queue_menu(&resp) {
         picked.queue = Some((i, mode));
+    }
+}
+
+/// Hover text for a track that can't be played (yet).
+fn unavailable_note(track: &Track) -> String {
+    match release_date(&track.available_from) {
+        Some(date) => format!("Available from {date}"),
+        None => "Not available to stream".into(),
     }
 }
 

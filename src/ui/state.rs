@@ -107,6 +107,14 @@ impl Coll {
     }
 }
 
+/// The playable tracks of `tracks`, and where `start` lands among them (the next
+/// playable one if `start` itself isn't). None when nothing can be played.
+pub fn playable_from(tracks: &[Track], start: usize) -> Option<(Vec<Track>, usize)> {
+    let index = tracks.iter().take(start).filter(|t| t.available).count();
+    let playable: Vec<Track> = tracks.iter().filter(|t| t.available).cloned().collect();
+    (index < playable.len()).then_some((playable, index))
+}
+
 /// What to do with fetched tracks.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PlayMode {
@@ -146,11 +154,36 @@ mod tests {
             token: String::new(),
             cover: "abc".into(),
             fallback: None,
+            available: true,
+            available_from: String::new(),
         };
         let coll = Coll::album_of(&track).unwrap();
         assert_eq!((coll.source, coll.title.as_str(), coll.subtitle.as_str()), (Source::Album("302127".into()), "Discovery", "Daft Punk"));
         assert_eq!(coll.picture, Some(("cover".into(), "abc".into())));
         assert!(Coll::album_of(&Track { album_id: String::new(), ..track }).is_none());
+    }
+
+    #[test]
+    fn only_playable_tracks_are_queued() {
+        let t = |id, available| Track {
+            id,
+            title: String::new(),
+            artist: String::new(),
+            artists: Vec::new(),
+            album: String::new(),
+            album_id: String::new(),
+            duration: 1,
+            token: String::new(),
+            cover: String::new(),
+            fallback: None,
+            available,
+            available_from: String::new(),
+        };
+        let tracks = [t(1, true), t(2, false), t(3, false), t(4, true)];
+        let ids = |(q, i): (Vec<Track>, usize)| (q.iter().map(|t| t.id).collect::<Vec<_>>(), i);
+        assert_eq!(playable_from(&tracks, 3).map(ids), Some((vec![1, 4], 1)));
+        assert_eq!(playable_from(&tracks, 1).map(ids), Some((vec![1, 4], 1)), "an unavailable start moves on");
+        assert_eq!(playable_from(&[t(2, false)], 0).map(ids), None);
     }
 
     #[test]

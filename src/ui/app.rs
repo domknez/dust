@@ -464,7 +464,12 @@ impl App {
             None => {}
         }
         match tasks::poll(&mut self.quick_play) {
-            Some(Ok((tracks, mode))) if !tracks.is_empty() => self.player.send(mode.command(tracks)),
+            Some(Ok((mut tracks, mode))) => {
+                tracks.retain(|t| t.available);
+                if !tracks.is_empty() {
+                    self.player.send(mode.command(tracks));
+                }
+            }
             Some(Err(e)) => self.on_load_error(e),
             _ => {}
         }

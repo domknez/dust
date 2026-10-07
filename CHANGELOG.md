@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Tracks that can't be played yet (e.g. an album's unreleased songs) are greyed out,
+  with the date they become available on hover; Play, Shuffle and Add to queue skip
+  them
+
 ## 0.9.2 (2026-10-07)
 
 - Fixed: losing the network path to an AirPlay speaker (e.g. unplugging Ethernet so the

@@ -267,7 +267,10 @@ fn debug_tracks(client: &Deezer, kind: &str, id: &str) {
     match tracks {
         Ok(t) => {
             println!("{} tracks", t.len());
-            t.iter().take(5).for_each(|t| println!("  {} – {}", t.artist, t.title));
+            for t in t.iter().take(12) {
+                let note = if t.available { String::new() } else { format!("  (unavailable, from {:?})", t.available_from) };
+                println!("  {} – {}{note}", t.artist, t.title);
+            }
         }
         Err(e) => println!("error: {e}"),
     }

@@ -195,6 +195,8 @@ mod tests {
             token: String::new(),
             cover: String::new(),
             fallback: None,
+            available: true,
+            available_from: String::new(),
         }
     }
 

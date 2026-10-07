@@ -87,6 +87,8 @@ fn encode_track(t: &Track) -> Value {
         "token": t.token,
         "cover": t.cover,
         "fallback": t.fallback.as_ref().map(|(id, token)| json!({"id": id, "token": token})),
+        "available": t.available,
+        "available_from": t.available_from,
     })
 }
 
@@ -108,6 +110,9 @@ fn decode_track(v: &Value) -> Option<Track> {
         token: s("token"),
         cover: s("cover"),
         fallback,
+        // Files from before 0.10 didn't record it; those tracks were playable then.
+        available: v["available"].as_bool().unwrap_or(true),
+        available_from: s("available_from"),
     })
 }
 
@@ -128,6 +133,8 @@ mod tests {
             token: "tok".into(),
             cover: "md5".into(),
             fallback: Some((9, "tok2".into())),
+            available: true,
+            available_from: String::new(),
         }
     }
 
