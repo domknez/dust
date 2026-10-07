@@ -20,6 +20,9 @@ pub struct Shared {
     pub drain: AtomicBool,
     /// The audio thread is parked (not sending).
     pub idle: AtomicBool,
+    /// The session is unusable (the network path to the receiver went away, e.g.
+    /// the local address vanished): the player should reconnect.
+    pub broken: AtomicBool,
     /// Next RTP sequence number / timestamp.
     pub seq: AtomicU16,
     pub rtptime: AtomicU32,
@@ -44,6 +47,7 @@ impl Shared {
             restart: AtomicBool::new(true),
             drain: AtomicBool::new(false),
             idle: AtomicBool::new(false),
+            broken: AtomicBool::new(false),
             seq: AtomicU16::new(seq),
             rtptime: AtomicU32::new(rtptime),
             history: Mutex::new(VecDeque::with_capacity(HISTORY)),
@@ -156,8 +160,10 @@ pub fn audio_loop(out: AudioOut, mut consumer: rtrb::Consumer<i16>, sh: &Shared)
         let seq = sh.seq.load(Ordering::Acquire);
         let rtptime = sh.rtptime.load(Ordering::Acquire);
         let packet = packets::audio_packet(seq, rtptime, ssrc, first, &frame, out.cipher.as_ref());
-        if let Err(e) = out.socket.send(&packet) {
-            log_warn!("airplay send: {e}");
+        if let Err(e) = out.socket.send(&packet)
+            && !sh.broken.swap(true, Ordering::AcqRel)
+        {
+            log_warn!("airplay send failed, session lost: {e}");
         }
         sh.stats.packets.fetch_add(1, Ordering::Relaxed);
         if frame.iter().any(|&s| s != 0) {

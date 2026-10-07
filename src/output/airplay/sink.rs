@@ -17,6 +17,11 @@ use std::time::{Duration, Instant};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
+/// Once streaming, replies should be quick; a dead connection must not stall the
+/// player (its commands run on the player thread).
+const RUNTIME_REPLY_TIMEOUT: Duration = Duration::from_secs(2);
+/// TEARDOWN is a courtesy: never wait long for it.
+const TEARDOWN_TIMEOUT: Duration = Duration::from_millis(500);
 /// How long to wait for the audio thread to park or drain.
 const HANDOFF_TIMEOUT: Duration = Duration::from_millis(200);
 
@@ -92,6 +97,7 @@ impl AirPlaySink {
         let sh = shared.clone();
         threads.push(transport::spawn("airplay-audio", move || transport::audio_loop(out, consumer, &sh)));
 
+        rtsp.set_reply_timeout(RUNTIME_REPLY_TIMEOUT);
         let mut sink = Self { rtsp, _events: events, _ptp: ptp, shared, producer, threads, volume_sent: None };
         sink.set_volume(volume);
         Ok(sink)
@@ -103,7 +109,17 @@ impl AirPlaySink {
         wait_until(|| self.shared.idle.load(Ordering::Acquire));
         let seq = self.shared.seq.load(Ordering::Acquire);
         let rtptime = self.shared.rtptime.load(Ordering::Acquire);
-        let _ = self.rtsp.request("FLUSH", None, &[("RTP-Info", format!("seq={seq};rtptime={rtptime}"))], None);
+        let flushed = self.rtsp.request("FLUSH", None, &[("RTP-Info", format!("seq={seq};rtptime={rtptime}"))], None);
+        self.check(flushed);
+    }
+
+    /// A failed control request means the connection is gone.
+    fn check<T>(&self, result: Result<T, String>) {
+        if let Err(e) = result
+            && !self.shared.broken.swap(true, Ordering::AcqRel)
+        {
+            log_warn!("airplay control failed, session lost: {e}");
+        }
     }
 }
 
@@ -176,14 +192,23 @@ impl Sink for AirPlaySink {
         self.volume_sent = Some(tenths);
         log_debug!("airplay: volume {volume:.3} -> {db:.1} dB");
         let body = format!("volume: {db:.6}\r\n");
-        let _ = self.rtsp.request("SET_PARAMETER", None, &[], Some(("text/parameters", body.as_bytes())));
+        let sent = self.rtsp.request("SET_PARAMETER", None, &[], Some(("text/parameters", body.as_bytes())));
+        self.check(sent);
+    }
+
+    fn healthy(&self) -> bool {
+        !self.shared.broken.load(Ordering::Acquire)
     }
 }
 
 impl Drop for AirPlaySink {
     fn drop(&mut self) {
         self.shared.playing.store(false, Ordering::Release);
-        let _ = self.rtsp.request("TEARDOWN", None, &[], None);
+        // Say goodbye only over a working connection, and briefly.
+        if self.healthy() {
+            self.rtsp.set_reply_timeout(TEARDOWN_TIMEOUT);
+            let _ = self.rtsp.request("TEARDOWN", None, &[], None);
+        }
         self.shared.running.store(false, Ordering::Release);
         // Ends the event channel reader, which holds its own handle to the socket.
         if let Some(events) = &self._events {

@@ -51,6 +51,11 @@ impl Rtsp {
         self.reader.get_mut().enable(&hkdf32(session_key, "Control-Salt", "Control-Read-Encryption-Key"));
     }
 
+    /// How long to wait for each reply (the connection's read timeout).
+    pub fn set_reply_timeout(&self, timeout: std::time::Duration) {
+        let _ = self.writer.set_read_timeout(Some(timeout));
+    }
+
     /// Remember the Session header of a SETUP reply for later requests.
     pub fn adopt_session(&mut self, resp: &Response) {
         self.session = resp.header("Session").map(|s| s.split(';').next().unwrap_or(s).to_string());

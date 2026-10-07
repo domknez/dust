@@ -22,4 +22,9 @@ pub trait Sink {
     fn flush(&mut self);
     /// 0.0 ..= 1.0
     fn set_volume(&mut self, volume: f32);
+    /// False once the output can no longer play (e.g. the network path to an AirPlay
+    /// receiver went away); the player then sets it up again.
+    fn healthy(&self) -> bool {
+        true
+    }
 }

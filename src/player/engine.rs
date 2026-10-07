@@ -16,6 +16,8 @@ use std::time::{Duration, Instant};
 
 /// How often position updates reach the UI while playing.
 const PUBLISH_EVERY: Duration = Duration::from_millis(250);
+/// Minimum time between automatic reconnects of a lost output.
+const RECOVER_EVERY: Duration = Duration::from_secs(3);
 /// "Previous" restarts the track instead when past this point (seconds).
 const RESTART_THRESHOLD: f64 = 3.0;
 /// Consecutive unplayable tracks skipped before giving up.
@@ -54,6 +56,8 @@ pub struct Engine {
     alive: bool,
     /// A restored queue waiting for play: the position to start the current track at.
     restored_at: Option<f64>,
+    /// Last automatic reconnect of a lost output (rate limit).
+    last_recover: Option<Instant>,
 }
 
 impl Engine {
@@ -82,6 +86,7 @@ impl Engine {
             last_publish: Instant::now(),
             alive: true,
             restored_at: None,
+            last_recover: None,
         }
     }
 
@@ -95,6 +100,7 @@ impl Engine {
                 self.listens.heard(now - tick);
             }
             tick = now;
+            self.recover_output();
             let busy = self.playing && self.stream.is_some();
             was_playing = busy;
             if busy {
@@ -118,6 +124,7 @@ impl Engine {
     // ------------------------------------------------------------ commands
 
     fn handle(&mut self, cmd: Cmd) {
+        self.recover_output();
         match cmd {
             Cmd::Client(client) => self.library = Some(Arc::new(client)),
             Cmd::Quality(q) => self.quality = q,
@@ -219,6 +226,22 @@ impl Engine {
         if let Some(s) = self.sink.as_mut() {
             s.set_volume(v);
         }
+    }
+
+    /// The output stopped working (e.g. the network path to an AirPlay speaker went
+    /// away when Ethernet was unplugged): set it up again over whatever network is
+    /// there now and carry on from the same position. At most every few seconds.
+    fn recover_output(&mut self) {
+        if self.sink.as_ref().is_none_or(|s| s.healthy()) {
+            return;
+        }
+        if self.last_recover.is_some_and(|t| t.elapsed() < RECOVER_EVERY) {
+            return;
+        }
+        self.last_recover = Some(Instant::now());
+        log_warn!("{}: connection lost, reconnecting", self.output.name());
+        self.switch_output(self.output.clone());
+        self.publish(true);
     }
 
     fn switch_output(&mut self, output: Output) {
@@ -590,6 +613,59 @@ mod tests {
 
     fn now_playing(e: &Engine) -> Option<u64> {
         e.stream.as_ref().map(|s| s.song_id())
+    }
+
+    /// A sink that stops working when `broken` is set; counts how many were made.
+    struct FlakySink(Arc<std::sync::atomic::AtomicBool>);
+
+    impl Sink for FlakySink {
+        fn write(&mut self, samples: &[i16]) -> usize {
+            samples.len()
+        }
+        fn pending_frames(&self) -> usize {
+            0
+        }
+        fn latency_frames(&self) -> usize {
+            0
+        }
+        fn pause(&mut self) {}
+        fn resume(&mut self) {}
+        fn flush(&mut self) {}
+        fn set_volume(&mut self, _: f32) {}
+        fn healthy(&self) -> bool {
+            !self.0.load(std::sync::atomic::Ordering::Relaxed)
+        }
+    }
+
+    #[test]
+    fn lost_output_reconnects_and_keeps_playing() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        let broken = Arc::new(AtomicBool::new(false));
+        let made = Arc::new(AtomicUsize::new(0));
+        let (flag, count) = (broken.clone(), made.clone());
+        let (_tx, rx) = channel();
+        let status = Arc::new(Mutex::new(Status::default()));
+        let factory: SinkFactory = Box::new(move |_, _| {
+            count.fetch_add(1, Ordering::Relaxed);
+            flag.store(false, Ordering::Relaxed); // a fresh connection works
+            Ok(Box::new(FlakySink(flag.clone())) as _)
+        });
+        let mut e = Engine::with_outputs(rx, status, egui::Context::default(), 0.5, factory);
+        e.library = Some(Arc::new(FakeLibrary::default()));
+        e.handle(Cmd::Play(vec![track(1, 60), track(2, 60)], 0));
+        for _ in 0..6 {
+            e.step();
+        }
+        assert_eq!(made.load(Ordering::Relaxed), 1);
+        broken.store(true, Ordering::Relaxed);
+        e.recover_output();
+        assert_eq!(made.load(Ordering::Relaxed), 2, "set up again");
+        assert_eq!(now_playing(&e), Some(1), "same track");
+        assert!(e.playing);
+        // Rate limited: a second failure right away waits.
+        broken.store(true, Ordering::Relaxed);
+        e.recover_output();
+        assert_eq!(made.load(Ordering::Relaxed), 2);
     }
 
     #[test]
