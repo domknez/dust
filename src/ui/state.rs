@@ -66,6 +66,17 @@ pub struct Coll {
 }
 
 impl Coll {
+    /// The album a track is on, if Deezer said which.
+    pub fn album_of(track: &Track) -> Option<Self> {
+        (!track.album_id.is_empty()).then(|| Coll {
+            source: Source::Album(track.album_id.clone()),
+            kind: "ALBUM",
+            title: track.album.clone(),
+            subtitle: track.artist.clone(),
+            picture: (!track.cover.is_empty()).then(|| ("cover".to_string(), track.cover.clone())),
+        })
+    }
+
     pub fn from_playlist(p: &Playlist) -> Self {
         Coll {
             source: Source::Playlist(p.id),
@@ -118,6 +129,26 @@ mod tests {
 
     fn item(kind: &str, id: &str) -> Item {
         Item { kind: kind.into(), id: id.into(), title: "T".into(), subtitle: "S".into(), picture: None }
+    }
+
+    #[test]
+    fn album_of_track() {
+        let track = Track {
+            id: 1,
+            title: "One More Time".into(),
+            artist: "Daft Punk".into(),
+            artists: Vec::new(),
+            album: "Discovery".into(),
+            album_id: "302127".into(),
+            duration: 320,
+            token: String::new(),
+            cover: "abc".into(),
+            fallback: None,
+        };
+        let coll = Coll::album_of(&track).unwrap();
+        assert_eq!((coll.source, coll.title.as_str(), coll.subtitle.as_str()), (Source::Album("302127".into()), "Discovery", "Daft Punk"));
+        assert_eq!(coll.picture, Some(("cover".into(), "abc".into())));
+        assert!(Coll::album_of(&Track { album_id: String::new(), ..track }).is_none());
     }
 
     #[test]

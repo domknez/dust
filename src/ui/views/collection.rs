@@ -6,7 +6,7 @@ use crate::player::{Cmd, State, Status};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
 use crate::ui::format::{cover_url, mmss, total_duration};
-use crate::ui::state::{ArtistView, PlayMode, Source, View};
+use crate::ui::state::{ArtistView, Coll, PlayMode, Source, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::views::home::{CARD_ROW_HEIGHT, CardPicks, card_row};
@@ -42,6 +42,8 @@ pub(super) struct Picked {
     /// The playing row's number was clicked: pause/resume.
     pub toggle: bool,
     pub artist: Option<ArtistRef>,
+    /// An album name was clicked.
+    pub album: Option<Coll>,
     pub cards: CardPicks,
 }
 
@@ -116,6 +118,9 @@ impl App {
         }
         if let Some(artist) = picked.artist {
             self.open_artist(&ctx, ArtistView::from_ref(&artist));
+        }
+        if let Some(album) = picked.album {
+            self.open_collection(&ctx, album);
         }
         if let Some((i, mode)) = picked.queue {
             self.player.send(mode.command(vec![self.tracks[i].clone()]));
@@ -273,7 +278,17 @@ pub(super) fn track_row(
     }
     let painter = ui.painter();
     if let Some(album) = columns.album {
-        text_left(painter, pos2(album, cy), &track.album, ty::BODY, p.dim, columns.time - album - 70.0);
+        let width = columns.time - album - 70.0;
+        match Coll::album_of(track) {
+            Some(coll) => {
+                if widgets::text_link(ui, ("album-link", i), pos2(album, cy), &track.album, ty::BODY, p.dim, p.text, width).0 {
+                    picked.album = Some(coll);
+                }
+            }
+            None => {
+                text_left(painter, pos2(album, cy), &track.album, ty::BODY, p.dim, width);
+            }
+        }
     }
     painter.text(pos2(columns.time, cy), Align2::RIGHT_CENTER, mmss(track.duration as f64), ty::BODY.font(), p.dim);
 

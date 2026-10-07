@@ -50,6 +50,7 @@ pub fn track(v: &Value) -> Option<Track> {
         artist,
         artists,
         album: text(&v["ALB_TITLE"]),
+        album_id: Some(text(&v["ALB_ID"])).filter(|id| id != "0").unwrap_or_default(),
         duration: number(&v["DURATION"]) as u32,
         token,
         cover: text(&v["ALB_PICTURE"]),
@@ -299,8 +300,10 @@ mod tests {
     fn track_artists_link() {
         let t = track(&json!({"SNG_ID": "7", "TRACK_TOKEN": "x", "ARTISTS": [{"ART_ID": "27", "ART_NAME": "Daft Punk"}, {"ART_ID": "0", "ART_NAME": "?"}]})).unwrap();
         assert_eq!(t.artists, [ArtistRef { id: "27".into(), name: "Daft Punk".into() }]);
-        let t = track(&json!({"SNG_ID": "8", "TRACK_TOKEN": "x", "ART_ID": "13", "ART_NAME": "Eminem"})).unwrap();
-        assert_eq!((t.artist.as_str(), t.artists.len()), ("Eminem", 1));
+        let t = track(&json!({"SNG_ID": "8", "TRACK_TOKEN": "x", "ART_ID": "13", "ART_NAME": "Eminem", "ALB_ID": "302127"})).unwrap();
+        assert_eq!((t.artist.as_str(), t.artists.len(), t.album_id.as_str()), ("Eminem", 1, "302127"));
+        let t = track(&json!({"SNG_ID": "9", "TRACK_TOKEN": "x", "ALB_ID": 0})).unwrap();
+        assert!(t.album_id.is_empty());
     }
 
     #[test]

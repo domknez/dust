@@ -5,6 +5,7 @@ use super::player_bar::TICK;
 use crate::player::{State, Status};
 use crate::ui::app::App;
 use crate::ui::format::cover_url;
+use crate::ui::state::Coll;
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
@@ -72,7 +73,18 @@ impl App {
                 widgets::cover(ui, &mut self.covers, cover_url(track, metrics::NOW_PLAYING_PX).as_deref(), art, radius::THUMB);
                 let x = art.right() + 12.0;
                 let width = controls.left() - 8.0 - x;
-                text_left(ui.painter(), pos2(x, art.center().y - 10.0), &track.title, ty::TITLE.strong(), p.text, width);
+                let title_pos = pos2(x, art.center().y - 10.0);
+                match Coll::album_of(track) {
+                    // The title opens the album in the full window.
+                    Some(album) => {
+                        if widgets::text_link(ui, "mini-title", title_pos, &track.title, ty::TITLE.strong(), p.text, p.text, width).0 {
+                            self.pending_album = Some(album);
+                        }
+                    }
+                    None => {
+                        text_left(ui.painter(), title_pos, &track.title, ty::TITLE.strong(), p.text, width);
+                    }
+                }
                 let pos = pos2(x, art.center().y + 10.0);
                 if let (Some(artist), _) =
                     widgets::artist_links(ui, pos, &track.artists, &track.artist, ty::SECONDARY, p.dim, p.text, width)
