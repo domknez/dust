@@ -144,10 +144,13 @@ fn tone(target: Option<String>) {
     println!("done");
 }
 
-/// Browse for 3 s and print what was found, with the protocol each uses.
+/// Browse, search again once, and print what was found, with the protocol each uses.
 fn list_speakers() {
     let discovery = Discovery::start(|| {}).expect("mDNS");
-    std::thread::sleep(Duration::from_secs(3));
+    std::thread::sleep(Duration::from_millis(3500));
+    // Exercise a fresh search too (what waking from sleep triggers).
+    discovery.refresh();
+    std::thread::sleep(Duration::from_secs(2));
     for d in discovery.devices() {
         let protocol = if d.ap2 { "AirPlay 2" } else { "AirPlay 1" };
         let addrs: Vec<String> = d.addrs.iter().map(|a| a.to_string()).collect();

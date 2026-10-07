@@ -38,6 +38,13 @@ impl App {
             text_left(ui.painter(), pos2(rect.left() + 32.0, rect.center().y), current, ty::SECONDARY, p.accent, LABEL_MAX_WIDTH);
         }
         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        // Opening the menu searches again, so a speaker that went missing (sleep,
+        // network change) turns up within a second or two.
+        if resp.clicked()
+            && let Some(discovery) = &self.discovery
+        {
+            discovery.refresh();
+        }
         egui::Popup::menu(&resp).show(|ui| {
             ui.set_min_width(MENU_WIDTH);
             if let Some(output) = self.output_menu(ui, current, remote) {

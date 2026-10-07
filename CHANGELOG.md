@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed: after the Mac slept, AirPlay speakers could stay missing for up to an hour.
+  dust now searches again when the computer wakes, when its network changes and
+  whenever you open the speaker menu
+
 ## 0.9.0 (2026-10-07)
 
 - Back / forward between pages: ‹ › next to the search field, `⌘←` / `⌘→` (`Alt+←` /
