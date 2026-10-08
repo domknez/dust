@@ -34,8 +34,12 @@ impl Device {
     fn from_service(info: &ResolvedService, local_ips: &[IpAddr]) -> Option<Device> {
         let mut addrs: Vec<SocketAddr> =
             info.get_addresses_v4().into_iter().map(|ip| SocketAddr::new(IpAddr::V4(ip), info.get_port())).collect();
+        if addrs.is_empty() {
+            log_debug!("airplay discovery: ignoring {} for now (no IPv4 address yet)", info.get_fullname());
+            return None;
+        }
         // Skip ourselves (e.g. macOS "AirPlay Receiver" on this machine).
-        if addrs.is_empty() || addrs.iter().any(|a| local_ips.contains(&a.ip())) {
+        if addrs.iter().any(|a| local_ips.contains(&a.ip())) {
             return None;
         }
         // Likely-reachable addresses first: not loopback, not bridge/VPN ".0" hosts.
@@ -102,13 +106,30 @@ impl Discovery {
             .spawn(move || {
                 let mut own_ips = local_ips();
                 let mut watch = Watch::new();
+                // Speakers seen without an IPv4 address yet: keep searching for them.
+                let mut incomplete = std::collections::HashSet::<String>::new();
                 loop {
                     let mut lost = false;
                     let changed = match events.recv_timeout(WATCH_INTERVAL) {
-                        Ok(ServiceEvent::ServiceResolved(info)) => match Device::from_service(&info, &own_ips) {
-                            Some(device) => upsert(&mut list.lock().unwrap(), device),
-                            None => false,
-                        },
+                        Ok(ServiceEvent::ServiceResolved(info)) => {
+                            let name = info.get_fullname().to_string();
+                            if info.get_addresses_v4().is_empty() {
+                                incomplete.insert(name);
+                            } else {
+                                incomplete.remove(&name);
+                            }
+                            match Device::from_service(&info, &own_ips) {
+                                Some(device) => {
+                                    let (name, addrs) = (device.name.clone(), device.addrs.clone());
+                                    let changed = upsert(&mut list.lock().unwrap(), device);
+                                    if changed {
+                                        log_debug!("airplay discovery: found {name} at {addrs:?}");
+                                    }
+                                    changed
+                                }
+                                None => false,
+                            }
+                        }
                         Ok(ServiceEvent::ServiceRemoved(_, full)) => {
                             list.lock().unwrap().retain(|d| d.id != full);
                             true
@@ -126,7 +147,8 @@ impl Discovery {
                         on_change();
                     }
                     let asked = refresh_rx.try_recv().is_ok();
-                    if let Some(reason) = watch.check(asked).or(lost.then_some("browse ended")) {
+                    let empty = list.lock().unwrap().is_empty() || !incomplete.is_empty();
+                    if let Some(reason) = watch.check(asked, empty).or(lost.then_some("browse ended")) {
                         log_debug!("airplay discovery: searching again ({reason})");
                         own_ips = local_ips();
                         let _ = browser.stop_browse(SERVICE);
@@ -162,14 +184,23 @@ struct Watch {
     clock: (Instant, SystemTime),
     addresses: Vec<IpAddr>,
     last_search: Instant,
+    started: Instant,
 }
+
+/// While nothing has been found, search again this often: lost first answers (Wi-Fi,
+/// just after waking) would otherwise wait out mDNS's growing pauses.
+const EMPTY_RETRY_EARLY: Duration = Duration::from_secs(5);
+const EMPTY_RETRY_LATER: Duration = Duration::from_secs(30);
+const EARLY: Duration = Duration::from_secs(120);
 
 impl Watch {
     fn new() -> Self {
-        Self { clock: (Instant::now(), SystemTime::now()), addresses: sorted_ips(), last_search: Instant::now() }
+        let now = Instant::now();
+        Self { clock: (now, SystemTime::now()), addresses: sorted_ips(), last_search: now, started: now }
     }
 
-    fn check(&mut self, asked: bool) -> Option<&'static str> {
+    /// Whether to restart the search now, and why. `empty`: no speaker found yet.
+    fn check(&mut self, asked: bool, empty: bool) -> Option<&'static str> {
         let (mono, wall) = (self.clock.0.elapsed(), self.clock.1.elapsed().unwrap_or_default());
         let slept = wall > mono + SLEEP_GAP;
         let mut reason = slept.then_some("woke from sleep");
@@ -184,6 +215,10 @@ impl Watch {
         // A menu opened twice in a row shouldn't restart the search twice.
         if asked && self.last_search.elapsed() > Duration::from_secs(3) {
             reason = reason.or(Some("asked"));
+        }
+        let retry = if self.started.elapsed() < EARLY { EMPTY_RETRY_EARLY } else { EMPTY_RETRY_LATER };
+        if empty && self.last_search.elapsed() >= retry {
+            reason = reason.or(Some("nothing found yet"));
         }
         if reason.is_some() {
             self.last_search = Instant::now();

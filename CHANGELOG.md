@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed: AirPlay speakers sometimes weren't found after starting dust until it was
+  restarted. While no speaker (or only part of one) has been found, dust now searches
+  again every few seconds
+
 ## 0.10.1 (2026-10-07)
 
 - Fixed: the heart on a track row flickered while the pointer was over it; queue rows
