@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.3 (2026-10-08)
+
 - Fixed: track lists twitched while hovering or scrolling them
 
 ## 0.10.2 (2026-10-08)
