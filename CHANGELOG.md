@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed: track lists twitched while hovering or scrolling them
+
 ## 0.10.2 (2026-10-08)
 
 - Fixed: AirPlay speakers sometimes weren't found after starting dust until it was
