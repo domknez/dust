@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.2 (2026-10-08)
+
 - Fixed: AirPlay speakers sometimes weren't found after starting dust until it was
   restarted. While no speaker (or only part of one) has been found, dust now searches
   again every few seconds
