@@ -352,10 +352,8 @@ pub(super) fn track_row(
     }
     painter.text(pos2(columns.time, cy), Align2::RIGHT_CENTER, mmss(track.duration as f64), ty::BODY.font(), sub_color);
     // Heart: always shown when liked, on hover otherwise.
-    if liked || hovered {
-        if widgets::heart_at(ui, pos2(columns.heart, cy), ("row", i), liked, 15.0).clicked() {
-            picked.like = Some(Likeable::Track(track.id));
-        }
+    if (liked || hovered) && widgets::heart_at(ui, pos2(columns.heart, cy), ("row", i), liked, 15.0).clicked() {
+        picked.like = Some(Likeable::Track(track.id));
     }
 
     if !available {
