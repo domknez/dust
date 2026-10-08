@@ -60,13 +60,13 @@ impl App {
             widgets::cover(ui, &mut self.covers, cover_url(track, metrics::NOW_PLAYING_PX).as_deref(), art, radius::THUMB);
             let x = art.right() + 14.0;
             // Heart for the playing track at the end of the column.
-            let heart = Rect::from_center_size(pos2(area.right() - 16.0, area.center().y), Vec2::splat(30.0));
+            let heart = pos2(area.right() - 16.0, area.center().y);
             let what = Likeable::Track(track.id);
             let liked = self.likes.likes.contains(&what);
-            if ui.scope_builder(UiBuilder::new().max_rect(heart), |ui| widgets::heart_button(ui, liked, 16.0)).inner.clicked() {
+            if widgets::heart_at(ui, heart, "now-playing", liked, 16.0).clicked() {
                 self.pending_like = Some(what);
             }
-            let width = heart.left() - 8.0 - x;
+            let width = heart.x - 22.0 - x;
             // Cover and title open the album.
             let album = Coll::album_of(track);
             let cover = ui.interact(art, ui.id().with("now-playing-cover"), egui::Sense::click());

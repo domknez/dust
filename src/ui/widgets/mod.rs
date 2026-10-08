@@ -11,7 +11,7 @@ mod text;
 
 pub use art::{cover, tile};
 pub use cards::{CardClick, card, flow_card, play_knob, queue_row};
-pub use controls::{heart_button, icon_button, pill, play_circle, segmented, thin_slider};
+pub use controls::{heart_at, heart_button, icon_button, pill, play_circle, segmented, thin_slider};
 pub use decor::{dust_particles, equalizer, fade_to};
 pub use menu::{caption, divider, menu_row, popover_frame, queue_menu};
 pub use nav::{nav_item, section};
