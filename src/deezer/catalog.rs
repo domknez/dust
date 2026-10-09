@@ -45,6 +45,8 @@ impl Deezer {
         let support = json!({
             "grid": ["channel", "album", "playlist", "flow", "smarttracklist", "artist"],
             "horizontal-grid": ["album", "playlist", "flow", "smarttracklist", "artist", "channel"],
+            // "Mixes inspired by…": tracks, each opening that track's mix.
+            "horizontal-list": ["track", "album", "playlist", "artist"],
             "large-card": ["album", "playlist"],
             "slideshow": ["album", "playlist"],
             "filterable-grid": ["flow"],
@@ -76,6 +78,12 @@ impl Deezer {
             .as_array()
             .map(|a| a.iter().filter_map(|v| parse::card_item("artist", v)).collect())
             .unwrap_or_default())
+    }
+
+    /// A track's mix: similar songs, starting with that track ("Mixes inspired by…").
+    pub fn track_mix(&self, id: &str) -> Result<Vec<Track>> {
+        let r = self.call("song.getSearchTrackMix", json!({"sng_id": id, "start_with_input_track": true}))?;
+        Ok(parse::tracks(&r["data"]))
     }
 
     pub fn artist_top(&self, id: &str) -> Result<Vec<Track>> {

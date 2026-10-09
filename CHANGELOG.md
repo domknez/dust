@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Home: "Mixes inspired by…" — a track's mix of similar songs, starting with it; the
+  daily mixes are named "Daily mix 1–5" and the monthly one "My top <month>" in English
+
 ## 0.10.3 (2026-10-08)
 
 - Fixed: track lists twitched while hovering or scrolling them

@@ -33,7 +33,8 @@ including cover art.
 ## Features
 
 - **Home like Deezer's:** your personalised recommendations — Flow and its moods
-  (Chill, Focus, Workout, Party, ...), daily mixes, recently played, new releases,
+  (Chill, Focus, Workout, Party, ...), daily mixes, mixes inspired by tracks you play,
+  recently played, new releases,
   artists and albums picked for you
 - **Endless Flow:** keeps going like on Deezer, fetching more as you listen
 - **Music:** Loved tracks, playlists (list and grid), your albums, the artists you follow

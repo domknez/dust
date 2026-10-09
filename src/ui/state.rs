@@ -42,6 +42,8 @@ pub enum Source {
     Artist(String),
     /// The artist's popular tracks as a plain list ("Show all").
     TopTracks(String),
+    /// Songs like a track, starting with it ("Mixes inspired by…").
+    TrackMix(String),
     Mix(String),
 }
 
@@ -51,6 +53,7 @@ impl Source {
             Source::Playlist(id) => client.playlist(*id),
             Source::Album(id) => client.album(id),
             Source::Artist(id) | Source::TopTracks(id) => client.artist_top(id),
+            Source::TrackMix(id) => client.track_mix(id),
             Source::Mix(id) => client.mix(id),
         }
     }
@@ -96,6 +99,7 @@ impl Coll {
             "album" => (Source::Album(it.id.clone()), "ALBUM"),
             "artist" => (Source::Artist(it.id.clone()), "ARTIST · TOP TRACKS"),
             "smarttracklist" => (Source::Mix(it.id.clone()), "MIX"),
+            "track" => (Source::TrackMix(it.id.clone()), "TRACK MIX"),
             _ => return None,
         };
         Some(Coll { source, kind, title: it.title.clone(), subtitle: it.subtitle.clone(), picture: it.picture.clone() })
@@ -192,6 +196,7 @@ mod tests {
         assert_eq!(Coll::from_item(&item("smarttracklist", "discovery")).map(|c| c.source), Some(Source::Mix("discovery".into())));
         assert!(Coll::from_item(&item("artist", "27")).is_some_and(|c| c.round()));
         assert!(Coll::from_item(&item("channel", "x")).is_none());
+        assert_eq!(Coll::from_item(&item("track", "4229026412")).map(|c| c.source), Some(Source::TrackMix("4229026412".into())));
         assert!(Coll::from_item(&item("playlist", "not-a-number")).is_none());
     }
 }

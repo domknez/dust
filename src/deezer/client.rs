@@ -62,9 +62,14 @@ impl Deezer {
         self.call_with(method, body, &[])
     }
 
-    /// Any gw-light method, for diagnostics (`--debug-api`).
-    pub fn call_raw(&self, method: &str, body: Value) -> Result<Value> {
-        self.call(method, body)
+    /// Any gw-light method, for diagnostics (`--debug-api`). A `gateway_input` key in
+    /// `body` is sent as that query parameter instead (as `page.get` expects).
+    pub fn call_raw(&self, method: &str, mut body: Value) -> Result<Value> {
+        let gateway = body.as_object_mut().and_then(|o| o.remove("gateway_input")).map(|g| g.to_string());
+        match gateway {
+            Some(input) => self.call_with(method, body, &[("gateway_input", &input)]),
+            None => self.call(method, body),
+        }
     }
 
     /// Authenticated call; refreshes an expired CSRF token once and retries.

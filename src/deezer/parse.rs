@@ -238,6 +238,10 @@ fn english_texts(kind: &str, id: &str, data: &Value, title: String, subtitle: St
             let title = match id {
                 "discovery" => "Discovery".to_string(),
                 "new-releases" => "New releases".to_string(),
+                // The month is the second tag: ["monthlyTop", "09", "2026"].
+                "monthly-top" => month_name(&text(&data["TAGS"][1])).map_or(title, |m| format!("My top {m}")),
+                // "daily" in the data; deezer.com draws its names into the cover.
+                id if id.starts_with("inspired-by-") => format!("Daily mix {}", id.trim_start_matches("inspired-by-")),
                 _ => title,
             };
             // "Featuring A, B" arrives as e.g. "Sadrži A, B": swap the leading word.
@@ -247,8 +251,17 @@ fn english_texts(kind: &str, id: &str, data: &Value, title: String, subtitle: St
             };
             (title, sub)
         }
+        // A track opening its mix: "by <artist>".
+        "track" => (title, format!("by {}", text(&data["ART_NAME"]))),
         _ => (title, subtitle),
     }
+}
+
+/// "09" -> "September".
+fn month_name(number: &str) -> Option<&'static str> {
+    const MONTHS: [&str; 12] =
+        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    MONTHS.get(number.parse::<usize>().ok()?.checked_sub(1)?).copied()
 }
 
 #[cfg(test)]
@@ -267,6 +280,11 @@ mod tests {
         let (t, sub) = english_texts("smarttracklist", "discovery", &json!({}), "Otkriće".into(), "Sadrži Foxy Shazam, The Flynts".into());
         assert_eq!((t.as_str(), sub.as_str()), ("Discovery", "Featuring Foxy Shazam, The Flynts"));
         assert_eq!(thousands(4702289), "4,702,289");
+        let top = json!({"TAGS": ["monthlyTop", "09", "2026"]});
+        assert_eq!(english_texts("smarttracklist", "monthly-top", &top, "Moj top rujan".into(), String::new()).0, "My top September");
+        assert_eq!(english_texts("smarttracklist", "inspired-by-3", &json!({}), "daily".into(), String::new()).0, "Daily mix 3");
+        let track = json!({"ART_NAME": "Slash"});
+        assert_eq!(english_texts("track", "1", &track, "Ghost".into(), "Slash".into()), ("Ghost".into(), "by Slash".into()));
     }
 
     #[test]

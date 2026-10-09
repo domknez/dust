@@ -10,7 +10,7 @@
 //! - `--debug-artist <id>`         an artist page: top tracks and card sections
 //! - `--debug-link <url>`          what a pasted Deezer link resolves to
 //! - `--debug-likes`               how many tracks, albums and artists the account likes
-//! - `--debug-tracks <kind> <id>`  what a home item plays (flow|mix|album|artist|playlist)
+//! - `--debug-tracks <kind> <id>`  what a home item plays (flow|mix|album|artist|playlist|trackmix)
 //! - `--debug-stream <playlist> [n]`  stream resolution per track, incl. fallbacks
 //! - `--debug-decode <playlist> [quality] [start s]`  decrypt and decode 10 s of the first track (no sound)
 
@@ -262,6 +262,7 @@ fn debug_tracks(client: &Deezer, kind: &str, id: &str) {
         "mix" => client.mix(id),
         "album" => client.album(id),
         "artist" => client.artist_top(id),
+        "trackmix" => client.track_mix(id),
         _ => client.playlist(id.parse().unwrap_or(0)),
     };
     match tracks {
