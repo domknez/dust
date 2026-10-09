@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.0 (2026-10-09)
+
 - Home: "Mixes inspired by…" — a track's mix of similar songs, starting with it; the
   daily mixes are named "Daily mix 1–5" and the monthly one "My top <month>" in English
 
