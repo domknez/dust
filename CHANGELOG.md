@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Playlist management: add tracks to your playlists (right-click a track, or ⋯ → Add all
+  to playlist on album and playlist pages), create playlists (empty from the sidebar's +,
+  from tracks, or from the queue with Save), remove tracks from your own playlists, and
+  rename or delete them
+
 ## 0.11.0 (2026-10-09)
 
 - Home: "Mixes inspired by…" — a track's mix of similar songs, starting with it; the

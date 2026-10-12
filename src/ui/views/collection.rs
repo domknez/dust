@@ -1,16 +1,17 @@
 //! Track lists: search results, Loved tracks and opened collections. A header
 //! (artwork, title, Play/Shuffle) scrolls with a virtualised track table.
 
-use crate::deezer::{ArtistRef, Likeable, Track, image_url};
+use crate::deezer::{ArtistRef, Likeable, Playlist, Track, image_url};
 use crate::player::{Cmd, State, Status};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
 use crate::ui::format::{cover_url, mmss, release_date, total_duration};
-use crate::ui::state::{ArtistView, Coll, PlayMode, Source, View, playable_from};
+use crate::ui::playlist_edit::{Dialog, Edit};
+use crate::ui::state::{ArtistView, Coll, Source, View, playable_from};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::views::home::{CARD_ROW_HEIGHT, CardPicks, card_row};
-use crate::ui::widgets::{self, text_left};
+use crate::ui::widgets::{self, TrackMenu, text_left};
 use eframe::egui::{self, Align2, Color32, CornerRadius, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
 
 /// Search page: title and result count, then card rows, then the table captions.
@@ -40,7 +41,8 @@ struct Header {
 pub(super) struct Picked {
     /// Play from this row (shuffled or not).
     pub play: Option<(usize, bool)>,
-    pub queue: Option<(usize, PlayMode)>,
+    /// A choice in a row's right-click menu.
+    pub menu: Option<(usize, TrackMenu)>,
     /// The playing row's number was clicked: pause/resume.
     pub toggle: bool,
     pub artist: Option<ArtistRef>,
@@ -50,6 +52,8 @@ pub(super) struct Picked {
     pub like: Option<Likeable>,
     /// The header's "Add to queue": the whole list.
     pub queue_all: bool,
+    /// A choice in the header's ⋯ menu.
+    pub header_menu: Option<HeaderMenu>,
     pub cards: CardPicks,
 }
 
@@ -112,11 +116,13 @@ impl App {
             let first = ((viewport.top() - header_height) / metrics::TRACK_ROW).floor().max(0.0) as usize;
             let last = (((viewport.bottom() - header_height) / metrics::TRACK_ROW).ceil().max(0.0) as usize).min(count);
             let columns = Columns::new(origin.x, width);
+            let own = self.own_playlists();
+            let menu = RowMenu { playlists: &own, removable: self.showing_own_playlist().is_some() };
             for i in first..last {
                 let rect =
                     Rect::from_min_size(origin + vec2(0.0, header_height + i as f32 * metrics::TRACK_ROW), vec2(width, metrics::TRACK_ROW));
                 let liked = self.likes.likes.tracks.contains(&self.tracks[i].id);
-                track_row(ui, &mut self.covers, &self.tracks[i], i, rect, &columns, (playing_id, playing), liked, &mut picked);
+                track_row(ui, &mut self.covers, &self.tracks[i], i, rect, &columns, (playing_id, playing), liked, &menu, &mut picked);
             }
         });
 
@@ -139,8 +145,26 @@ impl App {
             self.player.send(Cmd::Enqueue(playable));
             self.queued_flash = Some(std::time::Instant::now());
         }
-        if let Some((i, mode)) = picked.queue {
-            self.player.send(mode.command(vec![self.tracks[i].clone()]));
+        if let Some((i, choice)) = picked.menu {
+            let track = self.tracks[i].clone();
+            self.track_menu_choice(&ctx, track, choice);
+        }
+        match picked.header_menu {
+            Some(HeaderMenu::AddAll(TrackMenu::AddTo(playlist))) => {
+                self.edit_playlist(&ctx, Edit::Add { playlist, tracks: self.tracks.clone() });
+            }
+            Some(HeaderMenu::AddAll(_)) => self.new_playlist(self.tracks.iter().filter(|t| t.available).cloned().collect()),
+            Some(HeaderMenu::Rename) => {
+                if let Some(playlist) = self.showing_own_playlist() {
+                    self.editing.dialog = Some(Dialog::Rename { title: playlist.title.clone(), playlist });
+                }
+            }
+            Some(HeaderMenu::Delete) => {
+                if let Some(playlist) = self.showing_own_playlist() {
+                    self.editing.dialog = Some(Dialog::Delete { playlist });
+                }
+            }
+            None => {}
         }
         if let Some((i, shuffle)) = picked.play
             && let Some((mut queue, i)) = playable_from(&self.tracks, i)
@@ -263,6 +287,28 @@ impl App {
                     ui.ctx().request_repaint_after(QUEUED_FLASH);
                 }
             }
+            if count > 0 {
+                let own = self.own_playlists();
+                let editable = self.showing_own_playlist().is_some();
+                let more = widgets::icon_button(ui, Icon::More, 18.0, colors().dim).on_hover_text("More");
+                egui::Popup::menu(&more).width(220.0).show(|ui| {
+                    if let Some(choice) = widgets::add_to_playlist(ui, &own) {
+                        picked.header_menu = Some(HeaderMenu::AddAll(choice));
+                    }
+                    if editable {
+                        widgets::divider(ui);
+                        if widgets::menu_row(ui, None, "Rename…", None, false, colors().text).clicked() {
+                            picked.header_menu = Some(HeaderMenu::Rename);
+                        }
+                        if widgets::menu_row(ui, Some(Icon::Close), "Delete playlist…", None, false, colors().danger).clicked() {
+                            picked.header_menu = Some(HeaderMenu::Delete);
+                        }
+                    }
+                    if picked.header_menu.is_some() {
+                        ui.close();
+                    }
+                });
+            }
             // Albums can be liked from their header.
             if let View::Collection(coll) = &self.view
                 && let Source::Album(id) = &coll.source
@@ -274,6 +320,22 @@ impl App {
             }
         });
     }
+}
+
+/// The page header's ⋯ menu.
+pub(super) enum HeaderMenu {
+    /// Add every playable track to a playlist (or a new one).
+    AddAll(TrackMenu),
+    Rename,
+    Delete,
+}
+
+/// What a row's right-click menu offers beyond queueing.
+pub(super) struct RowMenu<'a> {
+    /// Own playlists for "Add to playlist".
+    pub playlists: &'a [Playlist],
+    /// Showing one of the own playlists: rows can be removed from it.
+    pub removable: bool,
 }
 
 /// One row of a track table: number (or equalizer / play icon), artwork, title,
@@ -288,6 +350,7 @@ pub(super) fn track_row(
     columns: &Columns,
     (playing_id, playing): (Option<u64>, bool),
     liked: bool,
+    menu: &RowMenu,
     picked: &mut Picked,
 ) {
     let p = colors();
@@ -368,8 +431,8 @@ pub(super) fn track_row(
             picked.play = Some((i, false));
         }
     }
-    if let Some(mode) = widgets::queue_menu(&resp) {
-        picked.queue = Some((i, mode));
+    if let Some(choice) = widgets::track_menu(&resp, menu.playlists, menu.removable) {
+        picked.menu = Some((i, choice));
     }
 }
 
@@ -378,6 +441,29 @@ fn unavailable_note(track: &Track) -> String {
     match release_date(&track.available_from) {
         Some(date) => format!("Available from {date}"),
         None => "Not available to stream".into(),
+    }
+}
+
+impl App {
+    /// The own playlist on screen, if that's what is shown.
+    pub(in crate::ui) fn showing_own_playlist(&self) -> Option<Playlist> {
+        let View::Collection(coll) = &self.view else { return None };
+        let Source::Playlist(id) = coll.source else { return None };
+        self.playlists.iter().find(|p| p.id == id && p.owned).cloned()
+    }
+
+    /// Act on a track's right-click menu.
+    pub(in crate::ui) fn track_menu_choice(&mut self, ctx: &egui::Context, track: Track, choice: TrackMenu) {
+        match choice {
+            TrackMenu::Play(mode) => self.player.send(mode.command(vec![track])),
+            TrackMenu::AddTo(playlist) => self.edit_playlist(ctx, Edit::Add { playlist, tracks: vec![track] }),
+            TrackMenu::NewPlaylist => self.new_playlist(vec![track]),
+            TrackMenu::Remove => {
+                if let Some(playlist) = self.showing_own_playlist() {
+                    self.edit_playlist(ctx, Edit::Remove { playlist: playlist.id, tracks: vec![track.id] });
+                }
+            }
+        }
     }
 }
 

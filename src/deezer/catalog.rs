@@ -37,7 +37,7 @@ impl Deezer {
     pub fn playlists(&self) -> Result<Vec<Playlist>> {
         let r = self.call("deezer.pageProfile", json!({"user_id": self.0.user_id, "tab": "playlists", "nb": 500}))?;
         let list = r["TAB"]["playlists"]["data"].as_array().cloned().unwrap_or_default();
-        Ok(list.iter().map(parse::playlist).filter(|p| p.id != 0 && p.id != self.0.loved_id).collect())
+        Ok(list.iter().map(|v| parse::playlist(v, self.0.user_id)).filter(|p| p.id != 0 && p.id != self.0.loved_id).collect())
     }
 
     /// Personalised home page, as sections of items (what the web app shows).

@@ -51,7 +51,18 @@ impl App {
         if widgets::nav_item(ui, Icon::Person, "Artists", self.view == View::Artists).clicked() {
             go = Some(View::Artists);
         }
-        widgets::section(ui, "PLAYLISTS");
+        // "PLAYLISTS" with a + for a new, empty playlist.
+        ui.add_space(18.0);
+        let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
+        text_left(ui.painter(), pos2(row.left() + 10.0, row.center().y), "PLAYLISTS", ty::OVERLINE, colors().faint, row.width() - 40.0);
+        let plus = Rect::from_center_size(pos2(row.right() - 12.0, row.center().y), Vec2::splat(22.0));
+        let resp = ui.interact(plus, ui.id().with("new-playlist"), Sense::click());
+        let color = if resp.hovered() { colors().text } else { colors().faint };
+        icons::paint(ui.painter(), Rect::from_center_size(plus.center(), Vec2::splat(12.0)), Icon::Plus, color);
+        if resp.on_hover_text("New playlist").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+            self.new_playlist(Vec::new());
+        }
+        ui.add_space(4.0);
         if let Some(view) = go {
             self.open_view(&ctx, view);
         }

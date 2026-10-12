@@ -15,6 +15,7 @@ mod format;
 mod history;
 mod likes;
 mod now_playing;
+mod playlist_edit;
 mod state;
 mod style;
 mod tasks;
