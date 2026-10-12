@@ -60,7 +60,7 @@ mod tests {
         let client = Deezer::login(&crate::credentials::load().expect("stored session")).expect("login");
         let id = client.create_playlist("dust test (delete me)", true, &[3135556]).unwrap();
         let ids = |c: &Deezer| c.playlist(id).unwrap().iter().map(|t| t.id).collect::<Vec<_>>();
-        let result = (|| {
+        let result = || {
             assert_eq!(ids(&client), [3135556]);
             // The duplicate is skipped instead of failing the batch.
             assert_eq!(client.add_to_playlist(id, &[3135556, 3135561, 3135561]).unwrap(), 1);
@@ -71,7 +71,7 @@ mod tests {
             assert!(playlist.owned && playlist.private);
             client.rename_playlist(&playlist, "dust test renamed").unwrap();
             assert!(client.playlists().unwrap().iter().any(|p| p.id == id && p.title == "dust test renamed"));
-        });
+        };
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(result));
         client.delete_playlist(id).unwrap();
         assert!(!client.playlists().unwrap().iter().any(|p| p.id == id), "deleted");
