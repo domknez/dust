@@ -273,4 +273,5 @@ Contributions are welcome.
 
 dust is an unofficial client and is not affiliated with or endorsed by Deezer. It uses
 Deezer's private web API with your own subscription, for personal use; it may break at
-any time or conflict with Deezer's terms of service.
+any time or conflict with Deezer's terms of service. dust only streams: it does not
+download or save tracks.
