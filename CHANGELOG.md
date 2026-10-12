@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.12.0 (2026-10-12)
+
 - Playlist management: add tracks to your playlists (right-click a track, or ⋯ → Add all
   to playlist on album and playlist pages), create playlists (empty from the sidebar's +,
   from tracks, or from the queue with Save), remove tracks from your own playlists, and
