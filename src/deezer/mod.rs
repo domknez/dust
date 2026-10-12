@@ -4,6 +4,7 @@
 //! - [`client`]: the [`Deezer`] handle, login and authenticated calls
 //! - [`catalog`]: search, playlists, home page, albums, artists, mixes, Flow
 //! - [`streaming`]: stream URL resolution (with regional fallbacks) and decrypted reads
+//! - [`playlists`]: creating and editing the account's own playlists
 //! - [`listens`]: listen reports (history, Flow, Last.fm scrobbling)
 //! - [`models`] / [`parse`]: data types and their construction from API JSON
 //! - [`crypto`]: the `BF_CBC_STRIPE` stream cipher
@@ -19,6 +20,7 @@ mod links;
 mod listens;
 mod models;
 mod parse;
+mod playlists;
 mod prefetch;
 mod session;
 mod streaming;

@@ -38,6 +38,8 @@ including cover art.
   artists and albums picked for you
 - **Endless Flow:** keeps going like on Deezer, fetching more as you listen
 - **Music:** Loved tracks, playlists (list and grid), your albums, the artists you follow
+- **Playlists:** create them (empty, from tracks, or from the whole queue), add tracks,
+  remove tracks, rename and delete your own playlists; synced with Deezer
 - **Likes:** heart tracks (in any list or the player bar) and albums, follow artists;
   synced with your Deezer account
 - **Artist pages:** popular tracks and the full discography (albums, singles & EPs,
@@ -214,8 +216,11 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 - `⌘⇧M` / `Ctrl+Shift+M`: mini player on/off
 - Double-click a track, or click its number: play from there
 - Home cards: click to open, click the round play button to play right away
-- Right-click a track, card or playlist: *Play next* / *Add to queue*; album and
-  playlist pages also have an *Add to queue* button
+- Right-click a track: *Play next*, *Add to queue*, *Add to playlist ›* (and *Remove
+  from this playlist* on your own); right-click a card or playlist: *Play next* /
+  *Add to queue*; album and playlist pages have *Add to queue* and a ⋯ menu (*Add all
+  to playlist*, *Rename*, *Delete*)
+- Queue panel → *Save*: the queue as a new playlist; sidebar → *+*: a new playlist
 - Queue button (next to AirPlay): open the queue; drag rows to reorder
 
 ## Project structure

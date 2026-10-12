@@ -1,6 +1,7 @@
 //! Popover menus and their rows.
 
 use super::text::text_left;
+use crate::deezer::Playlist;
 use crate::ui::state::PlayMode;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, radius, typography as ty};
@@ -78,6 +79,77 @@ pub fn queue_menu(resp: &Response) -> Option<PlayMode> {
         }
         if menu_row(ui, Some(Icon::Queue), "Add to queue", None, false, colors().text).clicked() {
             pick = Some(PlayMode::Queue);
+            ui.close();
+        }
+    });
+    pick
+}
+
+/// A choice in a track's right-click menu.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TrackMenu {
+    Play(PlayMode),
+    /// Add to this (own) playlist.
+    AddTo(Playlist),
+    /// Name a new playlist holding the track.
+    NewPlaylist,
+    /// Take it out of the playlist being shown.
+    Remove,
+}
+
+/// Right-click menu for a track: Play next, Add to queue, Add to playlist ›, and
+/// Remove from this playlist when `removable`.
+pub fn track_menu(resp: &Response, playlists: &[Playlist], removable: bool) -> Option<TrackMenu> {
+    let mut pick = None;
+    resp.context_menu(|ui| {
+        ui.set_min_width(CONTEXT_MENU_WIDTH);
+        ui.set_max_width(CONTEXT_MENU_WIDTH);
+        if menu_row(ui, Some(Icon::Play), "Play next", None, false, colors().text).clicked() {
+            pick = Some(TrackMenu::Play(PlayMode::Next));
+        }
+        if menu_row(ui, Some(Icon::Queue), "Add to queue", None, false, colors().text).clicked() {
+            pick = Some(TrackMenu::Play(PlayMode::Queue));
+        }
+        if let Some(choice) = add_to_playlist(ui, playlists) {
+            pick = Some(choice);
+        }
+        if removable {
+            divider(ui);
+            if menu_row(ui, Some(Icon::Close), "Remove from this playlist", None, false, colors().danger).clicked() {
+                pick = Some(TrackMenu::Remove);
+            }
+        }
+        if pick.is_some() {
+            ui.close();
+        }
+    });
+    pick
+}
+
+/// "Add to playlist ›" row with a submenu: New playlist…, then the own playlists.
+/// Returns AddTo or NewPlaylist when one was chosen.
+pub fn add_to_playlist(ui: &mut Ui, playlists: &[Playlist]) -> Option<TrackMenu> {
+    let row = menu_row(ui, Some(Icon::Plus), "Add to playlist", None, false, colors().text);
+    let chevron = egui::Rect::from_center_size(pos2(row.rect.right() - 16.0, row.rect.center().y), Vec2::splat(12.0));
+    icons::paint(ui.painter(), chevron, Icon::ChevronRight, colors().faint);
+    let mut pick = None;
+    egui::containers::menu::SubMenu::new().show(ui, &row, |ui| {
+        ui.set_min_width(CONTEXT_MENU_WIDTH);
+        ui.set_max_width(CONTEXT_MENU_WIDTH + 40.0);
+        if menu_row(ui, Some(Icon::Plus), "New playlist…", None, false, colors().accent).clicked() {
+            pick = Some(TrackMenu::NewPlaylist);
+        }
+        if !playlists.is_empty() {
+            divider(ui);
+        }
+        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+            for p in playlists {
+                if menu_row(ui, None, &p.title, None, false, colors().text).clicked() {
+                    pick = Some(TrackMenu::AddTo(p.clone()));
+                }
+            }
+        });
+        if pick.is_some() {
             ui.close();
         }
     });

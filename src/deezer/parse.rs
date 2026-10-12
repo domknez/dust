@@ -79,11 +79,14 @@ pub fn tracks(v: &Value) -> Vec<Track> {
     v.as_array().map(|a| a.iter().filter_map(track).collect()).unwrap_or_default()
 }
 
-pub fn playlist(v: &Value) -> Playlist {
+/// A playlist of the profile; `me` is the account's user id (ownership).
+pub fn playlist(v: &Value, me: u64) -> Playlist {
     Playlist {
         id: number(&v["PLAYLIST_ID"]),
         title: text(&v["TITLE"]),
         count: number(&v["NB_SONG"]) as u32,
+        owned: number(&v["PARENT_USER_ID"]) == me,
+        private: number(&v["STATUS"]) == 1,
         picture: picture(&v["PICTURE_TYPE"], &v["PLAYLIST_PICTURE"]),
     }
 }

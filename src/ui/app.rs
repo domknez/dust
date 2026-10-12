@@ -5,6 +5,7 @@ use super::covers::Covers;
 use super::history::{History, Visit};
 use super::likes::{self, LikeState};
 use super::now_playing::NowPlaying;
+use super::playlist_edit::PlaylistEditing;
 use super::state::{ArtistView, Coll, PlayMode, Source, View};
 use super::style::{self, Appearance, colors, metrics};
 use super::tasks::{self, Task};
@@ -94,6 +95,8 @@ pub struct App {
     now_playing: Option<NowPlaying>,
     pub(super) updates: Updates,
     pub(super) history: History,
+    /// Playlist changes in flight, their dialog and notice.
+    pub(super) editing: PlaylistEditing,
     /// When a whole list was last added to the queue (for the button's confirmation).
     pub(super) queued_flash: Option<std::time::Instant>,
     /// What the saved queue file last reflected (queue snapshot, index, Flow);
@@ -126,6 +129,7 @@ impl App {
             now_playing: NowPlaying::start(cc, player.clone()),
             updates: Updates::new(auto_update),
             history: History::default(),
+            editing: PlaylistEditing::default(),
             queued_flash: None,
             queue_saved: None,
             restore_pending: false,
@@ -448,6 +452,7 @@ impl App {
             None => {}
         }
         self.poll_likes();
+        self.poll_playlist_edits(ctx);
         match tasks::poll(&mut self.followed_task) {
             Some(Ok(artists)) => self.followed = artists,
             Some(Err(e)) => self.on_load_error(e),
@@ -613,6 +618,7 @@ impl eframe::App for App {
         if let Some(album) = self.pending_album.take() {
             self.open_collection(&ctx, album);
         }
+        self.playlist_dialog(&ctx);
         if let Some(what) = self.pending_like.take() {
             self.toggle_like(&ctx, what);
         }
@@ -630,7 +636,7 @@ mod tests {
 
     #[test]
     fn own_playlists_match_case_insensitively() {
-        let p = |id, title: &str| Playlist { id, title: title.into(), count: 3, picture: None };
+        let p = |id, title: &str| Playlist { id, title: title.into(), count: 3, owned: true, private: false, picture: None };
         let mine = [p(1, "Rock Essentials"), p(2, "Rock & Chill"), p(3, "trip-hop mix")];
         let found = own_playlists(&mine, "  rock ").unwrap();
         assert_eq!(found.title, "Your playlists");

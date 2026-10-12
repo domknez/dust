@@ -1,0 +1,202 @@
+//! Editing the account's own playlists from the UI: add tracks, create (from a track,
+//! a list or the queue), remove tracks, rename, delete. Dialogs ask for names and
+//! confirm deletes; a short notice reports what happened.
+
+use crate::deezer::{Deezer, Error, Playlist, Track};
+use crate::ui::app::App;
+use crate::ui::state::{Source, View};
+use crate::ui::style::{colors, typography as ty};
+use crate::ui::tasks::{self, Task};
+use crate::ui::widgets;
+use eframe::egui::{self, Key, RichText};
+use std::time::{Duration, Instant};
+
+/// How long a notice stays up.
+const NOTICE_FOR: Duration = Duration::from_secs(4);
+
+/// A change to make on Deezer.
+pub enum Edit {
+    Add { playlist: Playlist, tracks: Vec<Track> },
+    Create { title: String, private: bool, tracks: Vec<Track> },
+    Remove { playlist: u64, tracks: Vec<u64> },
+    Rename { playlist: Playlist, title: String },
+    Delete { playlist: Playlist },
+}
+
+/// An open dialog.
+pub enum Dialog {
+    /// Name a new playlist; it starts with `tracks` (possibly none).
+    Create {
+        title: String,
+        private: bool,
+        tracks: Vec<Track>,
+    },
+    Rename {
+        playlist: Playlist,
+        title: String,
+    },
+    Delete {
+        playlist: Playlist,
+    },
+}
+
+/// What finished: the notice to show, and the playlist it changed (to reload it).
+pub struct Done {
+    message: String,
+    playlist: Option<u64>,
+    deleted: bool,
+}
+
+#[derive(Default)]
+pub struct PlaylistEditing {
+    pub dialog: Option<Dialog>,
+    task: Task<Done>,
+    notice: Option<(String, Instant)>,
+}
+
+impl PlaylistEditing {
+    pub fn busy(&self) -> bool {
+        self.task.is_some()
+    }
+
+    /// The current notice, if it's still fresh.
+    pub fn notice(&self) -> Option<&str> {
+        self.notice.as_ref().filter(|(_, at)| at.elapsed() < NOTICE_FOR).map(|(m, _)| m.as_str())
+    }
+}
+
+fn plural(n: usize) -> String {
+    if n == 1 { "1 track".into() } else { format!("{n} tracks") }
+}
+
+fn run(client: &Deezer, edit: Edit) -> Result<Done, Error> {
+    let ids = |tracks: &[Track]| tracks.iter().filter(|t| t.available).map(|t| t.id).collect::<Vec<_>>();
+    Ok(match edit {
+        Edit::Add { playlist, tracks } => {
+            let added = client.add_to_playlist(playlist.id, &ids(&tracks))?;
+            let message = match added {
+                0 => format!("Already in {}", playlist.title),
+                n => format!("Added {} to {}", plural(n), playlist.title),
+            };
+            Done { message, playlist: Some(playlist.id), deleted: false }
+        }
+        Edit::Create { title, private, tracks } => {
+            let id = client.create_playlist(&title, private, &ids(&tracks))?;
+            Done { message: format!("Created {title}"), playlist: Some(id), deleted: false }
+        }
+        Edit::Remove { playlist, tracks } => {
+            client.remove_from_playlist(playlist, &tracks)?;
+            Done { message: format!("Removed {}", plural(tracks.len())), playlist: Some(playlist), deleted: false }
+        }
+        Edit::Rename { playlist, title } => {
+            client.rename_playlist(&playlist, &title)?;
+            Done { message: format!("Renamed to {title}"), playlist: Some(playlist.id), deleted: false }
+        }
+        Edit::Delete { playlist } => {
+            client.delete_playlist(playlist.id)?;
+            Done { message: format!("Deleted {}", playlist.title), playlist: Some(playlist.id), deleted: true }
+        }
+    })
+}
+
+impl App {
+    /// The account's playlists that can be changed.
+    pub(in crate::ui) fn own_playlists(&self) -> Vec<Playlist> {
+        self.playlists.iter().filter(|p| p.owned).cloned().collect()
+    }
+
+    pub(in crate::ui) fn edit_playlist(&mut self, ctx: &egui::Context, edit: Edit) {
+        let Some(client) = self.client.clone() else { return };
+        self.editing.task = tasks::spawn(ctx, move || run(&client, edit));
+    }
+
+    /// Ask for a name, then create a playlist with `tracks`.
+    pub(in crate::ui) fn new_playlist(&mut self, tracks: Vec<Track>) {
+        self.editing.dialog = Some(Dialog::Create { title: String::new(), private: false, tracks });
+    }
+
+    /// Collect a finished edit: notice, refreshed sidebar, reloaded page.
+    pub(in crate::ui) fn poll_playlist_edits(&mut self, ctx: &egui::Context) {
+        let Some(result) = tasks::poll(&mut self.editing.task) else { return };
+        let done = match result {
+            Ok(done) => done,
+            Err(e) => {
+                self.editing.notice = Some((format!("Couldn't change the playlist: {e}"), Instant::now()));
+                return;
+            }
+        };
+        self.editing.notice = Some((done.message, Instant::now()));
+        if let Some(client) = self.client.clone() {
+            self.playlists_task = tasks::spawn(ctx, move || client.playlists());
+        }
+        let showing = matches!(&self.view, View::Collection(c) if done.playlist.is_some_and(|id| c.source == Source::Playlist(id)));
+        if showing && done.deleted {
+            self.open_view(ctx, View::Playlists);
+        } else if showing {
+            self.show_view(ctx, self.view.clone());
+        }
+        ctx.request_repaint_after(NOTICE_FOR);
+    }
+
+    /// The open dialog, if any (call once per frame).
+    pub(in crate::ui) fn playlist_dialog(&mut self, ctx: &egui::Context) {
+        let Some(mut dialog) = self.editing.dialog.take() else { return };
+        let p = colors();
+        let mut submit = None;
+        let mut close = false;
+        let modal = egui::Modal::new(egui::Id::new("playlist-dialog")).frame(widgets::popover_frame(ctx)).show(ctx, |ui| {
+            ui.set_width(320.0);
+            ui.spacing_mut().item_spacing.y = 10.0;
+            let confirm = |ui: &mut egui::Ui, label: &str, enabled: bool| {
+                ui.add_enabled(enabled, egui::Button::new(RichText::new(label).strong())).clicked()
+                    || (enabled && ui.input(|i| i.key_pressed(Key::Enter)))
+            };
+            match &mut dialog {
+                Dialog::Create { title, private, tracks } => {
+                    ui.label(RichText::new("New playlist").font(ty::SECTION_TITLE.font()).color(p.text));
+                    if !tracks.is_empty() {
+                        ui.label(RichText::new(format!("With {}", plural(tracks.len()))).color(p.dim));
+                    }
+                    let field = ui.add(egui::TextEdit::singleline(title).hint_text("Name").desired_width(f32::INFINITY));
+                    field.request_focus();
+                    ui.checkbox(private, "Private (only you can see it)");
+                    ui.horizontal(|ui| {
+                        if confirm(ui, "Create", !title.trim().is_empty()) {
+                            submit =
+                                Some(Edit::Create { title: title.trim().to_string(), private: *private, tracks: std::mem::take(tracks) });
+                        }
+                        close |= ui.button("Cancel").clicked();
+                    });
+                }
+                Dialog::Rename { playlist, title } => {
+                    ui.label(RichText::new("Rename playlist").font(ty::SECTION_TITLE.font()).color(p.text));
+                    let field = ui.add(egui::TextEdit::singleline(title).desired_width(f32::INFINITY));
+                    field.request_focus();
+                    ui.horizontal(|ui| {
+                        let changed = !title.trim().is_empty() && title.trim() != playlist.title;
+                        if confirm(ui, "Rename", changed) {
+                            submit = Some(Edit::Rename { playlist: playlist.clone(), title: title.trim().to_string() });
+                        }
+                        close |= ui.button("Cancel").clicked();
+                    });
+                }
+                Dialog::Delete { playlist } => {
+                    ui.label(RichText::new("Delete playlist?").font(ty::SECTION_TITLE.font()).color(p.text));
+                    ui.label(RichText::new(format!("“{}” will be deleted from your Deezer account.", playlist.title)).color(p.dim));
+                    ui.horizontal(|ui| {
+                        if ui.button(RichText::new("Delete").strong().color(p.danger)).clicked() {
+                            submit = Some(Edit::Delete { playlist: playlist.clone() });
+                        }
+                        close |= ui.button("Cancel").clicked();
+                    });
+                }
+            }
+        });
+        close |= modal.should_close();
+        match submit {
+            Some(edit) => self.edit_playlist(ctx, edit),
+            None if !close => self.editing.dialog = Some(dialog),
+            None => {}
+        }
+    }
+}

@@ -2,7 +2,7 @@
 //! for the discography (albums, singles & EPs, live & compilations), playlists
 //! featuring the artist and related artists.
 
-use super::collection::{Columns, Picked, track_row};
+use super::collection::{Columns, Picked, RowMenu, track_row};
 use super::home::card_row;
 use crate::deezer::{Likeable, Track, image_url, thousands};
 use crate::player::{Cmd, State, Status};
@@ -42,10 +42,12 @@ impl App {
             if !page.top.is_empty() {
                 section_title(ui, "Popular");
                 let columns = Columns::new(ui.cursor().left(), width);
+                let own = self.own_playlists();
+                let menu = RowMenu { playlists: &own, removable: false };
                 for (i, track) in page.top.iter().take(POPULAR).enumerate() {
                     let (rect, _) = ui.allocate_exact_size(vec2(width, metrics::TRACK_ROW), Sense::hover());
                     let liked = self.likes.likes.tracks.contains(&track.id);
-                    track_row(ui, &mut self.covers, track, i, rect, &columns, now, liked, &mut picked);
+                    track_row(ui, &mut self.covers, track, i, rect, &columns, now, liked, &menu, &mut picked);
                 }
                 if page.top.len() > POPULAR {
                     ui.add_space(6.0);
@@ -68,10 +70,10 @@ impl App {
                 fastrand::shuffle(&mut queue);
             }
             self.player.send(Cmd::Play(queue, i));
-        } else if let Some((i, mode)) = picked.queue
-            && let Some(track) = top.get(i)
+        } else if let Some((i, choice)) = picked.menu
+            && let Some(track) = top.get(i).cloned()
         {
-            self.player.send(mode.command(vec![track.clone()]));
+            self.track_menu_choice(&ctx, track, choice);
         }
         if picked.toggle {
             self.player.send(Cmd::Toggle);

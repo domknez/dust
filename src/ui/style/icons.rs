@@ -38,6 +38,10 @@ pub enum Icon {
     Close,
     /// Small up/down chevrons: "opens a menu".
     Chevrons,
+    /// Add (playlists).
+    Plus,
+    /// Three dots: more actions.
+    More,
     /// Back / forward.
     ChevronLeft,
     ChevronRight,
@@ -230,6 +234,15 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
         Icon::Close => {
             line(p(r, 0.22, 0.22), p(r, 0.78, 0.78));
             line(p(r, 0.78, 0.22), p(r, 0.22, 0.78));
+        }
+        Icon::Plus => {
+            line(p(r, 0.5, 0.2), p(r, 0.5, 0.8));
+            line(p(r, 0.2, 0.5), p(r, 0.8, 0.5));
+        }
+        Icon::More => {
+            for x in [0.2, 0.5, 0.8] {
+                painter.circle_filled(p(r, x, 0.5), w * 0.09, color);
+            }
         }
         Icon::ChevronLeft | Icon::ChevronRight => {
             let flip = |x: f32| if icon == Icon::ChevronRight { 1.0 - x } else { x };

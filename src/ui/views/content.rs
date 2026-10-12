@@ -18,6 +18,12 @@ impl App {
             if let Some(e) = &st.error {
                 ui.add_space(12.0);
                 ui.label(RichText::new(e).color(colors().danger).font(ty::SECONDARY.font()));
+            } else if self.editing.busy() {
+                ui.add_space(12.0);
+                ui.add(egui::Spinner::new().size(14.0));
+            } else if let Some(notice) = self.editing.notice() {
+                ui.add_space(12.0);
+                ui.label(RichText::new(notice).color(colors().accent).font(ty::SECONDARY.font()));
             }
         });
         ui.add_space(20.0);

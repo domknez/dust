@@ -24,7 +24,7 @@ impl App {
         let has_current = st.track.is_some() && current < queue.len();
         let upcoming = queue.len().saturating_sub(current + 1);
 
-        self.queue_title(ui, upcoming > 0);
+        self.queue_title(ui, upcoming > 0, &queue);
         if st.flow.is_some() {
             text_left(ui.painter(), ui.cursor().min + vec2(4.0, 8.0), "Flow · keeps going", ty::SMALL, colors().accent, 300.0);
             ui.add_space(18.0);
@@ -60,9 +60,9 @@ impl App {
         }
     }
 
-    fn queue_title(&mut self, ui: &mut Ui, can_clear: bool) {
+    fn queue_title(&mut self, ui: &mut Ui, can_clear: bool, queue: &[crate::deezer::Track]) {
         ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width() - 90.0, 36.0), Sense::hover());
+            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width() - 150.0, 36.0), Sense::hover());
             text_left(ui.painter(), pos2(r.left() + 4.0, r.center().y), "Queue", ty::PANEL_TITLE, colors().text, r.width());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if widgets::icon_button(ui, Icon::Close, 14.0, colors().dim).on_hover_text("Close").clicked() {
@@ -70,6 +70,10 @@ impl App {
                 }
                 if can_clear && ui.link(RichText::new("Clear").font(ty::BODY.font())).clicked() {
                     self.player.send(Cmd::ClearUpcoming);
+                }
+                let save = ui.link(RichText::new("Save").font(ty::BODY.font())).on_hover_text("Save the queue as a new playlist");
+                if !queue.is_empty() && save.clicked() {
+                    self.new_playlist(queue.iter().filter(|t| t.available).cloned().collect());
                 }
             });
         });
