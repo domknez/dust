@@ -143,5 +143,16 @@ fn fetch(agent: &ureq::Agent, url: &str) -> Option<ColorImage> {
     let mut dec = JpegDecoder::new_with_options(&bytes[..], DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA));
     let pixels = dec.decode().ok()?;
     let info = dec.info()?;
-    Some(ColorImage::from_rgba_unmultiplied([info.width as usize, info.height as usize], &pixels))
+    let size = [info.width as usize, info.height as usize];
+    // Greyscale JPEGs come back as one byte per pixel even when RGBA is asked for.
+    let area = size[0] * size[1];
+    if area == 0 || pixels.len() % area != 0 {
+        return None;
+    }
+    match pixels.len() / area {
+        1 => Some(ColorImage::from_gray(size, &pixels)),
+        3 => Some(ColorImage::from_rgb(size, &pixels)),
+        4 => Some(ColorImage::from_rgba_unmultiplied(size, &pixels)),
+        _ => None,
+    }
 }

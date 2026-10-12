@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed: opening some artists (e.g. Royal Blood) crashed the app on greyscale pictures
+
 ## 0.12.0 (2026-10-12)
 
 - Playlist management: add tracks to your playlists (right-click a track, or ⋯ → Add all
