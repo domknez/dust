@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.12.1 (2026-10-12)
+
 - Fixed: opening some artists (e.g. Royal Blood) crashed the app on greyscale pictures
 
 ## 0.12.0 (2026-10-12)
