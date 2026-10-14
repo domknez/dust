@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.13.0 (2026-10-14)
+
 - Shuffle and repeat (all / one) buttons in the player bar. Shuffle mixes the upcoming
   tracks and turning it off puts the queue back in order; both settings are remembered
 
