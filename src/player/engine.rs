@@ -4,7 +4,7 @@
 use super::library::{Decoded, Playback, SharedLibrary};
 use super::listens::ListenTracker;
 use super::queue::{Flow, Queue, Removed};
-use super::{Cmd, Output, State, Status};
+use super::{Cmd, Output, Repeat, State, Status};
 use crate::deezer::{Quality, Track};
 use crate::output::airplay::AirPlaySink;
 use crate::output::local::LocalSink;
@@ -45,6 +45,7 @@ pub struct Engine {
     sink: Option<Box<dyn Sink>>,
     make_sink: SinkFactory,
     volume: f32,
+    repeat: Repeat,
     stream: Option<Box<dyn Playback>>,
     playing: bool,
     /// Decoded samples the sink hasn't accepted yet, and the track time they end at.
@@ -78,6 +79,7 @@ impl Engine {
             sink: None,
             make_sink,
             volume,
+            repeat: Repeat::Off,
             stream: None,
             playing: false,
             pending: Vec::new(),
@@ -132,7 +134,7 @@ impl Engine {
             Cmd::Output(o) => self.switch_output(o),
 
             Cmd::Play(tracks, index) => {
-                self.queue.replace(tracks, index);
+                self.queue.play(tracks, index);
                 self.start_track(0.0);
             }
             Cmd::PlayFlow(mood) => self.play_flow(mood),
@@ -145,6 +147,8 @@ impl Engine {
             Cmd::Seek(t) => self.seek(t),
             Cmd::Volume(v) => self.set_volume(v),
             Cmd::VolumeStep(d) => self.set_volume((self.volume + d).clamp(0.0, 1.0)),
+            Cmd::Shuffle(on) => self.queue.set_shuffle(on),
+            Cmd::Repeat(r) => self.repeat = r,
 
             Cmd::Enqueue(tracks) => self.queue.enqueue(tracks),
             Cmd::PlayNext(tracks) => self.queue.play_next(tracks),
@@ -205,12 +209,18 @@ impl Engine {
     }
 
     fn next(&mut self) {
+        if self.forward() {
+            self.start_track(0.0);
+        }
+    }
+
+    /// Move to the next entry: more Flow when it runs out, back to the start with
+    /// repeat on. Returns false at the end of the queue.
+    fn forward(&mut self) -> bool {
         if !self.queue.has_next() {
             self.extend_flow();
         }
-        if self.queue.advance() {
-            self.start_track(0.0);
-        }
+        self.queue.advance() || (self.repeat != Repeat::Off && self.queue.flow.is_none() && self.queue.jump_to(0))
     }
 
     fn previous(&mut self) {
@@ -310,14 +320,14 @@ impl Engine {
     /// Continue with the next track after the current one ended, without flushing the
     /// sink so the transition stays tight.
     fn continue_after_end(&mut self) {
-        if !self.queue.has_next() {
-            self.extend_flow();
-        }
-        if !self.queue.advance() {
+        if self.repeat != Repeat::One && !self.forward() {
             self.stop();
             return;
         }
-        let track = self.queue.current().cloned().expect("advanced to an entry");
+        let Some(track) = self.queue.current().cloned() else {
+            self.stop();
+            return;
+        };
         self.listens.finish(self.library.as_deref());
         match self.open(&track, 0.0) {
             Ok(stream) => self.begin(stream, &track),
@@ -457,6 +467,8 @@ impl Engine {
         };
         st.output = self.output.name().to_string();
         st.volume = self.volume;
+        st.shuffle = self.queue.shuffled();
+        st.repeat = self.repeat;
         st.index = self.queue.index();
         if let Some(snapshot) = self.queue.take_snapshot() {
             st.queue = Arc::new(snapshot);
@@ -703,6 +715,34 @@ mod tests {
         assert_eq!(now_playing(&e), Some(1));
         play_out(&mut e);
         assert_eq!(*library.started.lock().unwrap(), [1, 2]);
+        assert_eq!(e.status.lock().unwrap().state, State::Stopped);
+    }
+
+    /// Step until `n` tracks have started (bounded).
+    fn play_until_started(e: &mut Engine, library: &FakeLibrary, n: usize) {
+        for _ in 0..10_000 {
+            if library.started.lock().unwrap().len() >= n || !e.playing {
+                return;
+            }
+            e.step();
+        }
+        panic!("never got to {n} tracks");
+    }
+
+    #[test]
+    fn repeat_all_starts_over_and_repeat_one_stays() {
+        let (mut e, library, _tx) = engine(FakeLibrary::default());
+        e.handle(Cmd::Repeat(Repeat::All));
+        e.handle(Cmd::Play(vec![track(1, 2), track(2, 2)], 0));
+        play_until_started(&mut e, &library, 4);
+        assert_eq!(*library.started.lock().unwrap(), [1, 2, 1, 2]);
+        e.handle(Cmd::Repeat(Repeat::One));
+        play_until_started(&mut e, &library, 6);
+        assert_eq!(library.started.lock().unwrap()[4..], [2, 2]);
+        e.handle(Cmd::Next);
+        assert_eq!(now_playing(&e), Some(1), "next still moves on (and wraps)");
+        e.handle(Cmd::Repeat(Repeat::Off));
+        play_out(&mut e);
         assert_eq!(e.status.lock().unwrap().state, State::Stopped);
     }
 

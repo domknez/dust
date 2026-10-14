@@ -54,7 +54,8 @@ including cover art.
 - **Queue:** see what's next, jump to any track, reorder by dragging, remove, clear;
   it survives a restart (paused where you left off);
   right-click any track or card → *Play next* / *Add to queue*
-- **Seeking** (HTTP range jumps for MP3), shuffle
+- **Seeking** (HTTP range jumps for MP3)
+- **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs
 - **AirPlay 2 and AirPlay 1** output with automatic discovery — Sonos (incl. Era 100/300),
   HomePod-class receivers, Apple TV, AirPort Express, shairport-sync and most AirPlay speakers
 - **Last.fm scrobbling, history and Flow learning:** dust reports what you listen to

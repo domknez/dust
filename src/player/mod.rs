@@ -36,6 +36,44 @@ impl Output {
     }
 }
 
+/// What happens when a track ends.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum Repeat {
+    #[default]
+    Off,
+    /// Start the queue over after the last track.
+    All,
+    /// Play the current track again.
+    One,
+}
+
+impl Repeat {
+    /// The next mode for the repeat button: off → all → one → off.
+    pub fn next(self) -> Repeat {
+        match self {
+            Repeat::Off => Repeat::All,
+            Repeat::All => Repeat::One,
+            Repeat::One => Repeat::Off,
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Repeat::Off => "off",
+            Repeat::All => "all",
+            Repeat::One => "one",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Repeat {
+        match key {
+            "all" => Repeat::All,
+            "one" => Repeat::One,
+            _ => Repeat::Off,
+        }
+    }
+}
+
 /// Requests from the UI (and the speaker's remote control) to the engine.
 pub enum Cmd {
     Client(Deezer),
@@ -56,6 +94,9 @@ pub enum Cmd {
     Seek(f64),
     Volume(f32),
     VolumeStep(f32),
+    /// Shuffle the upcoming tracks, or put the queue back in order.
+    Shuffle(bool),
+    Repeat(Repeat),
 
     /// Append to the end of the queue.
     Enqueue(Vec<Track>),
@@ -98,6 +139,8 @@ pub struct Status {
     pub index: usize,
     pub position: f64,
     pub volume: f32,
+    pub shuffle: bool,
+    pub repeat: Repeat,
     /// Active Flow config ("default" for plain Flow), if playing Flow.
     pub flow: Option<String>,
     pub output: String,

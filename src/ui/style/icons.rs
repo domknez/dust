@@ -10,6 +10,10 @@ pub enum Icon {
     Prev,
     Next,
     Shuffle,
+    /// Two arrows chasing each other: repeat the queue.
+    Repeat,
+    /// Repeat with a 1: repeat the current track.
+    RepeatOne,
     Volume,
     Mute,
     AirPlay,
@@ -106,6 +110,18 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             for y in [0.3, 0.7] {
                 line(p(r, 0.76, y - 0.1), p(r, 0.88, y));
                 line(p(r, 0.76, y + 0.1), p(r, 0.88, y));
+            }
+        }
+        Icon::Repeat | Icon::RepeatOne => {
+            painter.add(Shape::line(vec![p(r, 0.14, 0.6), p(r, 0.14, 0.32), p(r, 0.84, 0.32)], stroke));
+            line(p(r, 0.74, 0.22), p(r, 0.85, 0.32));
+            line(p(r, 0.74, 0.42), p(r, 0.85, 0.32));
+            painter.add(Shape::line(vec![p(r, 0.86, 0.4), p(r, 0.86, 0.68), p(r, 0.16, 0.68)], stroke));
+            line(p(r, 0.26, 0.58), p(r, 0.15, 0.68));
+            line(p(r, 0.26, 0.78), p(r, 0.15, 0.68));
+            if icon == Icon::RepeatOne {
+                let font = eframe::egui::FontId::proportional(w * 0.34);
+                painter.text(p(r, 0.5, 0.5), eframe::egui::Align2::CENTER_CENTER, "1", font, color);
             }
         }
         Icon::Volume | Icon::Mute => {

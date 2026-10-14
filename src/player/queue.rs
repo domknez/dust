@@ -1,5 +1,5 @@
-//! Queue bookkeeping: the tracks, which one is current, and endless Flow. Pure
-//! data manipulation — no audio, no network — so it is fully unit-testable.
+//! Queue bookkeeping: the tracks, which one is current, shuffle and endless Flow.
+//! Pure data manipulation — no audio, no network — so it is fully unit-testable.
 
 use crate::deezer::Track;
 
@@ -34,6 +34,8 @@ pub struct Queue {
     tracks: Vec<Track>,
     index: usize,
     pub flow: Option<Flow>,
+    /// Shuffled: the track ids in the order before shuffling, to put it back.
+    unshuffled: Option<Vec<u64>>,
     /// Changed since the UI last took a copy.
     dirty: bool,
 }
@@ -51,6 +53,10 @@ impl Queue {
         self.tracks.is_empty()
     }
 
+    pub fn shuffled(&self) -> bool {
+        self.unshuffled.is_some()
+    }
+
     pub fn has_next(&self) -> bool {
         self.index + 1 < self.tracks.len()
     }
@@ -60,10 +66,57 @@ impl Queue {
         std::mem::take(&mut self.dirty).then(|| self.tracks.clone())
     }
 
+    /// Take over a queue as it is (e.g. restored from the last session).
     pub fn replace(&mut self, tracks: Vec<Track>, index: usize) {
         self.tracks = tracks;
         self.index = index;
         self.flow = None;
+        if self.unshuffled.is_some() {
+            self.unshuffled = Some(Vec::new());
+        }
+        self.dirty = true;
+    }
+
+    /// A new queue to play from `index`; when shuffled, that track goes first and
+    /// the rest follow in random order.
+    pub fn play(&mut self, tracks: Vec<Track>, index: usize) {
+        self.replace(tracks, index);
+        if self.shuffled() {
+            self.unshuffled = Some(self.tracks.iter().map(|t| t.id).collect());
+            if index < self.tracks.len() {
+                let first = self.tracks.remove(index);
+                self.tracks.insert(0, first);
+            }
+            self.index = 0;
+            self.shuffle_upcoming();
+        }
+    }
+
+    /// Shuffle on: everything after the current track in random order. Off: back to
+    /// the order before shuffling, still on the current track (tracks added while
+    /// shuffled keep their order at the end).
+    pub fn set_shuffle(&mut self, on: bool) {
+        if on == self.shuffled() {
+            return;
+        }
+        if on {
+            self.unshuffled = Some(self.tracks.iter().map(|t| t.id).collect());
+            self.shuffle_upcoming();
+            return;
+        }
+        let order = self.unshuffled.take().unwrap_or_default();
+        let rank = |id: u64| order.iter().position(|&o| o == id).unwrap_or(usize::MAX);
+        let mut entries: Vec<usize> = (0..self.tracks.len()).collect();
+        entries.sort_by_key(|&i| rank(self.tracks[i].id));
+        self.index = entries.iter().position(|&i| i == self.index).unwrap_or(0);
+        self.tracks = entries.into_iter().map(|i| self.tracks[i].clone()).collect();
+        self.dirty = true;
+    }
+
+    fn shuffle_upcoming(&mut self) {
+        if let Some(upcoming) = self.tracks.get_mut(self.index + 1..) {
+            fastrand::shuffle(upcoming);
+        }
         self.dirty = true;
     }
 
@@ -72,6 +125,9 @@ impl Queue {
         self.tracks.clear();
         self.index = 0;
         self.flow = Some(flow);
+        if self.unshuffled.is_some() {
+            self.unshuffled = Some(Vec::new());
+        }
         self.dirty = true;
     }
 
@@ -254,6 +310,37 @@ mod tests {
         q.clear_upcoming();
         assert_eq!(ids(&q), [1]);
         assert!(q.flow.is_none());
+    }
+
+    #[test]
+    fn shuffle_keeps_current_and_restores_order() {
+        let mut q = Queue::default();
+        q.replace((1..=20).map(t).collect(), 4);
+        q.set_shuffle(true);
+        assert_eq!(q.current().map(|t| t.id), Some(5));
+        assert_eq!(ids(&q)[..5], [1, 2, 3, 4, 5]);
+        let mut sorted = ids(&q);
+        sorted.sort();
+        assert_eq!(sorted, (1..=20).collect::<Vec<_>>());
+        q.advance();
+        let now = q.current().unwrap().id;
+        q.enqueue(vec![t(30), t(31)]);
+        q.set_shuffle(false);
+        assert_eq!(ids(&q), (1..=20).chain([30, 31]).collect::<Vec<_>>());
+        assert_eq!(q.current().map(|t| t.id), Some(now));
+    }
+
+    #[test]
+    fn shuffled_play_starts_with_the_chosen_track() {
+        let mut q = Queue::default();
+        q.set_shuffle(true);
+        q.play((1..=10).map(t).collect(), 6);
+        assert_eq!((q.index(), q.current().map(|t| t.id)), (0, Some(7)));
+        q.set_shuffle(false);
+        assert_eq!(ids(&q), (1..=10).collect::<Vec<_>>());
+        assert_eq!(q.current().map(|t| t.id), Some(7));
+        q.play((1..=3).map(t).collect(), 1);
+        assert_eq!(ids(&q), [1, 2, 3]);
     }
 
     #[test]

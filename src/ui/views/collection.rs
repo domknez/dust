@@ -167,11 +167,14 @@ impl App {
             None => {}
         }
         if let Some((i, shuffle)) = picked.play
-            && let Some((mut queue, i)) = playable_from(&self.tracks, i)
+            && let Some((queue, i)) = playable_from(&self.tracks, i)
         {
-            if shuffle {
-                fastrand::shuffle(&mut queue);
-            }
+            let i = if shuffle {
+                self.set_shuffle(true);
+                fastrand::usize(..queue.len())
+            } else {
+                i
+            };
             self.player.send(Cmd::Play(queue, i));
         }
     }

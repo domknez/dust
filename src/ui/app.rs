@@ -14,7 +14,7 @@ use crate::credentials;
 use crate::deezer::{self, ArtistPage, Deezer, Error, Item, Likes, Link, Playlist, Quality, SearchResults, Section, Track};
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
-use crate::player::{Cmd, Output, PlayerHandle, Status, saved};
+use crate::player::{Cmd, Output, PlayerHandle, Repeat, Status, saved};
 use crate::settings;
 use eframe::egui::{self, Key, Margin, Ui};
 
@@ -121,6 +121,8 @@ impl App {
         style::apply(ctx, appearance.is_dark(ctx));
 
         let player = PlayerHandle::spawn(ctx.clone(), volume);
+        player.send(Cmd::Shuffle(saved.get("shuffle").is_some_and(|v| v == "true")));
+        player.send(Cmd::Repeat(saved.get("repeat").map_or(Repeat::Off, |k| Repeat::from_key(k))));
         let repaint = ctx.clone();
         let discovery =
             Discovery::start(move || repaint.request_repaint()).inspect_err(|e| log_warn!("AirPlay discovery unavailable: {e}")).ok();
@@ -357,6 +359,16 @@ impl App {
         self.report_listens = !self.report_listens;
         self.player.send(Cmd::ReportListens(self.report_listens));
         settings::set("report_listens", if self.report_listens { "true" } else { "false" });
+    }
+
+    pub(super) fn set_shuffle(&mut self, on: bool) {
+        self.player.send(Cmd::Shuffle(on));
+        settings::set("shuffle", if on { "true" } else { "false" });
+    }
+
+    pub(super) fn set_repeat(&mut self, repeat: Repeat) {
+        self.player.send(Cmd::Repeat(repeat));
+        settings::set("repeat", repeat.key());
     }
 
     pub(super) fn select_output(&mut self, output: Output) {

@@ -105,7 +105,7 @@ impl App {
             self.toggle_mini_player(ui.ctx());
         }
 
-        self.transport_buttons(ui, controls, st);
+        self.transport_buttons(ui, controls, st, false);
         ui.scope_builder(egui::UiBuilder::new().max_rect(expand), |ui| {
             if widgets::icon_button(ui, Icon::Expand, 14.0, p.dim).on_hover_text(FULL_WINDOW_HINT).clicked() {
                 self.toggle_mini_player(ui.ctx());

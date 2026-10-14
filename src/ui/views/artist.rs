@@ -64,11 +64,14 @@ impl App {
         self.apply_card_picks(&ctx, picked.cards);
         let top: &[Track] = self.artist_page.as_ref().map_or(&[], |p| &p.top);
         if let Some((i, shuffle)) = picked.play
-            && let Some((mut queue, i)) = playable_from(top, i)
+            && let Some((queue, i)) = playable_from(top, i)
         {
-            if shuffle {
-                fastrand::shuffle(&mut queue);
-            }
+            let i = if shuffle {
+                self.set_shuffle(true);
+                fastrand::usize(..queue.len())
+            } else {
+                i
+            };
             self.player.send(Cmd::Play(queue, i));
         } else if let Some((i, choice)) = picked.menu
             && let Some(track) = top.get(i).cloned()

@@ -3,7 +3,7 @@
 
 use super::mini_player::MINI_PLAYER_HINT;
 use crate::deezer::Likeable;
-use crate::player::{Cmd, State, Status};
+use crate::player::{Cmd, Repeat, State, Status};
 use crate::ui::app::App;
 use crate::ui::format::{cover_url, mmss};
 use crate::ui::state::Coll;
@@ -107,14 +107,22 @@ impl App {
     }
 
     pub(in crate::ui) fn transport(&mut self, ui: &mut Ui, area: Rect, st: &Status) {
-        let controls = Rect::from_center_size(pos2(area.center().x, area.top() + 30.0), vec2(160.0, 40.0));
-        self.transport_buttons(ui, controls, st);
+        let controls = Rect::from_center_size(pos2(area.center().x, area.top() + 30.0), vec2(248.0, 40.0));
+        self.transport_buttons(ui, controls, st, true);
     }
 
-    /// Previous, play/pause and next, laid out left to right in `controls`.
-    pub(in crate::ui) fn transport_buttons(&mut self, ui: &mut Ui, controls: Rect, st: &Status) {
+    /// Previous, play/pause and next, laid out left to right in `controls`; with
+    /// `modes`, between shuffle and repeat.
+    pub(in crate::ui) fn transport_buttons(&mut self, ui: &mut Ui, controls: Rect, st: &Status, modes: bool) {
         ui.scope_builder(UiBuilder::new().max_rect(controls).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
+            if modes {
+                let hint = if st.shuffle { "Shuffle off" } else { "Shuffle" };
+                if mode_button(ui, Icon::Shuffle, st.shuffle).on_hover_text(hint).clicked() {
+                    self.set_shuffle(!st.shuffle);
+                }
+                ui.add_space(4.0);
+            }
             if widgets::icon_button(ui, Icon::Prev, 16.0, colors().dim).clicked() {
                 self.player.send(Cmd::Prev);
             }
@@ -123,6 +131,17 @@ impl App {
             }
             if widgets::icon_button(ui, Icon::Next, 16.0, colors().dim).clicked() {
                 self.player.send(Cmd::Next);
+            }
+            if modes {
+                ui.add_space(4.0);
+                let (icon, hint) = match st.repeat {
+                    Repeat::Off => (Icon::Repeat, "Repeat"),
+                    Repeat::All => (Icon::Repeat, "Repeat one"),
+                    Repeat::One => (Icon::RepeatOne, "Repeat off"),
+                };
+                if mode_button(ui, icon, st.repeat != Repeat::Off).on_hover_text(hint).clicked() {
+                    self.set_repeat(st.repeat.next());
+                }
             }
         });
     }
@@ -175,4 +194,14 @@ impl App {
             }
         }
     }
+}
+
+/// Shuffle / repeat: accent colour and a dot underneath while on.
+fn mode_button(ui: &mut Ui, icon: Icon, on: bool) -> egui::Response {
+    let p = colors();
+    let resp = widgets::icon_button(ui, icon, 16.0, if on { p.accent } else { p.dim });
+    if on {
+        ui.painter().circle_filled(pos2(resp.rect.center().x, resp.rect.bottom() - 1.0), 2.0, p.accent);
+    }
+    resp
 }
