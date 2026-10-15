@@ -98,6 +98,15 @@ impl AirPlaySink {
         threads.push(transport::spawn("airplay-audio", move || transport::audio_loop(out, consumer, &sh)));
 
         rtsp.set_reply_timeout(RUNTIME_REPLY_TIMEOUT);
+        log_info!(
+            "airplay: connected to {} at {remote_ip} from {local_ip} ({}, {} timing, {}, data port {data_port}, seq={} rtptime={})",
+            device.name,
+            if device.ap2 { "AirPlay 2" } else { "AirPlay 1" },
+            if ptp.is_some() { "PTP" } else { "NTP" },
+            if audio_key.is_some() { "encrypted" } else { "plain" },
+            local.seq,
+            local.rtptime
+        );
         let mut sink = Self { rtsp, _events: events, _ptp: ptp, shared, producer, threads, volume_sent: None };
         sink.set_volume(volume);
         Ok(sink)
@@ -109,7 +118,13 @@ impl AirPlaySink {
         wait_until(|| self.shared.idle.load(Ordering::Acquire));
         let seq = self.shared.seq.load(Ordering::Acquire);
         let rtptime = self.shared.rtptime.load(Ordering::Acquire);
+        let started = Instant::now();
         let flushed = self.rtsp.request("FLUSH", None, &[("RTP-Info", format!("seq={seq};rtptime={rtptime}"))], None);
+        let ms = started.elapsed().as_millis();
+        match &flushed {
+            Ok(_) => log_debug!("airplay: FLUSH seq={seq} rtptime={rtptime} answered in {ms} ms"),
+            Err(e) => log_debug!("airplay: FLUSH seq={seq} rtptime={rtptime} failed after {ms} ms: {e}"),
+        }
         self.check(flushed);
     }
 
@@ -167,6 +182,11 @@ impl Sink for AirPlaySink {
     }
 
     fn resume(&mut self) {
+        log_debug!(
+            "airplay: resume at seq={} rtptime={}",
+            self.shared.seq.load(Ordering::Acquire),
+            self.shared.rtptime.load(Ordering::Acquire)
+        );
         self.shared.restart.store(true, Ordering::Release);
         self.shared.playing.store(true, Ordering::Release);
     }
@@ -217,13 +237,6 @@ impl Drop for AirPlaySink {
         for t in self.threads.drain(..) {
             let _ = t.join();
         }
-        let s = &self.shared.stats;
-        log_debug!(
-            "airplay: {} packets sent ({} audible), {} timing requests answered, {} packets retransmitted",
-            s.packets.load(Ordering::Relaxed),
-            s.audible.load(Ordering::Relaxed),
-            s.timing_requests.load(Ordering::Relaxed),
-            s.resent.load(Ordering::Relaxed)
-        );
+        log_debug!("airplay: session ended: {}", self.shared.stats.summary());
     }
 }

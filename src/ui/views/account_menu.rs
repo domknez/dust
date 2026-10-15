@@ -1,4 +1,5 @@
-//! The account popover: appearance, streaming quality, listen sharing, log out.
+//! The account popover: appearance, streaming quality, listen sharing, updates, the
+//! log file, log out.
 
 use super::sidebar::avatar;
 use crate::deezer::Quality;
@@ -34,6 +35,13 @@ impl App {
             let status = self.updates.status();
             if widgets::menu_row(ui, Some(Icon::Refresh), "Check now", Some(&status), false, colors().text).clicked() {
                 self.updates.check_now(ui.ctx());
+            }
+            ui.add_space(8.0);
+            widgets::caption(ui, "TROUBLESHOOTING");
+            if widgets::menu_row(ui, None, "Show log file", Some("What happened with playback and AirPlay"), false, colors().text).clicked()
+            {
+                reveal_log();
+                ui.close();
             }
             widgets::divider(ui);
             if widgets::menu_row(ui, Some(Icon::LogOut), "Log out", None, false, colors().danger).clicked() {
@@ -80,4 +88,19 @@ fn account_header(ui: &mut Ui, name: &str) {
     let width = head.width() - 56.0;
     text_left(ui.painter(), pos2(head.left() + 48.0, head.center().y - 8.0), name, ty::TITLE.strong(), colors().text, width);
     text_left(ui.painter(), pos2(head.left() + 48.0, head.center().y + 10.0), "Deezer account", ty::SMALL, colors().faint, width);
+}
+
+/// Show the log file in the system's file manager.
+fn reveal_log() {
+    let Some(path) = crate::log::file_path() else { return };
+    let opened = if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg("-R").arg(&path).spawn()
+    } else if cfg!(windows) {
+        std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn()
+    } else {
+        std::process::Command::new("xdg-open").arg(path.parent().unwrap_or(&path)).spawn()
+    };
+    if let Err(e) = opened {
+        log_warn!("could not show {}: {e}", path.display());
+    }
 }

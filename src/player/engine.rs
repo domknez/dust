@@ -191,6 +191,7 @@ impl Engine {
                 self.start_track(at);
             }
         } else if self.playing {
+            log_debug!("pause");
             self.playing = false;
             let pos = self.position();
             if let Some(s) = self.sink.as_mut() {
@@ -201,6 +202,7 @@ impl Engine {
                 self.seek(pos);
             }
         } else {
+            log_debug!("resume");
             self.playing = true;
             if let Some(s) = self.sink.as_mut() {
                 s.resume();
@@ -294,6 +296,7 @@ impl Engine {
         self.status.lock().unwrap().error = None;
         self.publish(true);
         self.ensure_sink();
+        log_debug!("start track at {at:.1} s on {} (flush)", self.output.name());
         if let Some(s) = self.sink.as_mut() {
             s.flush();
             s.resume();
@@ -328,6 +331,7 @@ impl Engine {
             self.stop();
             return;
         };
+        log_debug!("track ended, continuing on {} without a flush", self.output.name());
         self.listens.finish(self.library.as_deref());
         match self.open(&track, 0.0) {
             Ok(stream) => self.begin(stream, &track),
@@ -340,7 +344,14 @@ impl Engine {
 
     fn open(&self, track: &Track, at: f64) -> Result<Box<dyn Playback>, String> {
         let library = self.library.as_ref().ok_or("Not logged in")?;
-        library.open(track, self.quality, at)
+        let started = Instant::now();
+        let opened = library.open(track, self.quality, at);
+        let ms = started.elapsed().as_millis();
+        match &opened {
+            Ok(p) => log_info!("opened {} {} – {} at {at:.1} s in {ms} ms ({:?})", track.id, track.artist, track.title, p.format()),
+            Err(e) => log_warn!("could not open {} {} – {} after {ms} ms: {e}", track.id, track.artist, track.title),
+        }
+        opened
     }
 
     fn begin(&mut self, stream: Box<dyn Playback>, track: &Track) {
@@ -364,6 +375,7 @@ impl Engine {
         }
         self.listens.seeked();
         let Some(stream) = self.stream.as_mut() else { return };
+        log_debug!("seek to {t:.1} s");
         let t = t.max(0.0);
         self.pending.clear();
         if stream.needs_reopen_for(t) {
