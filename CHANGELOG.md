@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.14.0 (2026-10-15)
+
 - Log file for troubleshooting (account menu → Show log file): tracks opened and how long
   that took, AirPlay connections, flushes and packet stats
 
