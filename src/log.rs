@@ -172,7 +172,8 @@ mod tests {
         writeln!(open(&path).unwrap(), "one").unwrap();
         writeln!(open(&path).unwrap(), "two").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "one\ntwo\n");
-        open(&path).unwrap().set_len(MAX_FILE_BYTES + 1).unwrap();
+        // An append-only handle may not change the length (Windows), so open it for writing.
+        File::options().write(true).open(&path).unwrap().set_len(MAX_FILE_BYTES + 1).unwrap();
         writeln!(open(&path).unwrap(), "fresh").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "fresh\n");
         assert_eq!(std::fs::metadata(path.with_extension("log.1")).unwrap().len(), MAX_FILE_BYTES + 1);
