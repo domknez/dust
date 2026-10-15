@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Log file for troubleshooting (account menu → Show log file): tracks opened and how long
+  that took, AirPlay connections, flushes and packet stats
+
 ## 0.13.0 (2026-10-14)
 
 - Shuffle and repeat (all / one) buttons in the player bar. Shuffle mixes the upcoming

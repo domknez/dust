@@ -30,14 +30,36 @@ pub struct Shared {
     pub stats: Stats,
 }
 
-/// Diagnostics, logged (debug level) when a session ends.
+/// Diagnostics, logged (debug level) every [`STATS_EVERY`] and when a session ends.
 #[derive(Default)]
 pub struct Stats {
     pub timing_requests: AtomicU64,
+    /// Packets the receiver asked for again, and how many of those we still had.
+    pub requested: AtomicU64,
     pub resent: AtomicU64,
     pub packets: AtomicU64,
     pub audible: AtomicU64,
+    /// Packets padded with silence because the player had nothing ready.
+    pub padded: AtomicU64,
 }
+
+impl Stats {
+    pub fn summary(&self) -> String {
+        let n = |c: &AtomicU64| c.load(Ordering::Relaxed);
+        format!(
+            "{} packets sent ({} audible, {} padded), {} retransmits asked ({} resent), {} timing requests",
+            n(&self.packets),
+            n(&self.audible),
+            n(&self.padded),
+            n(&self.requested),
+            n(&self.resent),
+            n(&self.timing_requests)
+        )
+    }
+}
+
+/// How often a playing session logs its [`Stats`].
+const STATS_EVERY: Duration = Duration::from_secs(30);
 
 impl Shared {
     pub fn new(seq: u16, rtptime: u32) -> Self {
@@ -86,6 +108,7 @@ pub fn control_loop(sock: UdpSocket, dst: SocketAddr, sh: &Shared) {
     while sh.running.load(Ordering::Relaxed) {
         let Ok((n, _)) = sock.recv_from(&mut buf) else { continue };
         let Some((first, count)) = packets::retransmit_request(&buf[..n]) else { continue };
+        sh.stats.requested.fetch_add(count as u64, Ordering::Relaxed);
         let history = sh.history.lock().unwrap();
         for seq in (0..count).map(|i| first.wrapping_add(i)) {
             if let Some((_, packet)) = history.iter().find(|(s, _)| *s == seq) {
@@ -120,6 +143,7 @@ pub fn audio_loop(out: AudioOut, mut consumer: rtrb::Consumer<i16>, sh: &Shared)
     let mut sent: u64 = 0;
     let mut next_sync: u64 = 0;
     let mut first = true;
+    let mut last_stats = Instant::now();
     while sh.running.load(Ordering::Relaxed) {
         if sh.drain.swap(false, Ordering::AcqRel) {
             let n = consumer.slots();
@@ -133,6 +157,10 @@ pub fn audio_loop(out: AudioOut, mut consumer: rtrb::Consumer<i16>, sh: &Shared)
             continue;
         }
         sh.idle.store(false, Ordering::Release);
+        if last_stats.elapsed() >= STATS_EVERY {
+            last_stats = Instant::now();
+            log_debug!("airplay: {}", sh.stats.summary());
+        }
         if sh.restart.swap(false, Ordering::AcqRel) {
             start = Instant::now();
             start_rtp = sh.rtptime.load(Ordering::Acquire);
@@ -155,7 +183,9 @@ pub fn audio_loop(out: AudioOut, mut consumer: rtrb::Consumer<i16>, sh: &Shared)
             std::thread::sleep(Duration::from_millis(2));
             continue;
         }
-        fill_frame(&mut consumer, &mut frame);
+        if !fill_frame(&mut consumer, &mut frame) {
+            sh.stats.padded.fetch_add(1, Ordering::Relaxed);
+        }
 
         let seq = sh.seq.load(Ordering::Acquire);
         let rtptime = sh.rtptime.load(Ordering::Acquire);
@@ -177,8 +207,9 @@ pub fn audio_loop(out: AudioOut, mut consumer: rtrb::Consumer<i16>, sh: &Shared)
     }
 }
 
-/// Take a whole packet's worth of samples if available; pad with silence.
-fn fill_frame(consumer: &mut rtrb::Consumer<i16>, frame: &mut [i16]) {
+/// Take a whole packet's worth of samples if available; pad with silence. Returns
+/// whether the packet was full.
+fn fill_frame(consumer: &mut rtrb::Consumer<i16>, frame: &mut [i16]) -> bool {
     let available = consumer.slots().min(frame.len()) & !1;
     if let Ok(chunk) = consumer.read_chunk(available) {
         let (a, b) = chunk.as_slices();
@@ -187,4 +218,5 @@ fn fill_frame(consumer: &mut rtrb::Consumer<i16>, frame: &mut [i16]) {
         chunk.commit_all();
     }
     frame[available..].fill(0);
+    available == frame.len()
 }

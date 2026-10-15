@@ -158,6 +158,13 @@ Choices are saved in `settings.conf` in your config directory
 `~/.config/dust` on Linux).
 The queue is saved next to it, in `queue.json`, and comes back paused when dust starts.
 
+dust keeps a log of playback and AirPlay events (tracks opened and how long that took,
+speaker connections, flushes, packet stats) for troubleshooting: account menu → **Show
+log file**. It lives in `~/Library/Logs/dust/dust.log` on macOS,
+`%LOCALAPPDATA%\dust\dust.log` on Windows and `~/.local/state/dust/dust.log` on Linux,
+stays on your computer and is started over beyond 5 MB (the previous one is kept as
+`dust.log.1`).
+
 ## Last.fm scrobbling and listening history
 
 dust reports each listen to Deezer (how long you listened, whether you skipped), the same
@@ -229,7 +236,7 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 ```
 src/
 ├── main.rs            entry point: run the app, or a command-line mode (cli.rs)
-├── log.rs             DUST_LOG levels and log macros
+├── log.rs             DUST_LOG levels, log macros and the log file
 ├── deezer/            Deezer client: session, catalogue, streaming, listen reports, stream cipher
 ├── player/            playback engine thread, queue (pure, tested), decoding, listen tracking
 ├── output/            audio outputs behind the Sink trait

@@ -29,6 +29,8 @@ use style::metrics;
 
 /// Open the main window and run the app until it closes.
 pub fn run() -> eframe::Result {
+    crate::log::to_file();
+    log_info!("dust {} starting ({} {})", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH);
     let viewport = egui::ViewportBuilder::default()
         .with_title("dust")
         .with_inner_size(metrics::WINDOW_SIZE)
