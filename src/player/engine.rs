@@ -1,6 +1,7 @@
 //! The playback loop: turns commands into queue changes, keeps one track decoding
 //! into the active output, and publishes a [`Status`] snapshot for the UI.
 
+use super::awake::{self, Awake};
 use super::library::{Decoded, Playback, SharedLibrary};
 use super::listens::ListenTracker;
 use super::queue::{Flow, Queue, Removed};
@@ -59,6 +60,8 @@ pub struct Engine {
     restored_at: Option<f64>,
     /// Last automatic reconnect of a lost output (rate limit).
     last_recover: Option<Instant>,
+    /// Held while playing so the OS doesn't throttle dust.
+    awake: Option<Awake>,
 }
 
 impl Engine {
@@ -89,10 +92,12 @@ impl Engine {
             alive: true,
             restored_at: None,
             last_recover: None,
+            awake: None,
         }
     }
 
     pub fn run(mut self) {
+        awake::high_priority_thread();
         let mut tick = Instant::now();
         let mut was_playing = false;
         while self.alive {
@@ -487,6 +492,10 @@ impl Engine {
         }
         st.flow = self.queue.flow.as_ref().map(Flow::id);
         drop(st);
+        if self.playing != self.awake.is_some() {
+            log_debug!("{} keeping the system awake", if self.playing { "start" } else { "stop" });
+            self.awake = self.playing.then(Awake::begin);
+        }
         if repaint {
             self.ctx.request_repaint();
         }

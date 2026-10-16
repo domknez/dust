@@ -61,6 +61,8 @@ including cover art.
 - **Last.fm scrobbling, history and Flow learning:** dust reports what you listen to
   back to Deezer, exactly like Deezer's own apps
 - **Speaker buttons work:** volume and play/pause/skip on the speaker control dust
+- **Plays steadily in the background:** while music plays, macOS doesn't nap dust or
+  idle-sleep the Mac, and the audio threads run at high priority
 - **Mini player**: a small always-on-top strip with cover, controls
   and seek bar; drag it anywhere, double-click the cover to go back
 - **Updates itself**: new versions download and verify in the
