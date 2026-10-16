@@ -204,7 +204,7 @@ impl Engine {
                 self.resume_seek = s.latency_frames() > 0;
             }
             if self.resume_seek {
-                self.seek(pos);
+                self.reposition(pos);
             }
         } else {
             log_debug!("resume");
@@ -268,7 +268,7 @@ impl Engine {
         self.output = output;
         if self.stream.is_some() {
             self.ensure_sink();
-            self.seek(pos);
+            self.reposition(pos);
             if !self.playing
                 && let Some(s) = self.sink.as_mut()
             {
@@ -379,6 +379,12 @@ impl Engine {
             return;
         }
         self.listens.seeked();
+        self.reposition(t);
+    }
+
+    /// Move the stream to `t` without counting it as the listener seeking (pausing a
+    /// speaker or reconnecting to it starts it again from where it was).
+    fn reposition(&mut self, t: f64) {
         let Some(stream) = self.stream.as_mut() else { return };
         log_debug!("seek to {t:.1} s");
         let t = t.max(0.0);
@@ -701,6 +707,30 @@ mod tests {
         broken.store(true, Ordering::Relaxed);
         e.recover_output();
         assert_eq!(made.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn reconnecting_is_not_a_skip() {
+        use std::sync::atomic::AtomicBool;
+        let broken = Arc::new(AtomicBool::new(false));
+        let flag = broken.clone();
+        let (_tx, rx) = channel();
+        let status = Arc::new(Mutex::new(Status::default()));
+        let factory: SinkFactory = Box::new(move |_, _| {
+            flag.store(false, std::sync::atomic::Ordering::Relaxed);
+            Ok(Box::new(FlakySink(flag.clone())) as _)
+        });
+        let mut e = Engine::with_outputs(rx, status, egui::Context::default(), 0.5, factory);
+        let library = Arc::new(FakeLibrary::default());
+        e.library = Some(library.clone());
+        e.handle(Cmd::Play(vec![track(1, 60)], 0));
+        broken.store(true, std::sync::atomic::Ordering::Relaxed);
+        e.recover_output();
+        e.listens.heard(Duration::from_secs(60));
+        play_out(&mut e);
+        let listens = library.listens.lock().unwrap();
+        assert_eq!(listens.len(), 1);
+        assert!(!listens[0].skipped, "heard to the end");
     }
 
     #[test]
