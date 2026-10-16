@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.14.2 (2026-10-16)
+
 - Fixed: after the Mac's network changed while playing (e.g. the dock's Ethernet dropping
   when the screen locks), starting another playlist or track could leave an AirPlay speaker
   silent until it was picked again. dust now notices it reaches the speaker over a
