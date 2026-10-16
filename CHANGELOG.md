@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Fixed: after the Mac's network changed while playing (e.g. the dock's Ethernet dropping
+  when the screen locks), starting another playlist or track could leave an AirPlay speaker
+  silent until it was picked again. dust now notices it reaches the speaker over a
+  different connection and reconnects
+- Fixed: reconnecting to a speaker or pausing on one reported the track to Deezer as
+  skipped
+
 ## 0.14.1 (2026-10-16)
 
 - Fixed: AirPlay speakers glitched or went silent for a while when dust was in the

@@ -36,6 +36,10 @@ pub struct AirPlaySink {
     threads: Vec<JoinHandle<()>>,
     /// Last volume sent, in tenths of a dB, so repeats aren't sent again.
     volume_sent: Option<i32>,
+    name: String,
+    /// The Mac's address the session was set up from, and the speaker's.
+    local_ip: IpAddr,
+    remote_ip: IpAddr,
 }
 
 impl AirPlaySink {
@@ -107,7 +111,18 @@ impl AirPlaySink {
             local.seq,
             local.rtptime
         );
-        let mut sink = Self { rtsp, _events: events, _ptp: ptp, shared, producer, threads, volume_sent: None };
+        let mut sink = Self {
+            rtsp,
+            _events: events,
+            _ptp: ptp,
+            shared,
+            producer,
+            threads,
+            volume_sent: None,
+            name: device.name.clone(),
+            local_ip,
+            remote_ip,
+        };
         sink.set_volume(volume);
         Ok(sink)
     }
@@ -116,6 +131,9 @@ impl AirPlaySink {
     fn halt(&mut self) {
         self.shared.playing.store(false, Ordering::Release);
         wait_until(|| self.shared.idle.load(Ordering::Acquire));
+        if self.moved() {
+            return;
+        }
         let seq = self.shared.seq.load(Ordering::Acquire);
         let rtptime = self.shared.rtptime.load(Ordering::Acquire);
         let started = Instant::now();
@@ -126,6 +144,22 @@ impl AirPlaySink {
             Err(e) => log_debug!("airplay: FLUSH seq={seq} rtptime={rtptime} failed after {ms} ms: {e}"),
         }
         self.check(flushed);
+    }
+
+    /// Whether the Mac now reaches the speaker from another address than the session
+    /// was set up from (e.g. Ethernet dropped on screen lock, dust reconnected over
+    /// Wi-Fi, then Ethernet came back). The receiver only follows clock and sync
+    /// packets from the session's address, so a stream that starts again (new track,
+    /// seek, resume) would stay silent; mark the session lost so it is set up again.
+    fn moved(&self) -> bool {
+        let Some(now) = route_from(self.remote_ip) else { return false };
+        if now == self.local_ip {
+            return false;
+        }
+        if !self.shared.broken.swap(true, Ordering::AcqRel) {
+            log_warn!("airplay: {} is now reached from {now}, not {}; reconnecting", self.name, self.local_ip);
+        }
+        true
     }
 
     /// A failed control request means the connection is gone.
@@ -149,6 +183,14 @@ fn connect_any(device: &Device) -> Result<TcpStream, String> {
     stream.set_read_timeout(Some(REPLY_TIMEOUT)).ok();
     stream.set_nodelay(true).ok();
     Ok(stream)
+}
+
+/// The local address the OS would send from to reach `remote` (nothing is sent).
+fn route_from(remote: IpAddr) -> Option<IpAddr> {
+    let any: IpAddr = if remote.is_ipv4() { [0, 0, 0, 0].into() } else { Ipv6Addr::UNSPECIFIED.into() };
+    let probe = UdpSocket::bind(SocketAddr::new(any, 0)).ok()?;
+    probe.connect(SocketAddr::new(remote, 9)).ok()?;
+    Some(probe.local_addr().ok()?.ip())
 }
 
 fn wait_until(done: impl Fn() -> bool) {
@@ -182,6 +224,7 @@ impl Sink for AirPlaySink {
     }
 
     fn resume(&mut self) {
+        self.moved();
         log_debug!(
             "airplay: resume at seq={} rtptime={}",
             self.shared.seq.load(Ordering::Acquire),
@@ -238,5 +281,15 @@ impl Drop for AirPlaySink {
             let _ = t.join();
         }
         log_debug!("airplay: session ended: {}", self.shared.stats.summary());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn route_from_names_the_sending_address() {
+        assert_eq!(route_from([127, 0, 0, 1].into()), Some([127, 0, 0, 1].into()));
     }
 }
