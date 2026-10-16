@@ -32,6 +32,11 @@ thiserror = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
+# Keeping macOS from napping dust while it plays (audio goes to the network, so the
+# system can't tell), and real-time priority for the audio threads.
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSProcessInfo", "NSString"] }
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 raw-window-handle = "0.6"

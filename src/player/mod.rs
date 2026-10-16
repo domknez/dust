@@ -6,7 +6,9 @@
 //! - [`library`]: what the engine needs from Deezer (a seam for tests)
 //! - [`stream`]: opening and decoding a Deezer track
 //! - [`listens`]: listen tracking and reporting to Deezer
+//! - [`awake`]: keeping the OS from throttling dust while it plays
 
+pub mod awake;
 mod engine;
 pub mod library;
 mod listens;

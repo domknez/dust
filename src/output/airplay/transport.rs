@@ -1,7 +1,7 @@
 //! The network threads of a session: audio pacing, timing replies, retransmits.
 
 use super::packets;
-use super::{FRAMES_PER_PACKET, HISTORY, LEAD, RATE};
+use super::{FRAMES_PER_PACKET, HISTORY, LATENCY, LEAD, RATE};
 use chacha20poly1305::ChaCha20Poly1305;
 use std::collections::VecDeque;
 use std::net::{SocketAddr, UdpSocket};
@@ -57,6 +57,10 @@ impl Stats {
         )
     }
 }
+
+/// Falling this far behind real time (frames) means packets would reach the receiver
+/// after their play time, so the stream is re-anchored instead of caught up.
+const STALL: u64 = LATENCY as u64 * 3 / 4;
 
 /// How often a playing session logs its [`Stats`].
 const STATS_EVERY: Duration = Duration::from_secs(30);
@@ -136,6 +140,7 @@ pub struct AudioOut {
 /// Send audio at real-time pace (slightly ahead), with a sync packet every second.
 /// Pads with silence on underrun so the receiver's clock keeps running.
 pub fn audio_loop(out: AudioOut, mut consumer: rtrb::Consumer<i16>, sh: &Shared) {
+    crate::player::awake::high_priority_thread();
     let ssrc = fastrand::u32(..);
     let mut frame = vec![0i16; FRAMES_PER_PACKET * 2];
     let mut start = Instant::now();
@@ -169,6 +174,15 @@ pub fn audio_loop(out: AudioOut, mut consumer: rtrb::Consumer<i16>, sh: &Shared)
             first = true;
         }
         let elapsed = (start.elapsed().as_secs_f64() * RATE as f64) as u64;
+        // The thread didn't get to run for a while (the OS throttled or starved it).
+        // Rushing out the backlog would only deliver packets the receiver throws away
+        // as late, so start the clock again from here: a short gap, then the song
+        // continues where it was.
+        if elapsed > sent + STALL {
+            log_warn!("airplay: audio fell {} ms behind real time, re-syncing", (elapsed - sent) * 1000 / RATE as u64);
+            sh.restart.store(true, Ordering::Release);
+            continue;
+        }
         if elapsed >= next_sync {
             let now_rtp = start_rtp.wrapping_add(elapsed as u32);
             let _ = match out.timing {
