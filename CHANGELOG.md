@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.14.1 (2026-10-16)
+
 - Fixed: AirPlay speakers glitched or went silent for a while when dust was in the
   background and the Mac was busy (macOS throttled dust, which it took for idle). dust now
   tells macOS it's playing (no App Nap, no idle sleep while playing), runs its audio threads
