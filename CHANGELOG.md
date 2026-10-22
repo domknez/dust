@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.18.0 (2026-10-22)
+
 - Navidrome (and other Subsonic / OpenSubsonic servers): play your own music in dust,
   with the same pages and design. Connect a server from the account menu (*Music from*)
   or the login screen; switch between Deezer and the server there, each with its own
