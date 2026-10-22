@@ -1,7 +1,7 @@
 //! The player bar's "more" menu (sleep timer, mini player) and the sleep timer's
 //! countdown next to it while it runs.
 
-use super::mini_player::MINI_PLAYER_HINT;
+use super::mini_player::MINI_PLAYER_KEYS;
 use crate::player::{Cmd, Sleep, Status};
 use crate::ui::app::App;
 use crate::ui::style::icons::{self, Icon};
@@ -22,7 +22,7 @@ impl App {
         let mut pick = None;
         egui::Popup::menu(&resp).width(MENU_WIDTH).frame(widgets::popover_frame(ui.ctx())).show(|ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
-            if widgets::menu_row(ui, Some(Icon::MiniPlayer), "Mini player", Some(MINI_PLAYER_HINT), false, p.text).clicked() {
+            if widgets::shortcut_row(ui, Icon::MiniPlayer, "Mini player", MINI_PLAYER_KEYS).clicked() {
                 self.toggle_mini_player(ui.ctx());
                 ui.close();
             }

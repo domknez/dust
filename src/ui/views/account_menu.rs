@@ -16,7 +16,7 @@ impl App {
             ui.spacing_mut().item_spacing.y = 2.0;
             account_header(ui, name);
             widgets::divider(ui);
-            if widgets::menu_row(ui, Some(Icon::Settings), "Settings…", Some(SETTINGS_HINT), false, colors().text).clicked() {
+            if widgets::shortcut_row(ui, Icon::Settings, "Settings…", SETTINGS_HINT).clicked() {
                 self.show_settings = true;
                 ui.close();
             }

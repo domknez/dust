@@ -18,7 +18,8 @@ use eframe::egui::{self, Color32, CornerRadius, FontData, FontDefinitions, FontF
 use std::sync::Arc;
 
 /// Register the app's typefaces ahead of egui's fallback fonts. Inter stays behind
-/// them for symbols they lack (⌘, ⇧, ♪).
+/// them for symbols they lack, and a few-glyph Noto subset for the keyboard symbols
+/// (⌘ ⇧ ⌥ ⏎) none of them have.
 pub fn install_fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     for (name, bytes) in [
@@ -27,11 +28,12 @@ pub fn install_fonts(ctx: &egui::Context) {
         ("Bricolage", include_bytes!("../../../assets/fonts/BricolageGrotesque-Bold.ttf")),
         ("PlexMono", include_bytes!("../../../assets/fonts/IBMPlexMono-Medium.ttf")),
         ("Inter", include_bytes!("../../../assets/fonts/Inter-Regular.ttf")),
+        ("Keys", include_bytes!("../../../assets/fonts/NotoSansSymbols2-Keys.ttf")),
     ] {
         fonts.font_data.insert(name.into(), Arc::new(FontData::from_static(bytes)));
     }
     let fallbacks = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
-    let chain = |first: &str| [vec![first.to_string(), "Inter".to_string()], fallbacks.clone()].concat();
+    let chain = |first: &str| [vec![first.to_string(), "Inter".to_string(), "Keys".to_string()], fallbacks.clone()].concat();
     fonts.families.insert(FontFamily::Proportional, chain("Figtree"));
     fonts.families.insert(typography::semibold(), chain("Figtree-SemiBold"));
     fonts.families.insert(typography::display(), chain("Bricolage"));

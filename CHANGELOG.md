@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed: keyboard shortcuts in menus showed broken symbols (⌘, ⇧). Menus now show the
+  shortcut on the right, as native menus do
+
 ## 0.16.0 (2026-10-22)
 
 - Podcasts: search finds shows; a show's page lists its episodes newest first with their

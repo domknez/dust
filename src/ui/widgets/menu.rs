@@ -54,6 +54,22 @@ pub fn menu_row(ui: &mut Ui, icon: Option<Icon>, title: &str, subtitle: Option<&
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// Menu entry with its keyboard shortcut right-aligned, as in native menus.
+pub fn shortcut_row(ui: &mut Ui, icon: Icon, title: &str, keys: &str) -> Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::click());
+    let p = colors();
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, CornerRadius::same(radius::CONTROL - 1), p.raised);
+    }
+    let x = rect.left() + 10.0;
+    icons::paint(ui.painter(), egui::Rect::from_center_size(pos2(x + 8.0, rect.center().y), Vec2::splat(16.0)), icon, p.text);
+    let keys_width = ui.painter().layout_no_wrap(keys.to_string(), ty::SECONDARY.font(), p.faint).size().x;
+    let painter = ui.painter();
+    painter.text(pos2(rect.right() - 10.0, rect.center().y), egui::Align2::RIGHT_CENTER, keys, ty::SECONDARY.font(), p.faint);
+    text_left(painter, pos2(x + 28.0, rect.center().y), title, ty::ITEM, p.text, rect.right() - x - 48.0 - keys_width);
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 /// Uppercase caption inside menus and panels.
 pub fn caption(ui: &mut Ui, text: &str) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
