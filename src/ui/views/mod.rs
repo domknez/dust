@@ -13,6 +13,7 @@ mod output_picker;
 mod player_bar;
 mod playlists;
 mod queue;
+mod settings;
 mod sidebar;
 mod sleep_timer;
 

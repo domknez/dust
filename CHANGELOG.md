@@ -6,6 +6,9 @@
   dates, to play or queue like tracks. *Podcasts* in the sidebar shows the ones you
   follow on Deezer. Episodes aren't reported as listens and can't be liked or added to
   playlists
+- Settings have their own window: open it from the account menu or with `⌘,`
+  (`Ctrl+,` on Windows and Linux); `Esc` or a click outside closes it. The account menu
+  keeps Settings and Log out
 
 ## 0.15.0 (2026-10-22)
 

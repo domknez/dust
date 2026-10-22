@@ -1,11 +1,10 @@
-//! The account popover: appearance, streaming quality, listen sharing, updates, the
-//! log file, log out.
+//! The account popover: who is logged in, Settings, log out.
 
+use super::settings::SETTINGS_HINT;
 use super::sidebar::avatar;
-use crate::deezer::Quality;
 use crate::ui::app::App;
 use crate::ui::style::icons::Icon;
-use crate::ui::style::{Appearance, colors, typography as ty};
+use crate::ui::style::{colors, typography as ty};
 use crate::ui::widgets::{self, text_left};
 use eframe::egui::{self, Response, Sense, Ui, pos2, vec2};
 
@@ -17,30 +16,8 @@ impl App {
             ui.spacing_mut().item_spacing.y = 2.0;
             account_header(ui, name);
             widgets::divider(ui);
-            self.appearance_picker(ui);
-            ui.add_space(8.0);
-            self.quality_picker(ui);
-            ui.add_space(8.0);
-            widgets::caption(ui, "LISTENING");
-            let sub = "History, Flow and Last.fm scrobbling via Deezer";
-            if widgets::menu_row(ui, None, "Share listening with Deezer", Some(sub), self.report_listens, colors().text).clicked() {
-                self.toggle_report_listens();
-            }
-            ui.add_space(8.0);
-            widgets::caption(ui, "UPDATES");
-            let auto = self.updates.auto;
-            if widgets::menu_row(ui, None, "Check automatically", Some("Asks GitHub about new versions"), auto, colors().text).clicked() {
-                self.updates.set_auto(!auto);
-            }
-            let status = self.updates.status();
-            if widgets::menu_row(ui, Some(Icon::Refresh), "Check now", Some(&status), false, colors().text).clicked() {
-                self.updates.check_now(ui.ctx());
-            }
-            ui.add_space(8.0);
-            widgets::caption(ui, "TROUBLESHOOTING");
-            if widgets::menu_row(ui, None, "Show log file", Some("What happened with playback and AirPlay"), false, colors().text).clicked()
-            {
-                reveal_log();
+            if widgets::menu_row(ui, Some(Icon::Settings), "Settings…", Some(SETTINGS_HINT), false, colors().text).clicked() {
+                self.show_settings = true;
                 ui.close();
             }
             widgets::divider(ui);
@@ -50,36 +27,6 @@ impl App {
             }
         });
     }
-
-    fn appearance_picker(&mut self, ui: &mut Ui) {
-        widgets::caption(ui, "APPEARANCE");
-        let options = Appearance::ALL.map(|a| {
-            let icon = match a {
-                Appearance::System => Icon::Computer,
-                Appearance::Dark => Icon::Moon,
-                Appearance::Light => Icon::Sun,
-            };
-            (icon, a.label())
-        });
-        let current = Appearance::ALL.iter().position(|a| *a == self.appearance).unwrap_or(0);
-        if let Some(i) = widgets::segmented(ui, &options, current) {
-            self.set_appearance(Appearance::ALL[i]);
-        }
-    }
-
-    fn quality_picker(&mut self, ui: &mut Ui) {
-        widgets::caption(ui, "STREAMING QUALITY");
-        for quality in Quality::ALL {
-            let description = match quality {
-                Quality::Mp3_128 => "Saves data",
-                Quality::Mp3_320 => "High quality",
-                Quality::Flac => "Lossless · needs a HiFi plan",
-            };
-            if widgets::menu_row(ui, None, quality.label(), Some(description), self.quality == quality, colors().text).clicked() {
-                self.set_quality(quality);
-            }
-        }
-    }
 }
 
 fn account_header(ui: &mut Ui, name: &str) {
@@ -88,19 +35,4 @@ fn account_header(ui: &mut Ui, name: &str) {
     let width = head.width() - 56.0;
     text_left(ui.painter(), pos2(head.left() + 48.0, head.center().y - 8.0), name, ty::TITLE.strong(), colors().text, width);
     text_left(ui.painter(), pos2(head.left() + 48.0, head.center().y + 10.0), "Deezer account", ty::SMALL, colors().faint, width);
-}
-
-/// Show the log file in the system's file manager.
-fn reveal_log() {
-    let Some(path) = crate::log::file_path() else { return };
-    let opened = if cfg!(target_os = "macos") {
-        std::process::Command::new("open").arg("-R").arg(&path).spawn()
-    } else if cfg!(windows) {
-        std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn()
-    } else {
-        std::process::Command::new("xdg-open").arg(path.parent().unwrap_or(&path)).spawn()
-    };
-    if let Err(e) = opened {
-        log_warn!("could not show {}: {e}", path.display());
-    }
 }

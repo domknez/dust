@@ -83,6 +83,8 @@ pub struct App {
     // Interaction
     /// The panel open on the right, if any.
     pub(super) side_panel: Option<SidePanel>,
+    /// The Settings window is open.
+    pub(super) show_settings: bool,
     pub(super) lyrics: super::views::LyricsState,
     /// Queue row being dragged (index into the queue).
     pub(super) queue_drag: Option<usize>,
@@ -187,6 +189,7 @@ impl App {
             home_task: None,
             quick_play: None,
             side_panel: None,
+            show_settings: false,
             lyrics: Default::default(),
             queue_drag: None,
             seek_drag: None,
@@ -614,6 +617,7 @@ impl eframe::App for App {
         self.mini_player_shortcut(&ctx);
         if self.mini_player.is_none() {
             self.history_input(&ctx);
+            self.settings_shortcut(&ctx);
         }
         let st = self.player.status();
         self.persist_playback(&st);
@@ -669,6 +673,7 @@ impl eframe::App for App {
             self.open_collection(&ctx, album);
         }
         self.playlist_dialog(&ctx);
+        self.settings_window(&ctx);
         if let Some(what) = self.pending_like.take() {
             self.toggle_like(&ctx, what);
         }

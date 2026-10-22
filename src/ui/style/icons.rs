@@ -36,6 +36,8 @@ pub enum Icon {
     Moon,
     Check,
     LogOut,
+    /// Gear: settings.
+    Settings,
     Queue,
     /// Speech bubble with text lines: lyrics.
     Lyrics,
@@ -248,6 +250,17 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             }
             line(p(r, 0.12, 0.84), p(r, 0.46, 0.84));
             poly(vec![p(r, 0.66, 0.6), p(r, 0.92, 0.76), p(r, 0.66, 0.92)]);
+        }
+        Icon::Settings => {
+            let c = r.center();
+            let s = Stroke::new(stroke.width, color);
+            painter.circle_stroke(c, w * 0.26, s);
+            painter.circle_stroke(c, w * 0.09, s);
+            for i in 0..8 {
+                let a = i as f32 * PI / 4.0;
+                let d = vec2(a.cos(), a.sin());
+                line(c + d * w * 0.3, c + d * w * 0.42);
+            }
         }
         Icon::Lyrics => {
             let s = Stroke::new(stroke.width, color);
