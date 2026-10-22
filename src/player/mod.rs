@@ -13,6 +13,7 @@ mod engine;
 pub mod library;
 mod listens;
 mod queue;
+mod resample;
 pub mod saved;
 mod stream;
 

@@ -70,7 +70,7 @@ fn plural(n: usize) -> String {
 }
 
 fn run(client: &Deezer, edit: Edit) -> Result<Done, Error> {
-    let ids = |tracks: &[Track]| tracks.iter().filter(|t| t.available).map(|t| t.id).collect::<Vec<_>>();
+    let ids = |tracks: &[Track]| tracks.iter().filter(|t| t.available && !t.is_episode()).map(|t| t.id).collect::<Vec<_>>();
     Ok(match edit {
         Edit::Add { playlist, tracks } => {
             let added = client.add_to_playlist(playlist.id, &ids(&tracks))?;

@@ -2,7 +2,7 @@
 //! current one, where it was, and whether it was endless Flow.
 
 use super::Status;
-use crate::deezer::{ArtistRef, Track};
+use crate::deezer::{ArtistRef, Episode, Track};
 use crate::settings;
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -89,6 +89,7 @@ fn encode_track(t: &Track) -> Value {
         "fallback": t.fallback.as_ref().map(|(id, token)| json!({"id": id, "token": token})),
         "available": t.available,
         "available_from": t.available_from,
+        "episode": t.episode.as_ref().map(|e| json!({"url": e.url, "show_id": e.show_id, "published": e.published})),
     })
 }
 
@@ -113,6 +114,10 @@ fn decode_track(v: &Value) -> Option<Track> {
         // Files from before 0.10 didn't record it; those tracks were playable then.
         available: v["available"].as_bool().unwrap_or(true),
         available_from: s("available_from"),
+        episode: v["episode"].as_object().and_then(|e| {
+            let s = |k: &str| e.get(k).and_then(Value::as_str).map(str::to_string);
+            Some(Episode { url: s("url")?, show_id: s("show_id").unwrap_or_default(), published: s("published").unwrap_or_default() })
+        }),
     })
 }
 
@@ -135,6 +140,7 @@ mod tests {
             fallback: Some((9, "tok2".into())),
             available: true,
             available_from: String::new(),
+            episode: None,
         }
     }
 
@@ -148,6 +154,16 @@ mod tests {
         assert_eq!(saved, Saved { tracks: vec![track(1), track(2)], index: 1, position: 42.5, flow: None });
         assert_eq!(decode(&encode(&status(Some("default")))).unwrap().flow, Some(None));
         assert_eq!(decode(&encode(&status(Some("chill")))).unwrap().flow, Some(Some("chill".into())));
+    }
+
+    #[test]
+    fn episodes_keep_their_audio_file() {
+        let episode = Track {
+            episode: Some(Episode { url: "https://example.com/ep.mp3".into(), show_id: "724752".into(), published: "2026-09-17".into() }),
+            ..track(3)
+        };
+        let st = Status { queue: Arc::new(vec![track(1), episode.clone()]), index: 1, ..Default::default() };
+        assert_eq!(decode(&encode(&st)).unwrap().tracks, vec![track(1), episode]);
     }
 
     #[test]

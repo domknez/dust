@@ -1,7 +1,6 @@
 //! The OS media session: media keys, headset buttons and the "Now Playing" widget
 //! (macOS Control Center, Windows media overlay, Linux MPRIS).
 
-use crate::deezer::image_url;
 use crate::player::{Cmd, PlayerHandle, State, Status};
 use souvlaki::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig, SeekDirection};
 use std::time::{Duration, Instant};
@@ -38,7 +37,7 @@ impl NowPlaying {
             self.track = track_id;
             let metadata = match &st.track {
                 Some(t) => {
-                    let cover = (!t.cover.is_empty()).then(|| image_url("cover", &t.cover, COVER_SIZE));
+                    let cover = crate::ui::format::cover_url(t, COVER_SIZE);
                     let metadata = MediaMetadata {
                         title: Some(&t.title),
                         artist: Some(&t.artist),

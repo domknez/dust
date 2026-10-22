@@ -1,6 +1,6 @@
 //! Building models from gw-light JSON, which mixes strings and numbers freely.
 
-use super::models::{ArtistPage, ArtistRef, Item, Playlist, Section, Track};
+use super::models::{ArtistPage, ArtistRef, Episode, Item, Playlist, Section, Track};
 use serde_json::Value;
 
 /// String field, tolerating numbers and nulls.
@@ -62,7 +62,45 @@ pub fn track(v: &Value) -> Option<Track> {
         fallback,
         available: !blocked,
         available_from,
+        episode: None,
     })
+}
+
+/// A podcast episode, if it can be played (it has its own audio file).
+pub fn episode(v: &Value) -> Option<Track> {
+    let id = number(&v["EPISODE_ID"]);
+    let url = text(&v["EPISODE_DIRECT_STREAM_URL"]);
+    if id == 0 || url.is_empty() {
+        return None;
+    }
+    let show = text(&v["SHOW_NAME"]);
+    // "2026-09-17 00:40:49" -> "2026-09-17"
+    let published = text(&v["EPISODE_PUBLISHED_TIMESTAMP"]).chars().take(10).collect();
+    Some(Track {
+        id,
+        title: text(&v["EPISODE_TITLE"]),
+        artist: show.clone(),
+        artists: Vec::new(),
+        album: show,
+        album_id: String::new(),
+        duration: number(&v["DURATION"]) as u32,
+        token: String::new(),
+        cover: text(&v["SHOW_ART_MD5"]),
+        fallback: None,
+        available: v["AVAILABLE"].as_bool() != Some(false),
+        available_from: String::new(),
+        episode: Some(Episode { url, show_id: text(&v["SHOW_ID"]), published }),
+    })
+}
+
+/// `deezer.pageShow`: the show's playable episodes, newest first.
+pub fn show_episodes(page: &Value) -> Vec<Track> {
+    let mut episodes: Vec<Track> = page["EPISODES"]["data"].as_array().map(|a| a.iter().filter_map(episode).collect()).unwrap_or_default();
+    episodes.sort_by(|a, b| {
+        let date = |t: &Track| t.episode.as_ref().map(|e| e.published.clone()).unwrap_or_default();
+        date(b).cmp(&date(a))
+    });
+    episodes
 }
 
 /// `ARTISTS` (or the lone `ART_ID`/`ART_NAME`) of a track or album.
@@ -114,6 +152,7 @@ pub fn card_item(kind: &str, v: &Value) -> Option<Item> {
         "artist" => (&v["ART_ID"], &v["ART_NAME"], picture(&"artist".into(), &v["ART_PICTURE"])),
         "album" => (&v["ALB_ID"], &v["ALB_TITLE"], picture(&"cover".into(), &v["ALB_PICTURE"])),
         "playlist" => (&v["PLAYLIST_ID"], &v["TITLE"], picture(&v["PICTURE_TYPE"], &v["PLAYLIST_PICTURE"])),
+        "show" => (&v["SHOW_ID"], &v["SHOW_NAME"], picture(&"talk".into(), &v["SHOW_ART_MD5"])),
         _ => return None,
     };
     let id = text(id);
@@ -230,6 +269,10 @@ fn english_texts(kind: &str, id: &str, data: &Value, title: String, subtitle: St
         }
         "album" => (title, text(&data["ART_NAME"])),
         "artist" => (title, plural(number(&data["NB_FAN"]), "fan", "fans")),
+        "show" => {
+            let by = text(&data["LABEL_NAME"]);
+            (title, if by.is_empty() { "Podcast".to_string() } else { by })
+        }
         "flow" => {
             let name = match id {
                 "default" => "Flow".to_string(),
@@ -271,6 +314,52 @@ fn month_name(number: &str) -> Option<&'static str> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn episode_json(id: &str, published: &str) -> Value {
+        json!({
+            "EPISODE_ID": id,
+            "EPISODE_TITLE": format!("Episode {id}"),
+            "DURATION": "13430",
+            "EPISODE_DIRECT_STREAM_URL": format!("https://example.com/{id}.mp3"),
+            "EPISODE_PUBLISHED_TIMESTAMP": published,
+            "SHOW_ID": "724752",
+            "SHOW_NAME": "Lex Fridman Podcast",
+            "SHOW_ART_MD5": "fa87",
+            "AVAILABLE": true
+        })
+    }
+
+    #[test]
+    fn episodes_and_shows() {
+        let t = episode(&episode_json("935346132", "2026-09-17 00:40:49")).unwrap();
+        assert_eq!(
+            (t.id, t.title.as_str(), t.artist.as_str(), t.duration, t.cover.as_str()),
+            (935346132, "Episode 935346132", "Lex Fridman Podcast", 13430, "fa87")
+        );
+        assert!(t.available && t.album_id.is_empty() && t.artists.is_empty());
+        let e = t.episode.unwrap();
+        assert_eq!(
+            (e.url.as_str(), e.show_id.as_str(), e.published.as_str()),
+            ("https://example.com/935346132.mp3", "724752", "2026-09-17")
+        );
+        // Without its own audio file there is nothing to play.
+        assert!(episode(&json!({"EPISODE_ID": "1", "EPISODE_DIRECT_STREAM_URL": ""})).is_none());
+
+        let page = json!({"EPISODES": {"total": 3, "data": [
+            episode_json("1", "2026-01-02 10:00:00"),
+            episode_json("2", "2026-03-01 10:00:00"),
+            episode_json("3", "2025-12-31 10:00:00"),
+        ]}});
+        assert_eq!(show_episodes(&page).iter().map(|t| t.id).collect::<Vec<_>>(), vec![2, 1, 3], "newest first");
+
+        let card = card_item(
+            "show",
+            &json!({"SHOW_ID": "724752", "SHOW_NAME": "Lex Fridman Podcast", "SHOW_ART_MD5": "fa87", "LABEL_NAME": "Lex Fridman"}),
+        )
+        .unwrap();
+        assert_eq!((card.kind.as_str(), card.title.as_str(), card.subtitle.as_str()), ("show", "Lex Fridman Podcast", "Lex Fridman"));
+        assert_eq!(card.picture, Some(("talk".into(), "fa87".into())));
+    }
 
     #[test]
     fn english_item_texts() {

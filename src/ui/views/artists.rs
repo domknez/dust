@@ -1,5 +1,5 @@
-//! The Artists and Albums pages: grids of the artists the account follows and the
-//! albums it likes.
+//! The Artists, Albums and Podcasts pages: grids of the artists and podcasts the
+//! account follows and the albums it likes.
 
 use super::home::CardPicks;
 use crate::deezer::Item;
@@ -25,6 +25,15 @@ impl App {
         let loading = self.favorite_albums_task.is_some();
         let mut picked = CardPicks::default();
         card_grid(ui, &mut self.covers, "Albums", &self.favorite_albums, loading, "Albums you like show up here.", &mut picked);
+        let ctx = ui.ctx().clone();
+        self.apply_card_picks(&ctx, picked);
+    }
+
+    pub(in crate::ui) fn podcasts_page(&mut self, ui: &mut Ui) {
+        let loading = self.favorite_shows_task.is_some();
+        let empty = "Podcasts you follow on Deezer show up here. Find more with Search.";
+        let mut picked = CardPicks::default();
+        card_grid(ui, &mut self.covers, "Podcasts", &self.favorite_shows, loading, empty, &mut picked);
         let ctx = ui.ctx().clone();
         self.apply_card_picks(&ctx, picked);
     }

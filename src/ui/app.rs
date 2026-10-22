@@ -71,6 +71,9 @@ pub struct App {
     /// Liked albums, as cards (for `View::Albums`).
     pub(super) favorite_albums: Vec<Item>,
     pub(super) favorite_albums_task: Task<Vec<Item>>,
+    /// Followed podcasts, as cards (for `View::Podcasts`).
+    pub(super) favorite_shows: Vec<Item>,
+    pub(super) favorite_shows_task: Task<Vec<Item>>,
     pub(super) likes: LikeState,
     likes_task: Task<Likes>,
     pub(super) home_task: Task<Vec<Section>>,
@@ -177,6 +180,8 @@ impl App {
             followed_task: None,
             favorite_albums: Vec::new(),
             favorite_albums_task: None,
+            favorite_shows: Vec::new(),
+            favorite_shows_task: None,
             likes: LikeState::default(),
             likes_task: None,
             home_task: None,
@@ -229,6 +234,7 @@ impl App {
         self.home.clear();
         self.followed.clear();
         self.favorite_albums.clear();
+        self.favorite_shows.clear();
         self.likes = LikeState::default();
     }
 
@@ -285,6 +291,12 @@ impl App {
             }
             return;
         }
+        if view == View::Podcasts {
+            if self.favorite_shows.is_empty() && self.favorite_shows_task.is_none() {
+                self.favorite_shows_task = tasks::spawn(ctx, move || client.favorite_shows());
+            }
+            return;
+        }
         if view == View::Artists {
             if self.followed.is_empty() && self.followed_task.is_none() {
                 self.followed_task = tasks::spawn(ctx, move || client.favorite_artists());
@@ -304,7 +316,7 @@ impl App {
         self.search_task = None;
         self.link_task = None;
         match view {
-            View::Home | View::Playlists | View::Artists | View::Albums | View::Artist(_) => {}
+            View::Home | View::Playlists | View::Artists | View::Albums | View::Podcasts | View::Artist(_) => {}
             View::Search if self.search.trim().is_empty() => {}
             // A pasted Deezer link opens what it points at instead of searching.
             View::Search if deezer::is_link(&self.search) => {
@@ -483,6 +495,11 @@ impl App {
         }
         self.poll_likes();
         self.poll_playlist_edits(ctx);
+        match tasks::poll(&mut self.favorite_shows_task) {
+            Some(Ok(shows)) => self.favorite_shows = shows,
+            Some(Err(e)) => self.on_load_error(e),
+            None => {}
+        }
         match tasks::poll(&mut self.followed_task) {
             Some(Ok(artists)) => self.followed = artists,
             Some(Err(e)) => self.on_load_error(e),

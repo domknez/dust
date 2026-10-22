@@ -30,6 +30,25 @@ pub struct Track {
     pub available: bool,
     /// When it becomes streamable (`YYYY-MM-DD`), if Deezer says; empty otherwise.
     pub available_from: String,
+    /// Set for a podcast episode: then `artist` is the show, `cover` the show's
+    /// artwork and the audio a plain file, not a Deezer song.
+    pub episode: Option<Episode>,
+}
+
+impl Track {
+    pub fn is_episode(&self) -> bool {
+        self.episode.is_some()
+    }
+}
+
+/// What a podcast episode has beyond a track's fields.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Episode {
+    /// The show's own audio file (plain, no Deezer encryption).
+    pub url: String,
+    pub show_id: String,
+    /// Publication date, `YYYY-MM-DD`.
+    pub published: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -67,7 +86,7 @@ pub struct ArtistPage {
     pub sections: Vec<Section>,
 }
 
-/// Search hits: tracks, plus artist, album and playlist card sections.
+/// Search hits: tracks, plus artist, album, playlist and podcast card sections.
 #[derive(Clone, Debug, Default)]
 pub struct SearchResults {
     pub tracks: Vec<Track>,
@@ -134,6 +153,8 @@ pub enum Format {
     /// Constant bitrate MP3, kbps.
     Mp3(u32),
     Flac,
+    /// A podcast episode's own file (MP3 at any bitrate).
+    Podcast,
 }
 
 impl Format {
@@ -148,7 +169,7 @@ impl Format {
     pub(super) fn api_name(self) -> &'static str {
         match self {
             Format::Flac => "FLAC",
-            Format::Mp3(128) => "MP3_128",
+            Format::Mp3(128) | Format::Podcast => "MP3_128",
             Format::Mp3(_) => "MP3_320",
         }
     }

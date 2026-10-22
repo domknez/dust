@@ -28,6 +28,8 @@ pub enum Icon {
     Grid,
     /// Head and shoulders: artists.
     Person,
+    /// Microphone: podcasts.
+    Podcast,
     Refresh,
     Note,
     Sun,
@@ -229,6 +231,16 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             line(p(r, 0.4, 0.5), p(r, 0.88, 0.5));
             line(p(r, 0.72, 0.34), p(r, 0.88, 0.5));
             line(p(r, 0.72, 0.66), p(r, 0.88, 0.5));
+        }
+        Icon::Podcast => {
+            let s = Stroke::new(stroke.width, color);
+            // Capsule head, a cradle under it and a stand.
+            let head = Rect::from_min_max(p(r, 0.36, 0.1), p(r, 0.64, 0.6));
+            painter.rect_stroke(head, w * 0.14, s, eframe::egui::StrokeKind::Middle);
+            let cradle = arc(p(r, 0.5, 0.44), w * 0.27, 0.0, PI);
+            painter.add(Shape::line(cradle, s));
+            line(p(r, 0.5, 0.71), p(r, 0.5, 0.88));
+            line(p(r, 0.34, 0.88), p(r, 0.66, 0.88));
         }
         Icon::Queue => {
             for y in [0.24, 0.44, 0.64] {
