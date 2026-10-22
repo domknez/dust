@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Lyrics: the speech-bubble button in the player bar opens the playing track's lyrics.
+  Synced lyrics follow the song (the sung line highlighted and kept in view); click a
+  line to jump to it. Songwriters and copyright are shown underneath
+- Sleep timer: the moon in the player bar pauses the music after 15, 30, 45, 60 or 90
+  minutes, or stops at the end of the track
+
 ## 0.14.2 (2026-10-16)
 
 - Fixed: after the Mac's network changed while playing (e.g. the dock's Ethernet dropping

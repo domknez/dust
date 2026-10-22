@@ -66,7 +66,7 @@ impl App {
             text_left(ui.painter(), pos2(r.left() + 4.0, r.center().y), "Queue", ty::PANEL_TITLE, colors().text, r.width());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if widgets::icon_button(ui, Icon::Close, 14.0, colors().dim).on_hover_text("Close").clicked() {
-                    self.show_queue = false;
+                    self.side_panel = None;
                 }
                 if can_clear && ui.link(RichText::new("Clear").font(ty::BODY.font())).clicked() {
                     self.player.send(Cmd::ClearUpcoming);

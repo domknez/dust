@@ -35,6 +35,8 @@ pub enum Icon {
     Check,
     LogOut,
     Queue,
+    /// Speech bubble with text lines: lyrics.
+    Lyrics,
     /// Small window over a big one: switch to the mini player.
     MiniPlayer,
     /// Corner brackets: back to the full window.
@@ -234,6 +236,17 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             }
             line(p(r, 0.12, 0.84), p(r, 0.46, 0.84));
             poly(vec![p(r, 0.66, 0.6), p(r, 0.92, 0.76), p(r, 0.66, 0.92)]);
+        }
+        Icon::Lyrics => {
+            let s = Stroke::new(stroke.width, color);
+            let (l, t, rt, b) = (0.12, 0.16, 0.88, 0.7);
+            // Bubble with a tail at the lower left.
+            painter.add(Shape::line(
+                vec![p(r, 0.36, b), p(r, rt, b), p(r, rt, t), p(r, l, t), p(r, l, b), p(r, 0.2, b), p(r, 0.2, 0.88), p(r, 0.36, b)],
+                s,
+            ));
+            line(p(r, 0.28, 0.35), p(r, 0.72, 0.35));
+            line(p(r, 0.28, 0.51), p(r, 0.58, 0.51));
         }
         Icon::MiniPlayer => {
             let thin = Stroke::new(stroke.width * 0.8, color);
