@@ -30,6 +30,8 @@ pub enum Icon {
     LogOut,
     /// Gear: settings.
     Settings,
+    /// A speaker cabinet: outputs in "Play on".
+    Speaker,
     /// Stopwatch: the sleep timer.
     Timer,
     Queue,
@@ -215,6 +217,12 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
                 let d = vec2(a.cos(), a.sin());
                 line(c + d * w * 0.3, c + d * w * 0.42);
             }
+        }
+        Icon::Speaker => {
+            let s = Stroke::new(stroke.width * 0.85, color);
+            painter.rect_stroke(Rect::from_min_max(p(r, 0.24, 0.1), p(r, 0.76, 0.9)), w * 0.1, s, eframe::egui::StrokeKind::Middle);
+            painter.circle_stroke(p(r, 0.5, 0.6), w * 0.14, s);
+            painter.circle_filled(p(r, 0.5, 0.28), w * 0.05, color);
         }
         Icon::Timer => {
             let c = p(r, 0.5, 0.56);

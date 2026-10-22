@@ -58,6 +58,8 @@ pub struct App {
     pub(super) album_info: Option<AlbumInfo>,
     /// Discography tab on artist pages (albums, singles, live).
     pub(super) discography_tab: usize,
+    /// What the sleep timer was last set to (for its ring and lit choice).
+    pub(super) sleep_choice: Option<super::views::SleepChoice>,
     /// Artist, album and playlist cards of the current search.
     pub(super) search_sections: Vec<Section>,
     pub(super) search_task: Task<SearchResults>,
@@ -176,6 +178,7 @@ impl App {
             tracks_task: None,
             album_info: None,
             discography_tab: 0,
+            sleep_choice: None,
             search_sections: Vec::new(),
             search_task: None,
             link_task: None,

@@ -61,8 +61,9 @@ including cover art.
 - **Lyrics:** the lyrics button in the player bar opens the playing track's lyrics; synced
   ones follow the song with the sung line highlighted, and clicking a line jumps there
 - **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs
-- **Sleep timer:** in the player bar's ⋯ menu; pauses after 15 minutes to 1½ hours, or stops
-  at the end of the track (the next one waits for play)
+- **Sleep timer:** in the player bar's ⋯ menu, with a countdown ring; after 15 minutes
+  to an hour the music fades out over 30 seconds and pauses (your volume is back for
+  the next play), or it stops at the end of the track (the next one waits for play)
 - **AirPlay 2 and AirPlay 1** output with automatic discovery — Sonos (incl. Era 100/300),
   HomePod-class receivers, Apple TV, AirPort Express, shairport-sync and most AirPlay speakers
 - **Last.fm scrobbling, history and Flow learning:** dust reports what you listen to
@@ -70,8 +71,9 @@ including cover art.
 - **Speaker buttons work:** volume and play/pause/skip on the speaker control dust
 - **Plays steadily in the background:** while music plays, macOS doesn't nap dust or
   idle-sleep the Mac, and the audio threads run at high priority
-- **Mini player**: a small always-on-top strip with cover, controls
-  and seek bar; drag it anywhere, double-click the cover to go back
+- **Mini player**: a borderless always-on-top strip with cover, title, artist and the
+  speaker it plays on, controls and a progress line along the bottom; drag it anywhere,
+  make it narrower for just the title, times and play, double-click the cover to go back
 - **Updates itself**: new versions download and verify in the
   background; then *Restart to update* appears in the sidebar (or the update installs
   when you quit)

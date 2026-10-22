@@ -39,7 +39,7 @@ impl App {
             ui.spacing_mut().item_spacing.x = 4.0;
             self.volume(ui, st);
             ui.add_space(6.0);
-            self.output_button(ui, &st.output);
+            self.output_button(ui, st);
             // ⋯ (sleep timer, mini player), with the timer's countdown in front of it.
             self.more_button(ui, st);
             for (panel, icon, hint) in [(SidePanel::Queue, Icon::Queue, "Queue"), (SidePanel::Lyrics, Icon::Lyrics, "Lyrics")] {

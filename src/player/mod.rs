@@ -125,10 +125,13 @@ pub enum Cmd {
     },
 }
 
+/// A timed sleep fades the music out over this long before it pauses.
+pub const SLEEP_FADE: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// When the sleep timer stops the music.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Sleep {
-    /// Pause at this moment.
+    /// Fade out over [`SLEEP_FADE`] and pause at this moment.
     At(std::time::Instant),
     /// Stop when the playing track ends (the next one waits, paused).
     EndOfTrack,

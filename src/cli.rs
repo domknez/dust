@@ -197,6 +197,7 @@ fn find_speaker(target: &str) -> Device {
             auth_setup: false,
             ap2: std::env::var_os("DUST_AP2").is_some(),
             ptp: std::env::var_os("DUST_PTP").is_some(),
+            model: String::new(),
         };
     }
     let discovery = Discovery::start(|| {}).expect("mDNS");

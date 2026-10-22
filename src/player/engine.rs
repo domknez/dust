@@ -5,7 +5,7 @@ use super::awake::{self, Awake};
 use super::library::{Decoded, Playback, SharedLibrary};
 use super::listens::ListenTracker;
 use super::queue::{Flow, Queue, Removed};
-use super::{Cmd, Output, Repeat, Sleep, State, Status};
+use super::{Cmd, Output, Repeat, SLEEP_FADE, Sleep, State, Status};
 use crate::deezer::{Quality, Track};
 use crate::output::airplay::AirPlaySink;
 use crate::output::local::LocalSink;
@@ -21,6 +21,8 @@ const PUBLISH_EVERY: Duration = Duration::from_millis(250);
 const RECOVER_EVERY: Duration = Duration::from_secs(3);
 /// "Previous" restarts the track instead when past this point (seconds).
 const RESTART_THRESHOLD: f64 = 3.0;
+/// Volume changes per second while a timed sleep fades out.
+const FADE_STEPS_PER_SEC: f32 = 2.0;
 /// Consecutive unplayable tracks skipped before giving up.
 const MAX_OPEN_FAILURES: usize = 3;
 
@@ -48,6 +50,8 @@ pub struct Engine {
     volume: f32,
     repeat: Repeat,
     sleep: Option<Sleep>,
+    /// Share of the volume the sink plays at while a timed sleep fades out.
+    sleep_fade: Option<f32>,
     stream: Option<Box<dyn Playback>>,
     playing: bool,
     /// Decoded samples the sink hasn't accepted yet, and the track time they end at.
@@ -85,6 +89,7 @@ impl Engine {
             volume,
             repeat: Repeat::Off,
             sleep: None,
+            sleep_fade: None,
             stream: None,
             playing: false,
             pending: Vec::new(),
@@ -160,7 +165,10 @@ impl Engine {
             Cmd::VolumeStep(d) => self.set_volume((self.volume + d).clamp(0.0, 1.0)),
             Cmd::Shuffle(on) => self.queue.set_shuffle(on),
             Cmd::Repeat(r) => self.repeat = r,
-            Cmd::Sleep(s) => self.sleep = s,
+            Cmd::Sleep(s) => {
+                self.sleep = s;
+                self.end_fade();
+            }
 
             Cmd::Enqueue(tracks) => self.queue.enqueue(tracks),
             Cmd::PlayNext(tracks) => self.queue.play_next(tracks),
@@ -383,7 +391,9 @@ impl Engine {
     /// playing; the timer is cleared either way).
     fn sleep_due(&mut self) -> bool {
         let Some(Sleep::At(at)) = self.sleep else { return false };
-        if Instant::now() < at {
+        let now = Instant::now();
+        if now < at {
+            self.fade_towards(at - now);
             return false;
         }
         self.sleep = None;
@@ -391,7 +401,34 @@ impl Engine {
             log_info!("sleep timer: pausing");
             self.toggle();
         }
+        // Back to the listener's volume, so the next play isn't silent.
+        self.end_fade();
         true
+    }
+
+    /// In the last [`SLEEP_FADE`] before a timed sleep, lower the sink's volume in
+    /// steps (a speaker gets a change about twice a second, not every loop).
+    fn fade_towards(&mut self, left: Duration) {
+        if left >= SLEEP_FADE || !self.playing {
+            return;
+        }
+        let steps = (SLEEP_FADE.as_secs_f32() * FADE_STEPS_PER_SEC).max(1.0);
+        let level = (left.as_secs_f32() / SLEEP_FADE.as_secs_f32() * steps).ceil() / steps;
+        if self.sleep_fade != Some(level) {
+            self.sleep_fade = Some(level);
+            if let Some(s) = self.sink.as_mut() {
+                s.set_volume(self.volume * level);
+            }
+        }
+    }
+
+    /// Undo a fade: the sink plays at the listener's volume again.
+    fn end_fade(&mut self) {
+        if self.sleep_fade.take().is_some()
+            && let Some(s) = self.sink.as_mut()
+        {
+            s.set_volume(self.volume);
+        }
     }
 
     /// The track ended with the sleep timer set to its end: stop, with the next track
@@ -793,6 +830,85 @@ mod tests {
         }
         e.handle(Cmd::Toggle);
         assert_eq!(now_playing(&e), Some(2));
+        assert!(e.playing);
+    }
+
+    /// Remembers every volume it was given.
+    struct VolumeSink(Arc<Mutex<Vec<f32>>>);
+
+    impl Sink for VolumeSink {
+        fn write(&mut self, samples: &[i16]) -> usize {
+            samples.len()
+        }
+        fn pending_frames(&self) -> usize {
+            0
+        }
+        fn latency_frames(&self) -> usize {
+            0
+        }
+        fn pause(&mut self) {}
+        fn resume(&mut self) {}
+        fn flush(&mut self) {}
+        fn set_volume(&mut self, v: f32) {
+            self.0.lock().unwrap().push(v);
+        }
+    }
+
+    #[test]
+    fn timed_sleep_fades_out_then_restores_the_volume() {
+        let volumes = Arc::new(Mutex::new(Vec::new()));
+        let seen = volumes.clone();
+        let (_tx, rx) = channel();
+        let status = Arc::new(Mutex::new(Status::default()));
+        let factory: SinkFactory = Box::new(move |_, _| Ok(Box::new(VolumeSink(seen.clone())) as _));
+        let mut e = Engine::with_outputs(rx, status, egui::Context::default(), 0.8, factory);
+        e.library = Some(Arc::new(FakeLibrary::default()));
+        e.handle(Cmd::Play(vec![track(1, 600)], 0));
+        let last = || *volumes.lock().unwrap().last().unwrap();
+
+        // Long before the deadline nothing changes.
+        e.sleep = Some(Sleep::At(Instant::now() + Duration::from_secs(120)));
+        let before = volumes.lock().unwrap().len();
+        assert!(!e.sleep_due());
+        assert_eq!(volumes.lock().unwrap().len(), before);
+
+        // Halfway through the fade: about half the volume.
+        e.sleep = Some(Sleep::At(Instant::now() + SLEEP_FADE / 2));
+        e.sleep_due();
+        assert!((last() - 0.4).abs() < 0.05, "half volume, got {}", last());
+        // Repeated checks within the same step send nothing new.
+        let sent = volumes.lock().unwrap().len();
+        e.sleep_due();
+        assert_eq!(volumes.lock().unwrap().len(), sent);
+
+        // Just before the deadline: nearly silent.
+        e.sleep = Some(Sleep::At(Instant::now() + Duration::from_millis(400)));
+        e.sleep_due();
+        assert!(last() < 0.05, "nearly silent, got {}", last());
+
+        // At the deadline: paused, and the volume is back for the next play.
+        e.sleep = Some(Sleep::At(Instant::now()));
+        assert!(e.sleep_due());
+        assert!(!e.playing);
+        assert_eq!(last(), 0.8);
+        assert_eq!(e.volume, 0.8);
+    }
+
+    #[test]
+    fn turning_the_timer_off_mid_fade_restores_the_volume() {
+        let volumes = Arc::new(Mutex::new(Vec::new()));
+        let seen = volumes.clone();
+        let (_tx, rx) = channel();
+        let status = Arc::new(Mutex::new(Status::default()));
+        let factory: SinkFactory = Box::new(move |_, _| Ok(Box::new(VolumeSink(seen.clone())) as _));
+        let mut e = Engine::with_outputs(rx, status, egui::Context::default(), 0.6, factory);
+        e.library = Some(Arc::new(FakeLibrary::default()));
+        e.handle(Cmd::Play(vec![track(1, 600)], 0));
+        e.sleep = Some(Sleep::At(Instant::now() + Duration::from_secs(5)));
+        e.sleep_due();
+        assert!(*volumes.lock().unwrap().last().unwrap() < 0.2);
+        e.handle(Cmd::Sleep(None));
+        assert_eq!(*volumes.lock().unwrap().last().unwrap(), 0.6);
         assert!(e.playing);
     }
 

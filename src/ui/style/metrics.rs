@@ -8,11 +8,13 @@ pub const MIN_WINDOW_SIZE: [f32; 2] = [760.0, 480.0];
 pub const TOP_INSET: f32 = if cfg!(target_os = "macos") { 34.0 } else { 14.0 };
 
 // Mini player
-pub const MINI_PLAYER_ART: f32 = 56.0;
-/// Space above the artwork (clears the macOS traffic lights).
-pub const MINI_PLAYER_INSET: f32 = if cfg!(target_os = "macos") { 30.0 } else { 14.0 };
-/// Artwork row, seek bar and bottom padding.
-pub const MINI_PLAYER_SIZE: [f32; 2] = [400.0, MINI_PLAYER_INSET + MINI_PLAYER_ART + 36.0];
+pub const MINI_PLAYER_ART: f32 = 52.0;
+/// A borderless strip; it can be made narrower or wider, not taller.
+pub const MINI_PLAYER_SIZE: [f32; 2] = [480.0, 72.0];
+pub const MINI_PLAYER_MIN_WIDTH: f32 = 300.0;
+pub const MINI_PLAYER_MAX_WIDTH: f32 = 720.0;
+/// Below this width the strip shows only the cover, title, times and play.
+pub const MINI_PLAYER_COMPACT: f32 = 400.0;
 
 // Panels
 pub const SIDEBAR_WIDTH: f32 = 248.0;

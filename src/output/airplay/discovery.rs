@@ -28,9 +28,21 @@ pub struct Device {
     pub ap2: bool,
     /// Receiver supports PTP timing (required for audio by most AirPlay 2 devices).
     pub ptp: bool,
+    /// Model as advertised (`am`), e.g. "Era 100" or "AudioAccessory5,1"; may be empty.
+    pub model: String,
 }
 
 impl Device {
+    /// What kind of speaker it is, for the "Play on" menu: "HomePod mini · AirPlay 2",
+    /// "Era 100 · AirPlay 2", or just "AirPlay".
+    pub fn kind(&self) -> String {
+        let protocol = if self.ap2 { "AirPlay 2" } else { "AirPlay" };
+        match friendly_model(&self.model) {
+            Some(model) => format!("{model} · {protocol}"),
+            None => protocol.to_string(),
+        }
+    }
+
     fn from_service(info: &ResolvedService, local_ips: &[IpAddr]) -> Option<Device> {
         let mut addrs: Vec<SocketAddr> =
             info.get_addresses_v4().into_iter().map(|ip| SocketAddr::new(IpAddr::V4(ip), info.get_port())).collect();
@@ -60,8 +72,25 @@ impl Device {
             supported: ap2 || has_encryption("0"),
             auth_setup: has_encryption("4"),
             password: info.get_property_val_str("pw").is_some_and(|p| p == "true"),
+            model: info.get_property_val_str("am").unwrap_or_default().to_string(),
             id: full,
         })
+    }
+}
+
+/// Apple's model identifiers in words; other makers' models as they are.
+fn friendly_model(model: &str) -> Option<String> {
+    let model = model.trim();
+    let apple = [
+        ("AudioAccessory5,", "HomePod mini"),
+        ("AudioAccessory", "HomePod"),
+        ("AppleTV", "Apple TV"),
+        ("AirPort", "AirPort Express"),
+        ("Mac", "Mac"),
+    ];
+    match apple.iter().find(|(prefix, _)| model.starts_with(prefix)) {
+        Some((_, name)) => Some(name.to_string()),
+        None => (!model.is_empty()).then(|| model.to_string()),
     }
 }
 
@@ -247,6 +276,26 @@ fn upsert(list: &mut Vec<Device>, device: Device) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn speaker_kinds_in_words() {
+        let device = |model: &str, ap2| Device {
+            id: String::new(),
+            name: "Office".into(),
+            addrs: Vec::new(),
+            supported: true,
+            password: false,
+            auth_setup: false,
+            ap2,
+            ptp: ap2,
+            model: model.into(),
+        };
+        assert_eq!(device("AudioAccessory5,1", true).kind(), "HomePod mini · AirPlay 2");
+        assert_eq!(device("AudioAccessory6,1", true).kind(), "HomePod · AirPlay 2");
+        assert_eq!(device("Era 100", true).kind(), "Era 100 · AirPlay 2");
+        assert_eq!(device("AppleTV11,1", true).kind(), "Apple TV · AirPlay 2");
+        assert_eq!(device("", false).kind(), "AirPlay");
+    }
 
     #[test]
     fn features_from_txt() {
