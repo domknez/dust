@@ -108,21 +108,22 @@ impl App {
         let page = self.artist_page.as_ref();
         let picture = page.and_then(|pg| pg.picture.clone()).or_else(|| artist.picture.clone());
         let url = picture.map(|md5| image_url("artist", &md5, metrics::HEADER_PX));
-        let art = Rect::from_min_size(head.min + vec2(0.0, 8.0), Vec2::splat(metrics::HEADER_ART));
-        widgets::cover(ui, &mut self.covers, url.as_deref(), art, (metrics::HEADER_ART / 2.0) as u8);
+        let art = Rect::from_min_size(head.min + vec2(8.0, 16.0), Vec2::splat(metrics::HEADER_ART - 16.0));
+        widgets::cover(ui, &mut self.covers, url.as_deref(), art, (art.width() / 2.0) as u8);
+        dashed_ring(ui.painter(), art.center(), art.width() / 2.0 + 7.0, p.accent);
 
-        let x = art.right() + 28.0;
+        let x = art.right() + 36.0;
         let width = head.right() - x;
         let name = page.map_or(artist.name.as_str(), |pg| pg.name.as_str());
-        text_left(ui.painter(), pos2(x, head.top() + 48.0), "ARTIST", ty::CAPTION.strong(), p.dim, width);
-        text_left(ui.painter(), pos2(x, head.top() + 90.0), name, ty::HERO, p.text, width);
+        let tag = widgets::tag(ui.painter(), pos2(x, head.top() + 52.0), "ARTIST");
         if let Some(pg) = page {
             let releases: usize = pg.sections.iter().filter(|s| s.items.iter().all(|i| i.kind == "album")).map(|s| s.items.len()).sum();
-            let meta = format!("{} fans  ·  {releases} releases", thousands(pg.fans));
-            text_left(ui.painter(), pos2(x, head.top() + 132.0), &meta, ty::ITEM, p.dim, width);
+            let meta = format!("{} FANS · {releases} RELEASES", thousands(pg.fans));
+            text_left(ui.painter(), pos2(tag.right() + 10.0, tag.center().y), &meta, ty::META, p.dim, x + width - tag.right() - 10.0);
         }
+        text_left(ui.painter(), pos2(x, head.top() + 100.0), name, ty::HERO, p.text, width);
         let has_top = page.is_some_and(|pg| !pg.top.is_empty());
-        let buttons = Rect::from_min_size(pos2(x, head.top() + 160.0), vec2(width, 44.0));
+        let buttons = Rect::from_min_size(pos2(x, head.top() + 150.0), vec2(width, 44.0));
         ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
             if has_top && widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {
                 picked.play = Some((0, false));
@@ -147,8 +148,20 @@ impl App {
 }
 
 fn section_title(ui: &mut Ui, title: &str) {
-    ui.add_space(18.0);
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
-    text_left(ui.painter(), pos2(r.left(), r.center().y), title, ty::SECTION_TITLE, colors().text, r.width());
-    ui.add_space(6.0);
+    ui.add_space(22.0);
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
+    text_left(ui.painter(), pos2(r.left(), r.center().y), &title.to_uppercase(), ty::OVERLINE, colors().dim, r.width());
+    ui.add_space(8.0);
+}
+
+/// A dashed circle around the artist's picture.
+fn dashed_ring(painter: &egui::Painter, center: egui::Pos2, radius: f32, color: egui::Color32) {
+    let dashes = 48;
+    let step = std::f32::consts::TAU / dashes as f32;
+    for k in 0..dashes {
+        let a = k as f32 * step;
+        let (from, to) = (a, a + step * 0.35);
+        let point = |t: f32| center + vec2(t.cos(), t.sin()) * radius;
+        painter.line_segment([point(from), point(to)], egui::Stroke::new(1.5, color));
+    }
 }

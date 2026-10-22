@@ -181,9 +181,12 @@ impl App {
 
     fn header(&self) -> Header {
         match &self.view {
-            View::Loved => {
-                Header { kind: "COLLECTION", title: "Tracks".into(), tile: Some((Icon::Heart, colors().tile_loved)), ..Default::default() }
-            }
+            View::Loved => Header {
+                kind: "COLLECTION",
+                title: "Loved tracks".into(),
+                tile: Some((Icon::Heart, colors().tile_loved)),
+                ..Default::default()
+            },
             View::Collection(coll) => Header {
                 kind: coll.kind,
                 title: coll.title.clone(),
@@ -226,7 +229,7 @@ impl App {
         });
         if !self.tracks.is_empty() {
             let y = rows.bottom() + 22.0 + 14.0;
-            text_left(ui.painter(), pos2(head.left(), y), "Tracks", ty::SECTION_TITLE, p.text, head.width());
+            text_left(ui.painter(), pos2(head.left(), y), "TRACKS", ty::OVERLINE, p.dim, head.width());
         }
     }
 
@@ -250,8 +253,8 @@ impl App {
         }
         let x = art_rect.right() + 28.0;
         let width = head.right() - x;
-        text_left(ui.painter(), pos2(x, head.top() + 40.0), kind, ty::CAPTION.strong(), p.dim, width);
-        text_left(ui.painter(), pos2(x, head.top() + 82.0), &title, ty::HERO, p.text, width);
+        widgets::tag(ui.painter(), pos2(x, head.top() + 38.0), kind);
+        text_left(ui.painter(), pos2(x, head.top() + 84.0), &title, ty::HERO, p.text, width);
         let count = self.tracks.len();
         let podcast = self.showing_podcast();
         let unit = if podcast { "episodes" } else { "tracks" };
@@ -380,7 +383,7 @@ pub(super) fn track_row(
     } else if current {
         widgets::equalizer(ui.painter(), index, playing);
     } else {
-        ui.painter().text(index.center(), Align2::CENTER_CENTER, (i + 1).to_string(), ty::BODY.font(), p.faint);
+        ui.painter().text(index.center(), Align2::CENTER_CENTER, (i + 1).to_string(), ty::META.font(), p.faint);
     }
     let art = Rect::from_min_size(pos2(columns.art, cy - metrics::TRACK_ART / 2.0), Vec2::splat(metrics::TRACK_ART));
     widgets::cover(ui, covers, cover_url(track, metrics::THUMB_PX).as_deref(), art, radius::THUMB);
@@ -427,7 +430,7 @@ pub(super) fn track_row(
             }
         }
     }
-    painter.text(pos2(columns.time, cy), Align2::RIGHT_CENTER, mmss(track.duration as f64), ty::BODY.font(), sub_color);
+    painter.text(pos2(columns.time, cy), Align2::RIGHT_CENTER, mmss(track.duration as f64), ty::META.font(), sub_color);
     // Heart: always shown when liked, on hover otherwise (songs only).
     if !track.is_episode() && (liked || hovered) && widgets::heart_at(ui, pos2(columns.heart, cy), ("row", i), liked, 15.0).clicked() {
         picked.like = Some(Likeable::Track(track.id));
@@ -494,7 +497,7 @@ impl App {
 fn column_captions(ui: &Ui, head: Rect, album_caption: &str) {
     let y = head.bottom() - 22.0;
     let columns = Columns::new(head.left(), head.width());
-    let (font, color) = (ty::OVERLINE.font(), colors().faint);
+    let (font, color) = (ty::OVERLINE.font(), colors().dim);
     let painter = ui.painter();
     painter.text(pos2(columns.index + 14.0, y), Align2::CENTER_CENTER, "#", font.clone(), color);
     painter.text(pos2(columns.title, y), Align2::LEFT_CENTER, "TITLE", font.clone(), color);

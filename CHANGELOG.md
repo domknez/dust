@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- New look, "Graphite": charcoal (or soft grey) with one lime accent, Space Grotesk and
+  JetBrains Mono, small crisp corners and hairlines. The sidebar is a compact list
+  (`dust_` wordmark, shortcut hints, playlist counts), Home greets you and opens with a
+  Flow panel whose moods sit in a row, album and artist pages get lime tags and bigger
+  titles, Play buttons are lime, and the queue and lyrics panels switch with tabs
+
 ## 0.16.1 (2026-10-22)
 
 - Fixed: keyboard shortcuts in menus showed broken symbols (⌘, ⇧). Menus now show the

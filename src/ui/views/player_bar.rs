@@ -6,7 +6,7 @@ use crate::player::{Cmd, Repeat, State, Status};
 use crate::ui::app::{App, SidePanel};
 use crate::ui::format::{cover_url, mmss};
 use crate::ui::state::Coll;
-use crate::ui::style::icons::Icon;
+use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
 use eframe::egui::{self, Align2, Rect, Ui, UiBuilder, Vec2, pos2, vec2};
@@ -41,8 +41,7 @@ impl App {
             self.output_button(ui, &st.output);
             ui.add_space(4.0);
             for (panel, icon, hint) in [(SidePanel::Queue, Icon::Queue, "Queue"), (SidePanel::Lyrics, Icon::Lyrics, "Lyrics")] {
-                let color = if self.side_panel == Some(panel) { colors().accent } else { colors().dim };
-                if widgets::icon_button(ui, icon, 18.0, color).on_hover_text(hint).clicked() {
+                if toggle_button(ui, icon, self.side_panel == Some(panel)).on_hover_text(hint).clicked() {
                     self.toggle_side_panel(panel);
                 }
             }
@@ -58,7 +57,7 @@ impl App {
         let art_size = metrics::NOW_PLAYING_ART;
         if let Some(track) = &st.track {
             let art = Rect::from_min_size(pos2(area.left(), area.center().y - art_size / 2.0), Vec2::splat(art_size));
-            widgets::cover(ui, &mut self.covers, cover_url(track, metrics::NOW_PLAYING_PX).as_deref(), art, radius::THUMB);
+            widgets::cover(ui, &mut self.covers, cover_url(track, metrics::NOW_PLAYING_PX).as_deref(), art, radius::ROW);
             let x = art.right() + 14.0;
             // Room for the text, leaving space for the heart.
             let width = area.right() - 36.0 - x;
@@ -132,7 +131,7 @@ impl App {
             if widgets::icon_button(ui, Icon::Prev, 16.0, colors().dim).clicked() {
                 self.player.send(Cmd::Prev);
             }
-            if widgets::play_circle(ui, st.state == State::Playing, 38.0).clicked() {
+            if widgets::play_button(ui, st.state == State::Playing, 40.0).clicked() {
                 self.player.send(Cmd::Toggle);
             }
             if widgets::icon_button(ui, Icon::Next, 16.0, colors().dim).clicked() {
@@ -156,7 +155,7 @@ impl App {
         let duration = st.track.as_ref().map_or(0.0, |t| t.duration as f64);
         let row = Rect::from_center_size(pos2(area.center().x, area.top() + 64.0), vec2(area.width().min(PROGRESS_MAX_WIDTH), 16.0));
         let position = self.seek_drag.map(|f| f as f64 * duration).unwrap_or(st.position).min(duration);
-        let (font, color) = (ty::CAPTION.font(), colors().dim);
+        let (font, color) = (ty::META.font(), colors().dim);
         ui.painter().text(pos2(row.left(), row.center().y), Align2::RIGHT_CENTER, mmss(position), font.clone(), color);
         ui.painter().text(pos2(row.right(), row.center().y), Align2::LEFT_CENTER, mmss(duration), font, color);
         let slider = Rect::from_min_max(pos2(row.left() + 10.0, row.top()), pos2(row.right() - 10.0, row.bottom()));
@@ -169,7 +168,7 @@ impl App {
         let position = self.seek_drag.map(|f| f as f64 * duration).unwrap_or(st.position).min(duration);
         ui.scope_builder(UiBuilder::new().max_rect(slider), |ui| {
             let mut fraction = if duration > 0.0 { (position / duration) as f32 } else { 0.0 };
-            let resp = widgets::thin_slider(ui, &mut fraction, slider.width(), duration > 0.0);
+            let resp = widgets::thin_slider(ui, &mut fraction, slider.width(), duration > 0.0, true);
             if resp.dragged() {
                 self.seek_drag = Some(fraction);
             }
@@ -182,7 +181,7 @@ impl App {
 
     fn volume(&mut self, ui: &mut Ui, st: &Status) {
         let mut volume = self.volume_drag.unwrap_or(st.volume);
-        let resp = widgets::thin_slider(ui, &mut volume, VOLUME_WIDTH, true);
+        let resp = widgets::thin_slider(ui, &mut volume, VOLUME_WIDTH, true, false);
         if resp.changed() {
             self.volume_drag = Some(volume);
             self.player.send(Cmd::Volume(volume));
@@ -202,12 +201,20 @@ impl App {
     }
 }
 
-/// Shuffle / repeat: accent colour and a dot underneath while on.
+/// Shuffle / repeat: lime while on.
 fn mode_button(ui: &mut Ui, icon: Icon, on: bool) -> egui::Response {
     let p = colors();
-    let resp = widgets::icon_button(ui, icon, 16.0, if on { p.accent } else { p.dim });
+    widgets::icon_button(ui, icon, 16.0, if on { p.accent } else { p.dim })
+}
+
+/// Queue / lyrics: a raised square behind the icon while its panel is open.
+fn toggle_button(ui: &mut Ui, icon: Icon, on: bool) -> egui::Response {
+    let p = colors();
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::click());
     if on {
-        ui.painter().circle_filled(pos2(resp.rect.center().x, resp.rect.bottom() - 1.0), 2.0, p.accent);
+        ui.painter().rect_filled(rect, egui::CornerRadius::same(radius::ROW), p.raised);
     }
-    resp
+    let color = if on || resp.hovered() { p.text } else { p.dim };
+    icons::paint(ui.painter(), Rect::from_center_size(rect.center(), Vec2::splat(17.0)), icon, color);
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }

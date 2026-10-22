@@ -1,6 +1,5 @@
-//! Colours. Two soft palettes — a charcoal dark and a grey light — deliberately
-//! avoiding pure black and pure white, which are harsh on the eyes. The accent is
-//! the blue from the app icon.
+//! Colours: "Graphite". A near-black charcoal dark and a soft warm-grey light, both
+//! deliberately avoiding pure black and pure white, with one lime accent.
 
 use eframe::egui::{self, Color32};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,13 +8,21 @@ pub struct Palette {
     pub bg: Color32,
     pub sidebar: Color32,
     pub bar: Color32,
+    /// Cards, fields and other raised areas.
     pub surface: Color32,
     pub hover: Color32,
+    /// Hairlines between areas.
     pub line: Color32,
+    /// Outlines of secondary buttons and fields.
+    pub border: Color32,
     pub text: Color32,
     pub dim: Color32,
     pub faint: Color32,
+    /// Accent for text, icons and strokes.
     pub accent: Color32,
+    /// Accent as a fill (primary buttons, tags), with `on_accent` on top.
+    pub accent_fill: Color32,
+    pub on_accent: Color32,
     pub danger: Color32,
     /// Hover/pressed fills for secondary buttons.
     pub raised: Color32,
@@ -30,41 +37,51 @@ const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
+/// The lime of the dark theme, also the fill of primary buttons in both.
+const LIME: Color32 = rgb(0xc6, 0xf3, 0x6b);
+/// Text on lime.
+const ON_LIME: Color32 = rgb(0x1a, 0x1f, 0x0a);
+
 pub static DARK: Palette = Palette {
-    bg: rgb(0x1c, 0x1c, 0x20),
-    sidebar: rgb(0x17, 0x17, 0x1a),
-    bar: rgb(0x21, 0x21, 0x26),
-    surface: rgb(0x2b, 0x2b, 0x31),
-    hover: rgb(0x25, 0x25, 0x2a),
-    line: rgb(0x35, 0x35, 0x3c),
-    text: rgb(0xe8, 0xe8, 0xec),
-    dim: rgb(0xa4, 0xa4, 0xae),
-    faint: rgb(0x77, 0x77, 0x81),
-    // Brand blue from the app icon (#3D8BFF), lifted slightly for text on charcoal.
-    accent: rgb(0x5a, 0x9c, 0xff),
-    danger: rgb(0xf0, 0x7a, 0x7a),
-    raised: rgb(0x36, 0x36, 0x3d),
-    pressed: rgb(0x40, 0x40, 0x48),
-    tile_loved: rgb(0x92, 0x3a, 0x60),
-    veil: Color32::from_black_alpha(60),
+    bg: rgb(0x16, 0x17, 0x18),
+    sidebar: rgb(0x13, 0x14, 0x15),
+    bar: rgb(0x13, 0x14, 0x15),
+    surface: rgb(0x1c, 0x1d, 0x1f),
+    hover: rgb(0x1f, 0x20, 0x22),
+    line: rgb(0x2a, 0x2c, 0x2f),
+    border: rgb(0x34, 0x36, 0x3a),
+    text: rgb(0xe6, 0xe6, 0xe3),
+    dim: rgb(0x9c, 0x9e, 0xa3),
+    faint: rgb(0x75, 0x78, 0x80),
+    accent: LIME,
+    accent_fill: LIME,
+    on_accent: ON_LIME,
+    danger: rgb(0xf2, 0x70, 0x4c),
+    raised: rgb(0x2a, 0x2c, 0x2f),
+    pressed: rgb(0x3a, 0x3c, 0x40),
+    tile_loved: rgb(0x5b, 0x4b, 0xc9),
+    veil: Color32::from_black_alpha(70),
 };
 
 pub static LIGHT: Palette = Palette {
-    bg: rgb(0xee, 0xee, 0xf1),
-    sidebar: rgb(0xe5, 0xe5, 0xea),
-    bar: rgb(0xe8, 0xe8, 0xed),
-    surface: rgb(0xdb, 0xdb, 0xe1),
-    hover: rgb(0xe2, 0xe2, 0xe7),
-    line: rgb(0xd0, 0xd0, 0xd8),
-    text: rgb(0x1f, 0x1f, 0x24),
-    dim: rgb(0x56, 0x56, 0x60),
-    faint: rgb(0x84, 0x84, 0x8e),
-    // Deeper brand blue for contrast on the grey background.
-    accent: rgb(0x24, 0x5e, 0xbd),
-    danger: rgb(0xc4, 0x40, 0x40),
-    raised: rgb(0xcf, 0xcf, 0xd6),
-    pressed: rgb(0xc4, 0xc4, 0xcc),
-    tile_loved: rgb(0xc0, 0x55, 0x80),
+    bg: rgb(0xec, 0xec, 0xe8),
+    sidebar: rgb(0xe4, 0xe4, 0xdf),
+    bar: rgb(0xe4, 0xe4, 0xdf),
+    surface: rgb(0xf3, 0xf3, 0xef),
+    hover: rgb(0xe2, 0xe2, 0xdd),
+    line: rgb(0xd3, 0xd3, 0xcd),
+    border: rgb(0xc4, 0xc4, 0xbd),
+    text: rgb(0x1c, 0x1d, 0x1f),
+    dim: rgb(0x5e, 0x60, 0x64),
+    faint: rgb(0x85, 0x87, 0x8b),
+    // Olive for text and icons on the grey (5:1); buttons keep the lime fill.
+    accent: rgb(0x4c, 0x6a, 0x0a),
+    accent_fill: LIME,
+    on_accent: ON_LIME,
+    danger: rgb(0xc2, 0x41, 0x2a),
+    raised: rgb(0xda, 0xda, 0xd4),
+    pressed: rgb(0xcf, 0xcf, 0xc8),
+    tile_loved: rgb(0x6f, 0x5f, 0xd6),
     veil: Color32::from_black_alpha(40),
 };
 

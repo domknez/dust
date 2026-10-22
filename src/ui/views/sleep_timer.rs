@@ -65,14 +65,14 @@ impl App {
 /// Timer icon and time left, in the accent colour.
 fn sleep_chip(ui: &mut Ui, label: &str) -> egui::Response {
     let p = colors();
-    let text = ui.painter().layout_no_wrap(label.to_string(), ty::CAPTION.font(), p.accent).size().x;
+    let text = ui.painter().layout_no_wrap(label.to_string(), ty::META.font(), p.accent).size().x;
     let (rect, resp) = ui.allocate_exact_size(vec2(text + 30.0, 30.0), Sense::click());
     if resp.hovered() {
         ui.painter().rect_filled(rect, egui::CornerRadius::same(15), p.hover);
     }
     let icon = Rect::from_center_size(pos2(rect.left() + 14.0, rect.center().y), Vec2::splat(15.0));
     icons::paint(ui.painter(), icon, Icon::Timer, p.accent);
-    text_left(ui.painter(), pos2(rect.left() + 25.0, rect.center().y), label, ty::CAPTION, p.accent, text + 2.0);
+    text_left(ui.painter(), pos2(rect.left() + 25.0, rect.center().y), label, ty::META, p.accent, text + 2.0);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 

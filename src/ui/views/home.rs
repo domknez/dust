@@ -1,5 +1,5 @@
-//! Home: the Flow mood row first, then Deezer's recommendation sections as
-//! horizontally scrolling rows of cards.
+//! Home: a greeting, the Flow panel with its moods, then Deezer's recommendation
+//! sections as horizontally scrolling rows of cards.
 
 use crate::deezer::{Item, Section};
 use crate::player::{Cmd, Status};
@@ -30,7 +30,7 @@ impl CardPicks {
 }
 
 /// Height [`card_row`] takes: spacing, section title and one row of cards.
-pub(in crate::ui) const CARD_ROW_HEIGHT: f32 = 22.0 + 28.0 + 8.0 + metrics::HOME_CARD + metrics::CARD_TEXT;
+pub(in crate::ui) const CARD_ROW_HEIGHT: f32 = 26.0 + 20.0 + 10.0 + metrics::HOME_CARD + metrics::CARD_TEXT;
 
 impl App {
     pub(in crate::ui) fn home_page(&mut self, ui: &mut Ui, st: &Status) {
@@ -38,11 +38,7 @@ impl App {
         let mut picked = CardPicks::default();
         let mut reload = false;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let (r, _) = ui.allocate_exact_size(vec2(96.0, 44.0), Sense::hover());
-                text_left(ui.painter(), pos2(r.left(), r.center().y), "Home", ty::PAGE_TITLE, colors().text, r.width());
-                reload = widgets::icon_button(ui, Icon::Refresh, 16.0, colors().dim).on_hover_text("Refresh recommendations").clicked();
-            });
+            reload = self.home_header(ui);
             if self.home.is_empty() {
                 if self.home_task.is_some() {
                     ui.add_space(24.0);
@@ -66,6 +62,25 @@ impl App {
         self.apply_card_picks(&ctx, picked);
     }
 
+    /// Mono line with a refresh button, then a greeting. Returns whether refresh was
+    /// clicked.
+    fn home_header(&self, ui: &mut Ui) -> bool {
+        let p = colors();
+        let mut reload = false;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let (r, _) = ui.allocate_exact_size(vec2(196.0, 22.0), Sense::hover());
+            text_left(ui.painter(), pos2(r.left(), r.center().y), "recommended by deezer", ty::META, p.dim, r.width());
+            reload = widgets::icon_button(ui, Icon::Refresh, 12.0, p.dim).on_hover_text("Refresh recommendations").clicked();
+        });
+        let name = self.account_name();
+        let first = name.split_whitespace().next().unwrap_or_default();
+        let greeting = if first.is_empty() { "Hello".to_string() } else { format!("Hello, {first}") };
+        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::hover());
+        text_left(ui.painter(), pos2(r.left(), r.center().y), &greeting, ty::PAGE_TITLE, p.text, r.width());
+        reload
+    }
+
     /// Act on what was picked in [`card_row`]s.
     pub(in crate::ui) fn apply_card_picks(&mut self, ctx: &egui::Context, picked: CardPicks) {
         if let Some(mood) = picked.flow {
@@ -80,8 +95,8 @@ impl App {
     }
 }
 
-/// A titled, horizontally scrolling row of cards (Flow moods or collections).
-/// Draws nothing when none of `items` can be shown.
+/// A titled, horizontally scrolling row of cards; a section of Flow moods becomes
+/// the Flow panel. Draws nothing when none of `items` can be shown.
 pub(in crate::ui) fn card_row(
     ui: &mut Ui,
     covers: &mut Covers,
@@ -96,10 +111,18 @@ pub(in crate::ui) fn card_row(
     if items.is_empty() {
         return;
     }
-    ui.add_space(22.0);
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
-    text_left(ui.painter(), pos2(r.left(), r.center().y), title, ty::SECTION_TITLE, colors().text, r.width());
-    ui.add_space(8.0);
+    if is_flow {
+        ui.add_space(18.0);
+        let moods: Vec<(&str, &str)> = items.iter().filter(|it| it.id != "default").map(|it| (it.id.as_str(), it.title.as_str())).collect();
+        if let Some(pick) = widgets::flow_panel(ui, &moods, st.flow.as_deref()) {
+            picked.flow = Some(pick);
+        }
+        return;
+    }
+    ui.add_space(26.0);
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
+    text_left(ui.painter(), pos2(r.left(), r.center().y), &title.to_uppercase(), ty::OVERLINE, colors().dim, r.width());
+    ui.add_space(10.0);
     egui::ScrollArea::horizontal()
         .id_salt(id)
         .auto_shrink([false, true])
@@ -108,14 +131,9 @@ pub(in crate::ui) fn card_row(
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = if is_flow { 10.0 } else { 18.0 };
+                ui.spacing_mut().item_spacing.x = 16.0;
                 for item in items {
-                    if is_flow {
-                        let active = st.flow.as_deref() == Some(item.id.as_str());
-                        if let Some(mood) = widgets::flow_card(ui, covers, item, active) {
-                            picked.flow = Some(mood);
-                        }
-                    } else if let Some(coll) = Coll::from_item(item) {
+                    if let Some(coll) = Coll::from_item(item) {
                         match widgets::card(ui, covers, &coll) {
                             CardClick::Open => picked.open = Some(coll),
                             CardClick::Play(mode) => picked.play = Some((coll.source.clone(), mode)),

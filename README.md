@@ -78,8 +78,9 @@ including cover art.
 - **Media keys and Now Playing:** keyboard and headset media keys, plus the system's
   Now Playing controls with cover art (macOS Control Center, Windows media overlay,
   Linux MPRIS)
-- **Modern UI:** Tidal-style layout with cover art, soft dark and light themes (or follow
-  the system), Figtree text with Bricolage Grotesque titles
+- **Modern UI ("Graphite"):** clean and crisp, a charcoal dark and a soft grey light theme
+  (or follow the system) with one lime accent, Space Grotesk text and titles and
+  JetBrains Mono for labels, times and counts
 - **Secure sign-in:** "Log in with Deezer" opens Deezer's own login page; the session is
   kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service)
 - Runs on macOS, Linux and Windows
@@ -277,11 +278,10 @@ audio output and the Deezer API.
   [OwnTone](https://github.com/owntone/owntone-server) (its PTP library, libairptp, is MIT)
   and were validated against [shairport-sync](https://github.com/mikebrady/shairport-sync).
 - Typefaces, all under the SIL Open Font License:
-  [Figtree](https://github.com/erikdkennedy/figtree) by Erik Kennedy
-  ([license](assets/fonts/OFL-Figtree.txt)),
-  [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) by Mathieu Triay
-  ([license](assets/fonts/OFL-BricolageGrotesque.txt)),
-  [IBM Plex Mono](https://github.com/IBM/plex) by IBM ([license](assets/fonts/OFL-IBMPlexMono.txt))
+  [Space Grotesk](https://github.com/floriankarsten/space-grotesk) by Florian Karsten
+  ([license](assets/fonts/OFL-SpaceGrotesk.txt)),
+  [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) by JetBrains
+  ([license](assets/fonts/OFL-JetBrainsMono.txt)),
   [Inter](https://rsms.me/inter/) by Rasmus Andersson for symbols
   ([license](assets/fonts/OFL-Inter.txt)) and a few keyboard symbols from
   [Noto Sans Symbols 2](https://github.com/notofonts/symbols)

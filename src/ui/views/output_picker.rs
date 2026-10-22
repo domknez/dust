@@ -3,27 +3,33 @@
 use crate::player::Output;
 use crate::ui::app::App;
 use crate::ui::style::icons::{self, Icon};
-use crate::ui::style::{colors, typography as ty};
+use crate::ui::style::{colors, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
 use eframe::egui::{self, CornerRadius, Rect, RichText, Sense, Ui, Vec2, pos2, vec2};
 
-const BUTTON_HEIGHT: f32 = 34.0;
+const BUTTON_HEIGHT: f32 = 30.0;
 const LABEL_MAX_WIDTH: f32 = 140.0;
 const MENU_WIDTH: f32 = 260.0;
 
 impl App {
-    /// AirPlay icon (plus the speaker name when not playing locally) opening the menu.
+    /// AirPlay icon opening the menu; while a speaker plays, an outlined lime button
+    /// with its name.
     pub(in crate::ui) fn output_button(&mut self, ui: &mut Ui, current: &str) {
         let p = colors();
         let remote = current != Output::Local.name();
+        let name = current.to_lowercase();
         let label_width = if remote {
-            ui.painter().layout_no_wrap(current.to_string(), ty::SECONDARY.font(), p.accent).size().x.min(LABEL_MAX_WIDTH) + 8.0
+            ui.painter().layout_no_wrap(name.clone(), ty::META.font(), p.accent).size().x.min(LABEL_MAX_WIDTH) + 10.0
         } else {
             0.0
         };
         let (rect, resp) = ui.allocate_exact_size(vec2(BUTTON_HEIGHT + label_width, BUTTON_HEIGHT), Sense::click());
+        let corner = CornerRadius::same(radius::ROW);
         if resp.hovered() {
-            ui.painter().rect_filled(rect, CornerRadius::same((BUTTON_HEIGHT / 2.0) as u8), p.hover);
+            ui.painter().rect_filled(rect, corner, p.hover);
+        }
+        if remote {
+            ui.painter().rect_stroke(rect, corner, egui::Stroke::new(1.0, p.accent), egui::StrokeKind::Inside);
         }
         let color = if remote {
             p.accent
@@ -32,10 +38,10 @@ impl App {
         } else {
             p.dim
         };
-        let icon = Rect::from_center_size(pos2(rect.left() + BUTTON_HEIGHT / 2.0, rect.center().y), Vec2::splat(18.0));
+        let icon = Rect::from_center_size(pos2(rect.left() + BUTTON_HEIGHT / 2.0, rect.center().y), Vec2::splat(15.0));
         icons::paint(ui.painter(), icon, Icon::AirPlay, color);
         if remote {
-            text_left(ui.painter(), pos2(rect.left() + 32.0, rect.center().y), current, ty::SECONDARY, p.accent, LABEL_MAX_WIDTH);
+            text_left(ui.painter(), pos2(rect.left() + 28.0, rect.center().y), &name, ty::META, p.accent, LABEL_MAX_WIDTH);
         }
         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         // Opening the menu searches again, so a speaker that went missing (sleep,

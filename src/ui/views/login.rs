@@ -13,7 +13,14 @@ impl App {
                 ui.add(egui::Image::from_texture((self.logo.id(), Vec2::splat(metrics::LOGO))));
                 ui.add_space(10.0);
                 let (rect, _) = ui.allocate_exact_size(vec2(200.0, 56.0), Sense::hover());
-                ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "dust", ty::DISPLAY.font(), p.text);
+                // `dust_` with a lime cursor, like the sidebar's wordmark.
+                let word = ui.painter().layout_no_wrap("dust".into(), ty::DISPLAY.font(), p.text);
+                let cursor = ui.painter().layout_no_wrap("_".into(), ty::DISPLAY.font(), p.accent);
+                let left = rect.center().x - (word.size().x + cursor.size().x) / 2.0;
+                let top = rect.center().y - word.size().y / 2.0;
+                let word_width = word.size().x;
+                ui.painter().galley(egui::pos2(left, top), word, p.text);
+                ui.painter().galley(egui::pos2(left + word_width, top), cursor, p.accent);
                 ui.label(RichText::new("Your music, nothing else.").color(p.dim).font(ty::LEAD.font()));
                 ui.add_space(36.0);
                 if self.login.is_some() {

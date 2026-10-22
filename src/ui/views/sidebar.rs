@@ -10,6 +10,7 @@ use eframe::egui::{self, Align2, CornerRadius, Rect, Sense, Ui, Vec2, pos2, vec2
 
 /// Height kept free below the playlist list for the account card.
 const FOOTER: f32 = 56.0;
+const SEARCH_KEYS: &str = if cfg!(target_os = "macos") { "⌘F" } else { "Ctrl+F" };
 /// Height of the fade between the playlist list and the account card.
 const FADE: f32 = 28.0;
 
@@ -27,10 +28,11 @@ impl App {
     fn navigation(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
         let mut go = None;
-        if widgets::nav_item(ui, Icon::Home, "Home", self.view == View::Home).clicked() {
+        ui.spacing_mut().item_spacing.y = 1.0;
+        if widgets::sidebar_item(ui, "Home", None, self.view == View::Home).clicked() {
             go = Some(View::Home);
         }
-        if widgets::nav_item(ui, Icon::Search, "Search", self.view == View::Search).clicked() {
+        if widgets::sidebar_item(ui, "Search", Some(SEARCH_KEYS), self.view == View::Search).clicked() {
             // Search opens empty; the query field is in the main area.
             let current = self.current_visit();
             self.history.leave(current, &crate::ui::history::Visit { view: View::Search, query: String::new() });
@@ -38,26 +40,24 @@ impl App {
             self.tracks.clear();
             self.searched.clear();
         }
-        widgets::section(ui, "YOUR COLLECTION");
-        if widgets::nav_item(ui, Icon::Heart, "Tracks", self.view == View::Loved).clicked() {
-            go = Some(View::Loved);
+        for (label, view) in [
+            ("Loved tracks", View::Loved),
+            ("Playlists", View::Playlists),
+            ("Albums", View::Albums),
+            ("Artists", View::Artists),
+            ("Podcasts", View::Podcasts),
+        ] {
+            let selected = self.view == view;
+            if widgets::sidebar_item(ui, label, None, selected).clicked() {
+                go = Some(view);
+            }
         }
-        if widgets::nav_item(ui, Icon::Grid, "Playlists", self.view == View::Playlists).clicked() {
-            go = Some(View::Playlists);
-        }
-        if widgets::nav_item(ui, Icon::Disc, "Albums", self.view == View::Albums).clicked() {
-            go = Some(View::Albums);
-        }
-        if widgets::nav_item(ui, Icon::Person, "Artists", self.view == View::Artists).clicked() {
-            go = Some(View::Artists);
-        }
-        if widgets::nav_item(ui, Icon::Podcast, "Podcasts", self.view == View::Podcasts).clicked() {
-            go = Some(View::Podcasts);
-        }
-        // "PLAYLISTS" with a + for a new, empty playlist.
+        ui.spacing_mut().item_spacing.y = 6.0;
+        // "PLAYLISTS / n" with a + for a new, empty playlist.
         ui.add_space(18.0);
         let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
-        text_left(ui.painter(), pos2(row.left() + 10.0, row.center().y), "PLAYLISTS", ty::OVERLINE, colors().faint, row.width() - 40.0);
+        let caption = format!("PLAYLISTS / {}", self.playlists.len());
+        text_left(ui.painter(), pos2(row.left() + 10.0, row.center().y), &caption, ty::OVERLINE, colors().dim, row.width() - 40.0);
         let plus = Rect::from_center_size(pos2(row.right() - 12.0, row.center().y), Vec2::splat(22.0));
         let resp = ui.interact(plus, ui.id().with("new-playlist"), Sense::click());
         let color = if resp.hovered() { colors().text } else { colors().faint };
@@ -81,19 +81,23 @@ impl App {
             if self.playlists_task.is_some() {
                 ui.spinner();
             }
+            ui.spacing_mut().item_spacing.y = 1.0;
             for playlist in &self.playlists {
                 let selected = matches!(&self.view, View::Collection(c) if c.source == Source::Playlist(playlist.id));
                 let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::SIDEBAR_PLAYLIST_ROW), Sense::click());
                 if selected || resp.hovered() {
-                    ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), if selected { p.surface } else { p.hover });
+                    ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), if selected { p.raised } else { p.hover });
                 }
-                let art = Rect::from_min_size(rect.min + vec2(6.0, 6.0), Vec2::splat(metrics::LIST_ART));
-                widgets::cover(ui, &mut self.covers, playlist_url(playlist, metrics::THUMB_PX).as_deref(), art, radius::THUMB);
-                let x = art.right() + 12.0;
-                let width = rect.right() - x - 6.0;
-                let title_color = if selected { p.text } else { p.dim };
-                text_left(ui.painter(), pos2(x, rect.center().y - 8.0), &playlist.title, ty::ITEM, title_color, width);
-                text_left(ui.painter(), pos2(x, rect.center().y + 9.0), &format!("{} tracks", playlist.count), ty::CAPTION, p.faint, width);
+                let art_size = metrics::SIDEBAR_ART;
+                let art = Rect::from_min_size(pos2(rect.left() + 10.0, rect.center().y - art_size / 2.0), Vec2::splat(art_size));
+                widgets::cover(ui, &mut self.covers, playlist_url(playlist, metrics::THUMB_PX).as_deref(), art, 3);
+                let count = playlist.count.to_string();
+                let count_width = ui.painter().layout_no_wrap(count.clone(), ty::META.font(), p.faint).size().x;
+                ui.painter().text(pos2(rect.right() - 10.0, rect.center().y), Align2::RIGHT_CENTER, count, ty::META.font(), p.faint);
+                let x = art.right() + 10.0;
+                let width = rect.right() - x - count_width - 18.0;
+                let title_color = if selected || resp.hovered() { p.text } else { p.dim };
+                text_left(ui.painter(), pos2(x, rect.center().y), &playlist.title, ty::BODY, title_color, width);
                 if let Some(mode) = widgets::queue_menu(&resp) {
                     queue = Some((Source::Playlist(playlist.id), mode));
                 }
@@ -119,14 +123,19 @@ impl App {
         let p = colors();
         ui.add_space(6.0);
         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::ACCOUNT_CARD), Sense::click());
-        ui.painter().rect_filled(rect, CornerRadius::same(radius::PANEL), if resp.hovered() { p.raised } else { p.surface });
+        let corner = CornerRadius::same(radius::CONTROL);
+        if resp.hovered() {
+            ui.painter().rect_filled(rect, corner, p.hover);
+        }
+        ui.painter().rect_stroke(rect, corner, egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
         let chevron = Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), Vec2::splat(12.0));
         icons::paint(ui.painter(), chevron, Icon::Chevrons, p.faint);
         let name = self.account_name();
-        avatar(ui, pos2(rect.left() + 24.0, rect.center().y), 16.0, &name, ty::TITLE);
+        avatar(ui, pos2(rect.left() + 24.0, rect.center().y), 14.0, &name, ty::META);
         let width = rect.width() - 80.0;
-        text_left(ui.painter(), pos2(rect.left() + 50.0, rect.center().y - 8.0), &name, ty::ITEM.strong(), p.text, width);
-        text_left(ui.painter(), pos2(rect.left() + 50.0, rect.center().y + 9.0), self.quality.label(), ty::CAPTION, p.faint, width);
+        text_left(ui.painter(), pos2(rect.left() + 48.0, rect.center().y - 8.0), &name, ty::BODY.strong(), p.text, width);
+        let quality = self.quality.label().to_lowercase();
+        text_left(ui.painter(), pos2(rect.left() + 48.0, rect.center().y + 9.0), &quality, ty::META, p.faint, width);
         self.account_menu(&resp, &name);
     }
 
@@ -135,16 +144,35 @@ impl App {
     }
 }
 
+/// `dust_` in mono, the underscore in lime like a cursor.
 fn wordmark(ui: &mut Ui) {
-    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 38.0), Sense::hover());
-    let word = text_left(ui.painter(), pos2(row.left() + 8.0, row.center().y + 2.0), "dust", ty::WORDMARK, colors().text, 160.0);
-    widgets::dust_particles(ui.painter(), pos2(word.right() - 3.0, word.top() + 6.0));
+    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
+    let word = text_left(ui.painter(), pos2(row.left() + 10.0, row.center().y), "dust", ty::WORDMARK, colors().text, 160.0);
+    text_left(ui.painter(), pos2(word.right(), row.center().y), "_", ty::WORDMARK, colors().accent, 20.0);
 }
 
-/// Round avatar with the name's initial.
-pub(super) fn avatar(ui: &Ui, center: egui::Pos2, radius: f32, name: &str, style: ty::Text) {
+/// Square lime tile with the name's initials.
+pub(super) fn avatar(ui: &Ui, center: egui::Pos2, half: f32, name: &str, style: ty::Text) {
     let p = colors();
-    ui.painter().circle_filled(center, radius, p.accent);
-    let initial = name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
-    ui.painter().text(center, Align2::CENTER_CENTER, initial, style.strong().font(), p.bg);
+    let tile = Rect::from_center_size(center, Vec2::splat(half * 2.0));
+    ui.painter().rect_filled(tile, CornerRadius::same(radius::ROW), p.accent_fill);
+    ui.painter().text(center, Align2::CENTER_CENTER, initials(name), style.strong().font(), p.on_accent);
+}
+
+/// Up to two initials: "Domagoj Knez" gives "DK", "domagoj" gives "D".
+fn initials(name: &str) -> String {
+    name.split_whitespace().filter_map(|w| w.chars().next()).take(2).flat_map(char::to_uppercase).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::initials;
+
+    #[test]
+    fn initials_of_names() {
+        assert_eq!(initials("Domagoj Knez"), "DK");
+        assert_eq!(initials("domagoj"), "D");
+        assert_eq!(initials("a b c"), "AB");
+        assert_eq!(initials(""), "");
+    }
 }
