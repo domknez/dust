@@ -1,6 +1,6 @@
 //! Building models from gw-light JSON, which mixes strings and numbers freely.
 
-use super::models::{ArtistPage, ArtistRef, Episode, Item, Playlist, Section, Track};
+use super::models::{AlbumInfo, ArtistPage, ArtistRef, Episode, Item, Playlist, Section, Track};
 use serde_json::Value;
 
 /// String field, tolerating numbers and nulls.
@@ -163,6 +163,34 @@ pub fn card_item(kind: &str, v: &Value) -> Option<Item> {
     Some(Item { kind: kind.into(), id, title, subtitle, picture })
 }
 
+/// Most of the artist's other releases an album page lists.
+const MORE_RELEASES: usize = 6;
+
+/// An album page's year, label and the artist's other releases.
+pub fn album_info(page: &Value) -> AlbumInfo {
+    let data = &page["DATA"];
+    let id = text(&data["ALB_ID"]);
+    let year = |v: &Value| {
+        let date = Some(text(&v["ORIGINAL_RELEASE_DATE"])).filter(|d| !d.is_empty()).unwrap_or_else(|| text(&v["PHYSICAL_RELEASE_DATE"]));
+        date.get(..4).unwrap_or_default().to_string()
+    };
+    let more = page["ALBUMS"]["data"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|v| text(&v["ALB_ID"]) != id && !text(&v["ALB_ID"]).is_empty())
+        .take(MORE_RELEASES)
+        .map(|v| Item {
+            kind: "album".into(),
+            id: text(&v["ALB_ID"]),
+            title: text(&v["ALB_TITLE"]),
+            subtitle: year(v),
+            picture: picture(&"cover".into(), &v["ALB_PICTURE"]),
+        })
+        .collect();
+    AlbumInfo { year: year(data), label: text(&data["LABEL_NAME"]), more }
+}
+
 /// Releases grouped like Deezer's artist page: albums, singles and EPs, then live
 /// albums and compilations, each newest first.
 pub fn discography(data: &Value) -> Vec<Section> {
@@ -313,6 +341,23 @@ fn month_name(number: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn album_info_has_year_label_and_other_releases() {
+        let page = serde_json::json!({
+            "DATA": {"ALB_ID": "1", "ORIGINAL_RELEASE_DATE": "2021-04-30", "LABEL_NAME": "Roadrunner Records"},
+            "ALBUMS": {"data": [
+                {"ALB_ID": "1", "ALB_TITLE": "Fortitude", "PHYSICAL_RELEASE_DATE": "2021-04-30"},
+                {"ALB_ID": "2", "ALB_TITLE": "Magma", "PHYSICAL_RELEASE_DATE": "2016-06-17", "ALB_PICTURE": "abc"}
+            ]}
+        });
+        let info = album_info(&page);
+        assert_eq!((info.year.as_str(), info.label.as_str()), ("2021", "Roadrunner Records"));
+        assert_eq!(info.more.len(), 1, "the album itself is left out");
+        assert_eq!((info.more[0].title.as_str(), info.more[0].subtitle.as_str()), ("Magma", "2016"));
+        assert_eq!(info.more[0].picture, Some(("cover".into(), "abc".into())));
+        assert_eq!(album_info(&serde_json::json!({})), AlbumInfo::default());
+    }
     use serde_json::json;
 
     fn episode_json(id: &str, published: &str) -> Value {

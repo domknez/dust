@@ -1,7 +1,7 @@
 //! Queue panel: now playing, then next up with jump, remove and drag-to-reorder.
 
 use crate::player::{Cmd, Status};
-use crate::ui::app::App;
+use crate::ui::app::{App, SidePanel};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
@@ -61,22 +61,57 @@ impl App {
     }
 
     fn queue_title(&mut self, ui: &mut Ui, can_clear: bool, queue: &[crate::deezer::Track]) {
+        self.side_panel_tabs(ui);
         ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width() - 150.0, 36.0), Sense::hover());
-            text_left(ui.painter(), pos2(r.left() + 4.0, r.center().y), "Queue", ty::PANEL_TITLE, colors().text, r.width());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if widgets::icon_button(ui, Icon::Close, 14.0, colors().dim).on_hover_text("Close").clicked() {
-                    self.side_panel = None;
-                }
-                if can_clear && ui.link(RichText::new("Clear").font(ty::BODY.font())).clicked() {
+                if can_clear && ui.link(RichText::new("clear").font(ty::META.font())).clicked() {
                     self.player.send(Cmd::ClearUpcoming);
                 }
-                let save = ui.link(RichText::new("Save").font(ty::BODY.font())).on_hover_text("Save the queue as a new playlist");
+                let save =
+                    ui.link(RichText::new("save as playlist").font(ty::META.font())).on_hover_text("Save the queue as a new playlist");
                 if !queue.is_empty() && save.clicked() {
                     self.new_playlist(queue.iter().filter(|t| t.available && !t.is_episode()).cloned().collect());
                 }
             });
         });
+    }
+
+    /// queue | lyrics switch at the top of the right panel, and a close button.
+    pub(in crate::ui) fn side_panel_tabs(&mut self, ui: &mut Ui) {
+        let p = colors();
+        ui.horizontal(|ui| {
+            let (tray, _) = ui.allocate_exact_size(vec2(ui.available_width() - 40.0, 34.0), Sense::hover());
+            let corner = CornerRadius::same(radius::CONTROL);
+            ui.painter().rect_filled(tray, corner, p.surface);
+            ui.painter().rect_stroke(tray, corner, egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
+            let tabs = [(SidePanel::Queue, "queue"), (SidePanel::Lyrics, "lyrics")];
+            let width = (tray.width() - 6.0) / tabs.len() as f32;
+            for (i, (panel, label)) in tabs.into_iter().enumerate() {
+                let tab =
+                    Rect::from_min_size(pos2(tray.left() + 3.0 + i as f32 * width, tray.top() + 3.0), vec2(width, tray.height() - 6.0));
+                let resp = ui.interact(tab, ui.id().with(("side-tab", i)), Sense::click());
+                let on = self.side_panel == Some(panel);
+                let color = match (on, resp.hovered()) {
+                    (true, _) => p.bg,
+                    (false, true) => p.text,
+                    (false, false) => p.dim,
+                };
+                if on {
+                    ui.painter().rect_filled(tab, CornerRadius::same(5), p.text);
+                }
+                ui.painter().text(tab.center(), egui::Align2::CENTER_CENTER, label, ty::META.font(), color);
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                    self.side_panel = Some(panel);
+                    self.lyrics.reopened();
+                }
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if widgets::icon_button(ui, Icon::Close, 14.0, p.dim).on_hover_text("Close").clicked() {
+                    self.side_panel = None;
+                }
+            });
+        });
+        ui.add_space(6.0);
     }
 
     fn upcoming_row(&mut self, ui: &mut Ui, i: usize, track: &crate::deezer::Track, picked: &mut Picked) {

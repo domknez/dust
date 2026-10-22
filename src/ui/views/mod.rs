@@ -18,3 +18,4 @@ mod sidebar;
 mod sleep_timer;
 
 pub use lyrics::LyricsState;
+pub use sleep_timer::SleepChoice;

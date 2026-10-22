@@ -4,7 +4,7 @@ use crate::player::Status;
 use crate::ui::app::App;
 use crate::ui::state::View;
 use crate::ui::style::icons::{self, Icon};
-use crate::ui::style::{colors, metrics, typography as ty};
+use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets;
 use eframe::egui::{self, CornerRadius, Key, KeyboardShortcut, Modifiers, Rect, RichText, Sense, Ui, Vec2, pos2, vec2};
 
@@ -73,20 +73,28 @@ impl App {
             ui.memory_mut(|m| m.request_focus(id));
         }
         let focused = ui.memory(|m| m.has_focus(id));
-        let radius = CornerRadius::same((height / 2.0) as u8);
-        ui.painter().rect_filled(rect, radius, if focused { p.raised } else { p.surface });
-        // Accent ring while typing, a faint one on hover.
+        let corner = CornerRadius::same(radius::CONTROL);
+        ui.painter().rect_filled(rect, corner, p.surface);
+        // Lime outline while typing, a brighter one on hover.
         let ring = match (focused, pill.hovered()) {
-            (true, _) => Some(egui::Stroke::new(1.5, p.accent)),
-            (false, true) => Some(egui::Stroke::new(1.0, p.line)),
-            (false, false) => None,
+            (true, _) => egui::Stroke::new(1.5, p.accent),
+            (false, true) => egui::Stroke::new(1.0, p.faint),
+            (false, false) => egui::Stroke::new(1.0, p.border),
         };
-        if let Some(stroke) = ring {
-            ui.painter().rect_stroke(rect, radius, stroke, egui::StrokeKind::Inside);
-        }
-        let icon = Rect::from_center_size(pos2(rect.left() + 20.0, rect.center().y), Vec2::splat(15.0));
+        ui.painter().rect_stroke(rect, corner, ring, egui::StrokeKind::Inside);
+        let icon = Rect::from_center_size(pos2(rect.left() + 18.0, rect.center().y), Vec2::splat(14.0));
         icons::paint(ui.painter(), icon, Icon::Search, if focused { p.accent } else { p.dim });
-        let input = Rect::from_min_max(pos2(rect.left() + 38.0, rect.top() + 9.0), pos2(rect.right() - 14.0, rect.bottom() - 7.0));
+        // The shortcut, as a key cap, while the field is idle.
+        let mut right = rect.right() - 12.0;
+        if !focused && self.search.is_empty() {
+            let keys = if cfg!(target_os = "macos") { "⌘F" } else { "Ctrl+F" };
+            let width = ui.painter().layout_no_wrap(keys.to_string(), ty::META.font(), p.dim).size().x + 10.0;
+            let cap = Rect::from_center_size(pos2(rect.right() - 10.0 - width / 2.0, rect.center().y), vec2(width, 20.0));
+            ui.painter().rect_stroke(cap, CornerRadius::same(radius::THUMB), egui::Stroke::new(1.0, p.border), egui::StrokeKind::Inside);
+            ui.painter().text(cap.center(), egui::Align2::CENTER_CENTER, keys, ty::META.font(), p.dim);
+            right = cap.left() - 8.0;
+        }
+        let input = Rect::from_min_max(pos2(rect.left() + 34.0, rect.top() + 9.0), pos2(right, rect.bottom() - 7.0));
         let field = egui::TextEdit::singleline(&mut self.search)
             .id(id)
             .hint_text("Search, or paste a Deezer link")

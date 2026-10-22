@@ -19,17 +19,9 @@ pub enum Icon {
     AirPlay,
     Computer,
     Search,
-    Home,
     Heart,
     /// Heart outline: "not liked yet".
     HeartOutline,
-    /// A record: albums.
-    Disc,
-    Grid,
-    /// Head and shoulders: artists.
-    Person,
-    /// Microphone: podcasts.
-    Podcast,
     Refresh,
     Note,
     Sun,
@@ -38,6 +30,8 @@ pub enum Icon {
     LogOut,
     /// Gear: settings.
     Settings,
+    /// A speaker cabinet: outputs in "Play on".
+    Speaker,
     /// Stopwatch: the sleep timer.
     Timer,
     Queue,
@@ -159,21 +153,6 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             painter.circle_stroke(p(r, 0.43, 0.43), w * 0.26, stroke);
             line(p(r, 0.62, 0.62), p(r, 0.86, 0.86));
         }
-        Icon::Home => {
-            let s = Stroke::new(stroke.width, color);
-            painter.add(Shape::closed_line(
-                vec![
-                    p(r, 0.5, 0.12),
-                    p(r, 0.88, 0.44),
-                    p(r, 0.78, 0.44),
-                    p(r, 0.78, 0.86),
-                    p(r, 0.22, 0.86),
-                    p(r, 0.22, 0.44),
-                    p(r, 0.12, 0.44),
-                ],
-                s,
-            ));
-        }
         Icon::Heart => {
             let rr = w * 0.2;
             painter.circle_filled(p(r, 0.33, 0.38), rr, color);
@@ -191,21 +170,6 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
                 })
                 .collect();
             painter.add(Shape::closed_line(pts, Stroke::new((w * 0.08).max(1.3), color)));
-        }
-        Icon::Disc => {
-            let c = p(r, 0.5, 0.5);
-            painter.circle_stroke(c, w * 0.38, Stroke::new((w * 0.08).max(1.3), color));
-            painter.circle_filled(c, w * 0.11, color);
-        }
-        Icon::Grid => {
-            for (x, y) in [(0.14, 0.14), (0.54, 0.14), (0.14, 0.54), (0.54, 0.54)] {
-                painter.rect_filled(Rect::from_min_size(p(r, x, y), vec2(w * 0.32, w * 0.32)), 2.0, color);
-            }
-        }
-        Icon::Person => {
-            painter.circle_filled(p(r, 0.5, 0.32), w * 0.18, color);
-            let shoulders: Vec<Pos2> = arc(p(r, 0.5, 0.92), w * 0.36, PI, 2.0 * PI);
-            painter.add(Shape::convex_polygon(shoulders, color, Stroke::NONE));
         }
         Icon::Refresh => {
             let c = p(r, 0.5, 0.5);
@@ -236,16 +200,6 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             line(p(r, 0.72, 0.34), p(r, 0.88, 0.5));
             line(p(r, 0.72, 0.66), p(r, 0.88, 0.5));
         }
-        Icon::Podcast => {
-            let s = Stroke::new(stroke.width, color);
-            // Capsule head, a cradle under it and a stand.
-            let head = Rect::from_min_max(p(r, 0.36, 0.1), p(r, 0.64, 0.6));
-            painter.rect_stroke(head, w * 0.14, s, eframe::egui::StrokeKind::Middle);
-            let cradle = arc(p(r, 0.5, 0.44), w * 0.27, 0.0, PI);
-            painter.add(Shape::line(cradle, s));
-            line(p(r, 0.5, 0.71), p(r, 0.5, 0.88));
-            line(p(r, 0.34, 0.88), p(r, 0.66, 0.88));
-        }
         Icon::Queue => {
             for y in [0.24, 0.44, 0.64] {
                 line(p(r, 0.12, y), p(r, 0.62, y));
@@ -263,6 +217,12 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
                 let d = vec2(a.cos(), a.sin());
                 line(c + d * w * 0.3, c + d * w * 0.42);
             }
+        }
+        Icon::Speaker => {
+            let s = Stroke::new(stroke.width * 0.85, color);
+            painter.rect_stroke(Rect::from_min_max(p(r, 0.24, 0.1), p(r, 0.76, 0.9)), w * 0.1, s, eframe::egui::StrokeKind::Middle);
+            painter.circle_stroke(p(r, 0.5, 0.6), w * 0.14, s);
+            painter.circle_filled(p(r, 0.5, 0.28), w * 0.05, color);
         }
         Icon::Timer => {
             let c = p(r, 0.5, 0.56);

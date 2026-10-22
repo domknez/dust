@@ -17,16 +17,17 @@ pub use palette::{Appearance, colors};
 use eframe::egui::{self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle, Visuals};
 use std::sync::Arc;
 
-/// Register the app's typefaces ahead of egui's fallback fonts. Inter stays behind
-/// them for symbols they lack, and a few-glyph Noto subset for the keyboard symbols
-/// (⌘ ⇧ ⌥ ⏎) none of them have.
+/// Register the app's typefaces ahead of egui's fallback fonts: Space Grotesk and
+/// JetBrains Mono. Inter stays behind them for symbols they lack, and a few-glyph Noto
+/// subset for the keyboard symbols (⌘ ⇧ ⌥ ⏎) none of them have.
 pub fn install_fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     for (name, bytes) in [
-        ("Figtree", &include_bytes!("../../../assets/fonts/Figtree-Regular.ttf")[..]),
-        ("Figtree-SemiBold", include_bytes!("../../../assets/fonts/Figtree-SemiBold.ttf")),
-        ("Bricolage", include_bytes!("../../../assets/fonts/BricolageGrotesque-Bold.ttf")),
-        ("PlexMono", include_bytes!("../../../assets/fonts/IBMPlexMono-Medium.ttf")),
+        ("Grotesk", &include_bytes!("../../../assets/fonts/SpaceGrotesk-Regular.ttf")[..]),
+        ("Grotesk-SemiBold", include_bytes!("../../../assets/fonts/SpaceGrotesk-SemiBold.ttf")),
+        ("Grotesk-Bold", include_bytes!("../../../assets/fonts/SpaceGrotesk-Bold.ttf")),
+        ("Mono", include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf")),
+        ("Mono-Bold", include_bytes!("../../../assets/fonts/JetBrainsMono-Bold.ttf")),
         ("Inter", include_bytes!("../../../assets/fonts/Inter-Regular.ttf")),
         ("Keys", include_bytes!("../../../assets/fonts/NotoSansSymbols2-Keys.ttf")),
     ] {
@@ -34,10 +35,11 @@ pub fn install_fonts(ctx: &egui::Context) {
     }
     let fallbacks = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
     let chain = |first: &str| [vec![first.to_string(), "Inter".to_string(), "Keys".to_string()], fallbacks.clone()].concat();
-    fonts.families.insert(FontFamily::Proportional, chain("Figtree"));
-    fonts.families.insert(typography::semibold(), chain("Figtree-SemiBold"));
-    fonts.families.insert(typography::display(), chain("Bricolage"));
-    fonts.families.insert(FontFamily::Monospace, chain("PlexMono"));
+    fonts.families.insert(FontFamily::Proportional, chain("Grotesk"));
+    fonts.families.insert(typography::semibold(), chain("Grotesk-SemiBold"));
+    fonts.families.insert(typography::display(), chain("Grotesk-Bold"));
+    fonts.families.insert(FontFamily::Monospace, chain("Mono"));
+    fonts.families.insert(typography::mono_bold(), chain("Mono-Bold"));
     ctx.set_fonts(fonts);
 }
 

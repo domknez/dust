@@ -11,7 +11,7 @@ use super::style::{self, Appearance, colors, metrics};
 use super::tasks::{self, Task};
 use super::updates::Updates;
 use crate::credentials;
-use crate::deezer::{self, ArtistPage, Deezer, Error, Item, Likes, Link, Playlist, Quality, SearchResults, Section, Track};
+use crate::deezer::{self, AlbumInfo, ArtistPage, Deezer, Error, Item, Likes, Link, Playlist, Quality, SearchResults, Section, Track};
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
 use crate::player::{Cmd, Output, PlayerHandle, Repeat, Status, saved};
@@ -52,7 +52,14 @@ pub struct App {
     pub(super) search: String,
     pub(super) searched: String,
     pub(super) tracks: Vec<Track>,
-    pub(super) tracks_task: Task<Vec<Track>>,
+    /// The list's tracks, and for an album its year, label and the artist's other
+    /// releases.
+    pub(super) tracks_task: Task<(Vec<Track>, Option<AlbumInfo>)>,
+    pub(super) album_info: Option<AlbumInfo>,
+    /// Discography tab on artist pages (albums, singles, live).
+    pub(super) discography_tab: usize,
+    /// What the sleep timer was last set to (for its ring and lit choice).
+    pub(super) sleep_choice: Option<super::views::SleepChoice>,
     /// Artist, album and playlist cards of the current search.
     pub(super) search_sections: Vec<Section>,
     pub(super) search_task: Task<SearchResults>,
@@ -169,6 +176,9 @@ impl App {
             searched: String::new(),
             tracks: Vec::new(),
             tracks_task: None,
+            album_info: None,
+            discography_tab: 0,
+            sleep_choice: None,
             search_sections: Vec::new(),
             search_task: None,
             link_task: None,
@@ -313,6 +323,7 @@ impl App {
             return;
         }
         self.tracks.clear();
+        self.album_info = None;
         self.search_sections.clear();
         // Replacing a task drops its receiver, so a stale result never lands.
         self.tracks_task = None;
@@ -332,8 +343,13 @@ impl App {
                 self.searched = query.clone();
                 self.search_task = tasks::spawn(ctx, move || client.search(&query));
             }
-            View::Loved => self.tracks_task = tasks::spawn(ctx, move || client.loved()),
-            View::Collection(coll) => self.tracks_task = tasks::spawn(ctx, move || coll.source.fetch(&client)),
+            View::Loved => self.tracks_task = tasks::spawn(ctx, move || client.loved().map(|t| (t, None))),
+            View::Collection(coll) => {
+                self.tracks_task = tasks::spawn(ctx, move || match &coll.source {
+                    Source::Album(id) => client.album_page(id).map(|(t, info)| (t, Some(info))),
+                    source => source.fetch(&client).map(|t| (t, None)),
+                });
+            }
         }
     }
 
@@ -366,6 +382,7 @@ impl App {
     }
 
     pub(super) fn open_artist(&mut self, ctx: &egui::Context, artist: ArtistView) {
+        self.discography_tab = 0;
         self.open_view(ctx, View::Artist(Box::new(artist)));
     }
 
@@ -460,7 +477,10 @@ impl App {
             None => {}
         }
         match tasks::poll(&mut self.tracks_task) {
-            Some(Ok(t)) => self.tracks = t,
+            Some(Ok((tracks, info))) => {
+                self.tracks = tracks;
+                self.album_info = info;
+            }
             Some(Err(e)) => self.on_load_error(e),
             None => {}
         }
@@ -618,6 +638,7 @@ impl eframe::App for App {
         if self.mini_player.is_none() {
             self.history_input(&ctx);
             self.settings_shortcut(&ctx);
+            self.nav_shortcuts(&ctx);
         }
         let st = self.player.status();
         self.persist_playback(&st);

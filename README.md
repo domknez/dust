@@ -61,8 +61,9 @@ including cover art.
 - **Lyrics:** the lyrics button in the player bar opens the playing track's lyrics; synced
   ones follow the song with the sung line highlighted, and clicking a line jumps there
 - **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs
-- **Sleep timer:** in the player bar's ⋯ menu; pauses after 15 minutes to 1½ hours, or stops
-  at the end of the track (the next one waits for play)
+- **Sleep timer:** in the player bar's ⋯ menu, with a countdown ring; after 15 minutes
+  to an hour the music fades out over 30 seconds and pauses (your volume is back for
+  the next play), or it stops at the end of the track (the next one waits for play)
 - **AirPlay 2 and AirPlay 1** output with automatic discovery — Sonos (incl. Era 100/300),
   HomePod-class receivers, Apple TV, AirPort Express, shairport-sync and most AirPlay speakers
 - **Last.fm scrobbling, history and Flow learning:** dust reports what you listen to
@@ -70,16 +71,18 @@ including cover art.
 - **Speaker buttons work:** volume and play/pause/skip on the speaker control dust
 - **Plays steadily in the background:** while music plays, macOS doesn't nap dust or
   idle-sleep the Mac, and the audio threads run at high priority
-- **Mini player**: a small always-on-top strip with cover, controls
-  and seek bar; drag it anywhere, double-click the cover to go back
+- **Mini player**: a borderless always-on-top strip with cover, title, artist and the
+  speaker it plays on, controls and a progress line along the bottom; drag it anywhere,
+  make it narrower for just the title, times and play, double-click the cover to go back
 - **Updates itself**: new versions download and verify in the
   background; then *Restart to update* appears in the sidebar (or the update installs
   when you quit)
 - **Media keys and Now Playing:** keyboard and headset media keys, plus the system's
   Now Playing controls with cover art (macOS Control Center, Windows media overlay,
   Linux MPRIS)
-- **Modern UI:** Tidal-style layout with cover art, soft dark and light themes (or follow
-  the system), Figtree text with Bricolage Grotesque titles
+- **Modern UI ("Graphite"):** clean and crisp, a charcoal dark and a soft grey light theme
+  (or follow the system) with one lime accent, Space Grotesk text and titles and
+  JetBrains Mono for labels, times and counts
 - **Secure sign-in:** "Log in with Deezer" opens Deezer's own login page; the session is
   kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service)
 - Runs on macOS, Linux and Windows
@@ -228,6 +231,7 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 
 - `Space`: play/pause
 - `⌘F` / `Ctrl+F`: search
+- `⌘1`–`⌘6` / `Ctrl+1`–`Ctrl+6`: Home, Loved tracks, Playlists, Albums, Artists, Podcasts
 - `⌘←` / `⌘→` (`Alt+←` / `Alt+→` on Windows and Linux), or the mouse's side buttons:
   back / forward between pages
 - `⌘⇧M` / `Ctrl+Shift+M`: mini player on/off
@@ -277,11 +281,10 @@ audio output and the Deezer API.
   [OwnTone](https://github.com/owntone/owntone-server) (its PTP library, libairptp, is MIT)
   and were validated against [shairport-sync](https://github.com/mikebrady/shairport-sync).
 - Typefaces, all under the SIL Open Font License:
-  [Figtree](https://github.com/erikdkennedy/figtree) by Erik Kennedy
-  ([license](assets/fonts/OFL-Figtree.txt)),
-  [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) by Mathieu Triay
-  ([license](assets/fonts/OFL-BricolageGrotesque.txt)),
-  [IBM Plex Mono](https://github.com/IBM/plex) by IBM ([license](assets/fonts/OFL-IBMPlexMono.txt))
+  [Space Grotesk](https://github.com/floriankarsten/space-grotesk) by Florian Karsten
+  ([license](assets/fonts/OFL-SpaceGrotesk.txt)),
+  [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) by JetBrains
+  ([license](assets/fonts/OFL-JetBrainsMono.txt)),
   [Inter](https://rsms.me/inter/) by Rasmus Andersson for symbols
   ([license](assets/fonts/OFL-Inter.txt)) and a few keyboard symbols from
   [Noto Sans Symbols 2](https://github.com/notofonts/symbols)

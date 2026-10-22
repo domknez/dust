@@ -1,7 +1,7 @@
 //! Browsing the catalogue: search, the user's library, the home page and what its
 //! items open (albums, artists, mixes, Flow).
 
-use super::models::{ArtistPage, Item, Playlist, SearchResults, Section, Track};
+use super::models::{AlbumInfo, ArtistPage, Item, Playlist, SearchResults, Section, Track};
 use super::{Deezer, Error, Result, parse};
 use serde_json::json;
 use std::collections::HashSet;
@@ -64,8 +64,13 @@ impl Deezer {
     }
 
     pub fn album(&self, id: &str) -> Result<Vec<Track>> {
+        self.album_page(id).map(|(tracks, _)| tracks)
+    }
+
+    /// An album's tracks with its year, label and the artist's other releases.
+    pub fn album_page(&self, id: &str) -> Result<(Vec<Track>, AlbumInfo)> {
         let r = self.call("deezer.pageAlbum", json!({"alb_id": id, "lang": "en", "header": true, "tab": 0}))?;
-        Ok(parse::tracks(&r["SONGS"]["data"]))
+        Ok((parse::tracks(&r["SONGS"]["data"]), parse::album_info(&r)))
     }
 
     /// Everything on an artist's page, including the whole discography.

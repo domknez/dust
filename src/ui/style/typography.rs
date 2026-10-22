@@ -2,8 +2,8 @@
 
 use eframe::egui::{FontFamily, FontId};
 
-/// Typefaces: Figtree for text, Bricolage Grotesque for titles, IBM Plex Mono for
-/// small uppercase labels.
+/// Typefaces: Space Grotesk for text and (bold) titles, JetBrains Mono for labels,
+/// times and counts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Face {
     Text,
@@ -42,6 +42,7 @@ impl Text {
     pub fn font(self) -> FontId {
         let family = match self.face {
             Face::Display => display(),
+            Face::Mono if self.strong => mono_bold(),
             Face::Mono => FontFamily::Monospace,
             Face::Text if self.strong => semibold(),
             Face::Text => FontFamily::Proportional,
@@ -51,15 +52,15 @@ impl Text {
 }
 
 /// Login screen wordmark.
-pub const DISPLAY: Text = Text::display(48.0);
-/// Collection (playlist, album, ...) title.
-pub const HERO: Text = Text::display(40.0);
+pub const DISPLAY: Text = Text::mono(48.0).strong();
+/// Collection (playlist, album, ...) and artist names in page headers.
+pub const HERO: Text = Text::display(60.0);
+/// Artist names in their page header.
+pub const ARTIST_NAME: Text = Text::display(80.0);
 /// Page titles: Home, Playlists, Search.
-pub const PAGE_TITLE: Text = Text::display(30.0);
+pub const PAGE_TITLE: Text = Text::display(34.0);
 /// Sidebar wordmark.
-pub const WORDMARK: Text = Text::display(28.0);
-/// Side panel titles (Queue).
-pub const PANEL_TITLE: Text = Text::display(20.0);
+pub const WORDMARK: Text = Text::mono(17.0).strong();
 /// Home page section headings.
 pub const SECTION_TITLE: Text = Text::display(19.0);
 /// Taglines and larger supporting text.
@@ -78,10 +79,17 @@ pub const SMALL: Text = Text::new(12.0);
 pub const CAPTION: Text = Text::new(11.5);
 /// Uppercase section captions and column headers.
 pub const OVERLINE: Text = Text::mono(10.5);
+/// Times, counts, track numbers, shortcut hints and tags.
+pub const META: Text = Text::mono(11.0);
 
 /// Font family name registered for titles.
 pub fn display() -> FontFamily {
     FontFamily::Name("display".into())
+}
+
+/// Font family name registered for bold monospaced text.
+pub fn mono_bold() -> FontFamily {
+    FontFamily::Name("mono-bold".into())
 }
 
 /// Font family name registered for semibold text.

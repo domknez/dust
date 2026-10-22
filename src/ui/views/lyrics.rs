@@ -4,11 +4,10 @@
 use crate::deezer::Lyrics;
 use crate::player::{Cmd, State, Status};
 use crate::ui::app::App;
-use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, typography as ty};
 use crate::ui::tasks::{self, Task};
-use crate::ui::widgets::{self, text_left};
-use eframe::egui::{self, RichText, Sense, Ui, pos2, vec2};
+
+use eframe::egui::{self, RichText, Sense, Ui};
 use std::time::Duration;
 
 /// Repaint at least this often while synced lyrics play.
@@ -61,15 +60,7 @@ impl App {
     }
 
     fn lyrics_title(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width() - 40.0, 36.0), Sense::hover());
-            text_left(ui.painter(), pos2(r.left() + 4.0, r.center().y), "Lyrics", ty::PANEL_TITLE, colors().text, r.width());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if widgets::icon_button(ui, Icon::Close, 14.0, colors().dim).on_hover_text("Close").clicked() {
-                    self.side_panel = None;
-                }
-            });
-        });
+        self.side_panel_tabs(ui);
         ui.add_space(8.0);
     }
 
