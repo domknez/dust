@@ -12,7 +12,7 @@ AirPlay 2 streaming built in.**
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/home-dark.png">
-  <img src="assets/screenshots/home-light.png" alt="dust home page: Flow moods, recently played, playlists in the sidebar and the player bar with an AirPlay speaker selected">
+  <img src="assets/screenshots/home-light.png" alt="dust home page in the Graphite look: Flow with its moods, album rows, playlists in the sidebar and the player bar with a waveform seek bar, playing on an AirPlay speaker">
 </picture>
 
 dust is free software: free to use, study, modify and share under the [MIT license](LICENSE).
@@ -21,7 +21,7 @@ Inspired by [SpotLight](https://github.com/dddevid/SpotLight).
 
 | | dust | Deezer desktop |
 |---|---|---|
-| Binary | ~8 MB | 300+ MB |
+| Binary | ~10 MB | 300+ MB |
 | Memory, idle in background | ~85 MB | 400+ MB |
 | Memory, idle and visible | ~155 MB¹ | |
 | Idle CPU | ~0% (UI sleeps when untouched) | |
@@ -54,7 +54,7 @@ including cover art.
 - **Queue:** see what's next, jump to any track, reorder by dragging, remove, clear;
   it survives a restart (paused where you left off);
   right-click any track or card → *Play next* / *Add to queue*
-- **Seeking** (HTTP range jumps for MP3)
+- **Seeking** on a waveform-style progress bar (HTTP range jumps for MP3)
 - **Podcasts:** find shows in Search and play their episodes (newest first, with dates);
   the podcasts you follow on Deezer are under *Podcasts* in the sidebar. Episodes play
   from the show's own audio file, at any sample rate
@@ -64,7 +64,8 @@ including cover art.
 - **Sleep timer:** in the player bar's ⋯ menu, with a countdown ring; after 15 minutes
   to an hour the music fades out over 30 seconds and pauses (your volume is back for
   the next play), or it stops at the end of the track (the next one waits for play)
-- **AirPlay 2 and AirPlay 1** output with automatic discovery — Sonos (incl. Era 100/300),
+- **AirPlay 2 and AirPlay 1** output with automatic discovery and a *Play on* picker that shows each speaker's
+  model and the playing one's volume — Sonos (incl. Era 100/300),
   HomePod-class receivers, Apple TV, AirPort Express, shairport-sync and most AirPlay speakers
 - **Last.fm scrobbling, history and Flow learning:** dust reports what you listen to
   back to Deezer, exactly like Deezer's own apps
@@ -217,6 +218,9 @@ DUST_LOG=debug dust --tone "Living Room"   # ...on an AirPlay speaker, with pack
 `DUST_LOG=debug` (or `info`, `trace`) prints diagnostics to the terminal, e.g. AirPlay
 packet stats, speaker remote-control requests, media keys and listen reports.
 
+`DUST_DISPLAY_NAME="Listener"` shows that name instead of your Deezer account's, for
+screenshots.
+
 With a stored session (log in with the app first), these check the Deezer side without
 opening the window:
 
@@ -237,7 +241,7 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 - `⌘⇧M` / `Ctrl+Shift+M`: mini player on/off
 - `⌘,` / `Ctrl+,`: Settings (`Esc` closes them)
 - Double-click a track, or click its number: play from there
-- Home cards: click to open, click the round play button to play right away
+- Home cards: click to open, click the lime play button to play right away
 - Right-click a track: *Play next*, *Add to queue*, *Add to playlist ›* (and *Remove
   from this playlist* on your own); right-click a card or playlist: *Play next* /
   *Add to queue*; album and playlist pages have *Add to queue* and a ⋯ menu (*Add all

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- README screenshots show the Graphite look; `DUST_DISPLAY_NAME` hides the account name
+  for screenshots
+
 ## 0.17.0 (2026-10-22)
 
 - New look, "Graphite": charcoal (or soft grey) with one lime accent, Space Grotesk and
