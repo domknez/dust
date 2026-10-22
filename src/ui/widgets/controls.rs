@@ -6,6 +6,7 @@ use crate::ui::style::{colors, radius, typography as ty};
 use eframe::egui::{self, Color32, CornerRadius, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
 
 const PILL_HEIGHT: f32 = 40.0;
+const FIELD_HEIGHT: f32 = 38.0;
 
 /// Icon-only button; brightens on hover.
 pub fn icon_button(ui: &mut Ui, icon: Icon, size: f32, color: Color32) -> Response {
@@ -74,6 +75,47 @@ pub fn pill(ui: &mut Ui, label: &str, icon: Option<Icon>, primary: bool) -> Resp
     }
     ui.painter().galley(pos2(x, rect.center().y - galley.size().y / 2.0), galley, fg);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Single-line text field: a box inset into the popover, with a lime ring while
+/// typing. `action` puts a small text button at its right end (e.g. "Show");
+/// returns the field's response and whether that button was clicked.
+pub fn text_field(ui: &mut Ui, value: &mut String, hint: &str, password: bool, action: Option<&str>) -> (Response, bool) {
+    let p = colors();
+    // Not focusable, so Tab goes from field to field.
+    let (rect, frame) = ui.allocate_exact_size(vec2(ui.available_width(), FIELD_HEIGHT), Sense::CLICK);
+    let id = frame.id.with("edit");
+    // Clicking the padding puts the cursor in the field too.
+    if frame.clicked() {
+        ui.memory_mut(|m| m.request_focus(id));
+    }
+    let focused = ui.memory(|m| m.has_focus(id));
+    let corner = CornerRadius::same(radius::CONTROL);
+    ui.painter().rect_filled(rect, corner, p.bg);
+    let ring = match (focused, frame.hovered() && ui.is_enabled()) {
+        (true, _) => egui::Stroke::new(1.5, p.accent),
+        (false, true) => egui::Stroke::new(1.0, p.faint),
+        (false, false) => egui::Stroke::new(1.0, p.border),
+    };
+    ui.painter().rect_stroke(rect, corner, ring, egui::StrokeKind::Inside);
+    let mut right = rect.right() - 12.0;
+    let mut clicked = false;
+    if let Some(label) = action {
+        let width = ui.painter().layout_no_wrap(label.to_string(), ty::META.font(), p.dim).size().x + 12.0;
+        let spot = Rect::from_center_size(pos2(rect.right() - 6.0 - width / 2.0, rect.center().y), vec2(width, 24.0));
+        let resp = ui.interact(spot, frame.id.with("action"), Sense::CLICK);
+        let color = if resp.hovered() { p.text } else { p.dim };
+        ui.painter().text(spot.center(), egui::Align2::CENTER_CENTER, label, ty::META.font(), color);
+        clicked = resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
+        right = spot.left() - 4.0;
+    }
+    let input = Rect::from_min_max(pos2(rect.left() + 12.0, rect.top() + 9.0), pos2(right, rect.bottom() - 7.0));
+    let edit = egui::TextEdit::singleline(value).id(id).hint_text(hint).password(password).frame(egui::Frame::new()).text_color(p.text);
+    let edit = ui.put(input, edit);
+    if frame.hovered() && ui.is_enabled() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+    }
+    (edit, clicked)
 }
 
 /// Thin progress/volume bar. `value` is 0..=1; `lime` fills it with the accent

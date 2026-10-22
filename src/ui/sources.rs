@@ -5,7 +5,8 @@
 use super::app::App;
 use super::likes::{self, LikeState};
 use super::state::View;
-use super::style::{colors, typography as ty};
+use super::style::icons::Icon;
+use super::style::{colors, radius, typography as ty};
 use super::tasks::{self, Task};
 use super::widgets;
 use crate::credentials;
@@ -27,6 +28,9 @@ pub struct ServerForm {
     pub user: String,
     pub password: String,
     pub error: Option<String>,
+    pub show_password: bool,
+    /// The address field got the cursor when the form opened.
+    focused: bool,
 }
 
 /// Both sources' logins and which one the listener used last.
@@ -236,7 +240,7 @@ impl App {
     }
 
     pub(super) fn open_server_form(&mut self) {
-        self.sources.form = Some(ServerForm { url: "http://".into(), ..Default::default() });
+        self.sources.form = Some(ServerForm::default());
     }
 
     /// The "Connect to Navidrome" dialog, while open (call once per frame).
@@ -244,35 +248,79 @@ impl App {
         let Some(mut form) = self.sources.form.take() else { return };
         let p = colors();
         let busy = self.sources.connecting();
+        let ready = !busy && !form.url.trim().is_empty() && !form.user.trim().is_empty();
         let mut connect = false;
         let mut close = false;
         let modal = egui::Modal::new(egui::Id::new("server-dialog")).frame(widgets::popover_frame(ctx)).show(ctx, |ui| {
-            ui.set_width(340.0);
-            ui.spacing_mut().item_spacing.y = 10.0;
-            ui.label(RichText::new("Connect to Navidrome").font(ty::SECTION_TITLE.font()).color(p.text));
-            ui.label(RichText::new("Or any Subsonic-compatible server.").color(p.dim));
-            let field = |ui: &mut egui::Ui, value: &mut String, hint: &str, password: bool| {
-                ui.add_enabled(!busy, egui::TextEdit::singleline(value).hint_text(hint).password(password).desired_width(f32::INFINITY))
-            };
-            let url = field(ui, &mut form.url, "Server address, e.g. http://192.168.1.10:4533", false);
-            if ui.memory(|m| m.focused().is_none()) {
-                url.request_focus();
-            }
-            field(ui, &mut form.user, "User name", false);
-            field(ui, &mut form.password, "Password", true);
-            if let Some(e) = &form.error {
-                ui.label(RichText::new(e).color(p.danger));
-            }
-            ui.horizontal(|ui| {
-                let ready = !busy && !form.url.trim().is_empty() && !form.user.trim().is_empty();
-                connect = ui.add_enabled(ready, egui::Button::new(RichText::new("Connect").strong())).clicked()
-                    || (ready && ui.input(|i| i.key_pressed(Key::Enter)));
-                close |= ui.add_enabled(!busy, egui::Button::new("Cancel")).clicked();
-                if busy {
-                    ui.spinner();
+            ui.set_width(DIALOG_WIDTH);
+            egui::Frame::new().inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("MUSIC SOURCE").font(ty::OVERLINE.font()).color(p.accent));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let hint = "Close (Esc)";
+                        close |= ui
+                            .add_enabled_ui(!busy, |ui| widgets::icon_button(ui, Icon::Close, 14.0, p.dim).on_hover_text(hint))
+                            .inner
+                            .clicked();
+                    });
+                });
+                ui.add_space(12.0);
+                ui.label(RichText::new("Connect to Navidrome").font(ty::SECTION_TITLE.font()).color(p.text));
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new("Play your own library from Navidrome or any Subsonic-compatible server.")
+                        .font(ty::SECONDARY.font())
+                        .color(p.dim),
+                );
+                ui.add_space(20.0);
+
+                let mut changed = false;
+                ui.add_enabled_ui(!busy, |ui| {
+                    field_label(ui, "SERVER ADDRESS");
+                    let (url, _) = widgets::text_field(ui, &mut form.url, "192.168.1.10:4533 or https://music.example.com", false, None);
+                    if !form.focused {
+                        url.request_focus();
+                        form.focused = true;
+                    }
+                    changed |= url.changed();
+                    ui.add_space(14.0);
+                    field_label(ui, "USER NAME");
+                    let (user, _) = widgets::text_field(ui, &mut form.user, "Your Navidrome user", false, None);
+                    changed |= user.changed();
+                    ui.add_space(14.0);
+                    field_label(ui, "PASSWORD");
+                    let action = if form.show_password { "Hide" } else { "Show" };
+                    let (password, toggle) = widgets::text_field(ui, &mut form.password, "Password", !form.show_password, Some(action));
+                    changed |= password.changed();
+                    if toggle {
+                        form.show_password = !form.show_password;
+                    }
+                });
+                // Typing again clears the last attempt's error.
+                if changed {
+                    form.error = None;
                 }
+                if let Some(e) = &form.error {
+                    ui.add_space(14.0);
+                    error_box(ui, e);
+                }
+                ui.add_space(22.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Your password stays in the system keychain.").font(ty::CAPTION.font()).color(p.faint));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        let label = if busy { "Connecting…" } else { "Connect" };
+                        connect = ui.add_enabled_ui(ready, |ui| widgets::pill(ui, label, None, true)).inner.clicked()
+                            || (ready && ui.input(|i| i.key_pressed(Key::Enter)));
+                        if busy {
+                            ui.add(egui::Spinner::new().size(16.0).color(p.dim));
+                        } else {
+                            close |= widgets::pill(ui, "Cancel", None, false).clicked();
+                        }
+                    });
+                });
             });
-            ui.label(RichText::new("The password is kept in your system's keychain.").color(p.faint).font(ty::SMALL.font()));
         });
         close |= modal.should_close() && !busy;
         if connect {
@@ -285,4 +333,26 @@ impl App {
             self.sources.form = Some(form);
         }
     }
+}
+
+const DIALOG_WIDTH: f32 = 400.0;
+
+/// Small mono label above a form field.
+fn field_label(ui: &mut egui::Ui, text: &str) {
+    ui.label(RichText::new(text).font(ty::OVERLINE.font()).color(colors().faint));
+    ui.add_space(6.0);
+}
+
+/// Why connecting failed, in a box tinted with the danger colour.
+fn error_box(ui: &mut egui::Ui, message: &str) {
+    let p = colors();
+    egui::Frame::new()
+        .fill(p.danger.gamma_multiply(0.12))
+        .stroke(egui::Stroke::new(1.0, p.danger.gamma_multiply(0.5)))
+        .corner_radius(egui::CornerRadius::same(radius::CONTROL))
+        .inner_margin(egui::Margin::symmetric(12, 9))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(RichText::new(message).font(ty::SECONDARY.font()).color(p.danger));
+        });
 }
