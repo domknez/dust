@@ -12,8 +12,8 @@ use crate::ui::widgets::{self, text_left};
 use eframe::egui::{self, KeyboardShortcut, Modifiers, Rect, Sense, Ui, Vec2, ViewportCommand, WindowLevel, pos2};
 
 /// Hover text for the buttons that switch modes.
-pub(in crate::ui) const MINI_PLAYER_HINT: &str =
-    if cfg!(target_os = "macos") { "Mini player (⌘⇧M)" } else { "Mini player (Ctrl+Shift+M)" };
+/// The mini player shortcut, as menus show it.
+pub(in crate::ui) const MINI_PLAYER_KEYS: &str = if cfg!(target_os = "macos") { "⌘⇧M" } else { "Ctrl+Shift+M" };
 const FULL_WINDOW_HINT: &str = if cfg!(target_os = "macos") { "Full window (⌘⇧M)" } else { "Full window (Ctrl+Shift+M)" };
 const TOGGLE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), egui::Key::M);
 

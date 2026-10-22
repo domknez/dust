@@ -282,8 +282,10 @@ audio output and the Deezer API.
   [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) by Mathieu Triay
   ([license](assets/fonts/OFL-BricolageGrotesque.txt)),
   [IBM Plex Mono](https://github.com/IBM/plex) by IBM ([license](assets/fonts/OFL-IBMPlexMono.txt))
-  and [Inter](https://rsms.me/inter/) by Rasmus Andersson for symbols
-  ([license](assets/fonts/OFL-Inter.txt)).
+  [Inter](https://rsms.me/inter/) by Rasmus Andersson for symbols
+  ([license](assets/fonts/OFL-Inter.txt)) and a few keyboard symbols from
+  [Noto Sans Symbols 2](https://github.com/notofonts/symbols)
+  ([license](assets/fonts/OFL-NotoSansSymbols2.txt)).
 - Built with [egui](https://github.com/emilk/egui), [symphonia](https://github.com/pdeljanov/Symphonia),
   [cpal](https://github.com/RustAudio/cpal), [souvlaki](https://github.com/Sinono3/souvlaki)
   and [wry](https://github.com/tauri-apps/wry).
