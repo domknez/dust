@@ -9,6 +9,11 @@
 - Settings have their own window: open it from the account menu or with `⌘,`
   (`Ctrl+,` on Windows and Linux); `Esc` or a click outside closes it. The account menu
   keeps Settings and Log out
+- New look: Figtree for text, Bricolage Grotesque for titles and IBM Plex Mono for small
+  labels
+- Tidier player bar: the heart sits right after the track's title, and the sleep timer and
+  mini player moved into a ⋯ menu. A running sleep timer shows a stopwatch with the time
+  left (click it to turn the timer off)
 
 ## 0.15.0 (2026-10-22)
 

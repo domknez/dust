@@ -38,6 +38,8 @@ pub enum Icon {
     LogOut,
     /// Gear: settings.
     Settings,
+    /// Stopwatch: the sleep timer.
+    Timer,
     Queue,
     /// Speech bubble with text lines: lyrics.
     Lyrics,
@@ -261,6 +263,14 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
                 let d = vec2(a.cos(), a.sin());
                 line(c + d * w * 0.3, c + d * w * 0.42);
             }
+        }
+        Icon::Timer => {
+            let c = p(r, 0.5, 0.56);
+            painter.circle_stroke(c, w * 0.34, stroke);
+            line(p(r, 0.42, 0.08), p(r, 0.58, 0.08));
+            line(p(r, 0.5, 0.08), p(r, 0.5, 0.2));
+            line(c, c + vec2(0.0, -w * 0.2));
+            line(c, c + vec2(w * 0.14, w * 0.06));
         }
         Icon::Lyrics => {
             let s = Stroke::new(stroke.width, color);

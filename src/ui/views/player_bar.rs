@@ -1,7 +1,6 @@
 //! Player bar: now playing on the left, transport and progress in the middle,
 //! queue, output and volume on the right.
 
-use super::mini_player::MINI_PLAYER_HINT;
 use crate::deezer::Likeable;
 use crate::player::{Cmd, Repeat, State, Status};
 use crate::ui::app::{App, SidePanel};
@@ -15,7 +14,7 @@ use std::time::Duration;
 
 /// Share of the bar width for each side column (capped).
 const SIDE_SHARE: f32 = 0.3;
-const SIDE_MAX: f32 = 400.0;
+const SIDE_MAX: f32 = 380.0;
 const PROGRESS_MAX_WIDTH: f32 = 560.0;
 const VOLUME_WIDTH: f32 = 104.0;
 /// Progress refresh while playing.
@@ -40,16 +39,15 @@ impl App {
             self.volume(ui, st);
             ui.add_space(10.0);
             self.output_button(ui, &st.output);
-            self.sleep_timer_button(ui, st);
+            ui.add_space(4.0);
             for (panel, icon, hint) in [(SidePanel::Queue, Icon::Queue, "Queue"), (SidePanel::Lyrics, Icon::Lyrics, "Lyrics")] {
                 let color = if self.side_panel == Some(panel) { colors().accent } else { colors().dim };
                 if widgets::icon_button(ui, icon, 18.0, color).on_hover_text(hint).clicked() {
                     self.toggle_side_panel(panel);
                 }
             }
-            if widgets::icon_button(ui, Icon::MiniPlayer, 18.0, colors().dim).on_hover_text(MINI_PLAYER_HINT).clicked() {
-                self.toggle_mini_player(ui.ctx());
-            }
+            // Less frequent things: sleep timer and mini player.
+            self.more_button(ui, st);
         });
         if st.state == State::Playing {
             ui.ctx().request_repaint_after(TICK);
@@ -62,15 +60,19 @@ impl App {
             let art = Rect::from_min_size(pos2(area.left(), area.center().y - art_size / 2.0), Vec2::splat(art_size));
             widgets::cover(ui, &mut self.covers, cover_url(track, metrics::NOW_PLAYING_PX).as_deref(), art, radius::THUMB);
             let x = art.right() + 14.0;
-            // Heart for the playing track at the end of the column.
-            let heart = pos2(area.right() - 16.0, area.center().y);
+            // Room for the text, leaving space for the heart.
+            let width = area.right() - 36.0 - x;
+            // Heart right after the title or artist, whichever is longer.
+            let text_width =
+                |text: &str, style: ty::Text| ui.painter().layout_no_wrap(text.to_string(), style.font(), colors().text).size().x;
+            let used = text_width(&track.title, ty::TITLE.strong()).max(text_width(&track.artist, ty::SECONDARY)).min(width);
+            let heart = pos2(x + used + 22.0, area.center().y);
             // Episodes can't be liked.
             let what = Likeable::Track(track.id);
             let liked = self.likes.likes.contains(&what);
             if !track.is_episode() && widgets::heart_at(ui, heart, "now-playing", liked, 16.0).clicked() {
                 self.pending_like = Some(what);
             }
-            let width = heart.x - 22.0 - x;
             // Cover and title open the album (an episode's podcast).
             let album = Coll::origin_of(track);
             let cover = ui.interact(art, ui.id().with("now-playing-cover"), egui::Sense::click());
