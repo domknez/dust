@@ -49,7 +49,8 @@ impl App {
             self.tracks.clear();
             self.searched.clear();
         }
-        for (key, label, view) in &NAV_SHORTCUTS[1..] {
+        let podcasts = self.features().podcasts;
+        for (key, label, view) in NAV_SHORTCUTS[1..].iter().filter(|(_, _, v)| podcasts || *v != View::Podcasts) {
             if widgets::sidebar_item(ui, label, Some(&shortcut(*key)), self.view == *view).clicked() {
                 go = Some(view.clone());
             }
@@ -136,7 +137,7 @@ impl App {
         avatar(ui, pos2(rect.left() + 24.0, rect.center().y), 14.0, &name, ty::META);
         let width = rect.width() - 80.0;
         text_left(ui.painter(), pos2(rect.left() + 48.0, rect.center().y - 8.0), &name, ty::BODY.strong(), p.text, width);
-        let quality = self.quality.label().to_lowercase();
+        let quality = if self.features().quality { self.quality.label().to_lowercase() } else { self.source_host() };
         text_left(ui.painter(), pos2(rect.left() + 48.0, rect.center().y + 9.0), &quality, ty::META, p.faint, width);
         self.account_menu(&resp, &name);
     }
@@ -146,13 +147,16 @@ impl App {
         if let Some(name) = std::env::var("DUST_DISPLAY_NAME").ok().filter(|n| !n.is_empty()) {
             return name;
         }
-        self.client.as_ref().map(|c| c.name().to_string()).unwrap_or_default()
+        self.client.as_ref().map(|c| c.name()).unwrap_or_default()
     }
 
     /// ⌘1 … ⌘6 (Ctrl elsewhere) open the pages listed in the sidebar.
     pub(in crate::ui) fn nav_shortcuts(&mut self, ctx: &egui::Context) {
-        let pressed =
-            NAV_SHORTCUTS.iter().find(|(key, ..)| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, *key))));
+        let podcasts = self.features().podcasts;
+        let pressed = NAV_SHORTCUTS
+            .iter()
+            .filter(|(_, _, view)| podcasts || *view != View::Podcasts)
+            .find(|(key, ..)| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, *key))));
         if let Some((_, _, view)) = pressed {
             self.open_view(ctx, view.clone());
         }

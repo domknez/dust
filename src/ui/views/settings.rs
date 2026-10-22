@@ -51,11 +51,18 @@ impl App {
     fn settings_sections(&mut self, ui: &mut Ui) {
         self.appearance_picker(ui);
         ui.add_space(12.0);
-        self.quality_picker(ui);
-        ui.add_space(12.0);
+        // A server plays its files as they are.
+        if self.features().quality {
+            self.quality_picker(ui);
+            ui.add_space(12.0);
+        }
         widgets::caption(ui, "LISTENING");
-        let sub = "History, Flow and Last.fm scrobbling via Deezer";
-        if widgets::menu_row(ui, None, "Share listening with Deezer", Some(sub), self.report_listens, colors().text).clicked() {
+        let (title, sub) = if self.features().flow {
+            ("Share listening with Deezer", "History, Flow and Last.fm scrobbling via Deezer")
+        } else {
+            ("Report plays to the server", "Play counts and \"Recently played\" (and Last.fm, if the server scrobbles)")
+        };
+        if widgets::menu_row(ui, None, title, Some(sub), self.report_listens, colors().text).clicked() {
             self.toggle_report_listens();
         }
         ui.add_space(12.0);

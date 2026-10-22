@@ -1,4 +1,5 @@
-//! Login screen: "Log in with Deezer" (webview) or paste an ARL cookie.
+//! Login screen: "Log in with Deezer" (webview) or paste an ARL cookie, or connect
+//! a Navidrome server.
 
 use crate::ui::app::App;
 use crate::ui::style::{colors, metrics, typography as ty};
@@ -23,11 +24,18 @@ impl App {
                 ui.painter().galley(egui::pos2(left + word_width, top), cursor, p.accent);
                 ui.label(RichText::new("Your music, nothing else.").color(p.dim).font(ty::LEAD.font()));
                 ui.add_space(36.0);
-                if self.login.is_some() {
+                // Logging in, or connecting the stored server (not one being typed in).
+                if self.login.is_some() || (self.sources.connecting() && self.sources.form.is_none()) {
                     ui.spinner();
                     return;
                 }
                 self.login_options(ui);
+                ui.add_space(28.0);
+                ui.label(RichText::new("Have your own music?").color(p.faint).font(ty::SMALL.font()));
+                ui.add_space(4.0);
+                if ui.link(RichText::new("Connect a Navidrome server").font(ty::BODY.font())).clicked() {
+                    self.open_server_form();
+                }
                 if let Some(e) = &self.login_error {
                     ui.add_space(12.0);
                     ui.label(RichText::new(e).color(p.danger));

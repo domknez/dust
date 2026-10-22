@@ -63,6 +63,7 @@ pub fn track(v: &Value) -> Option<Track> {
         available: !blocked,
         available_from,
         episode: None,
+        server: None,
     })
 }
 
@@ -90,6 +91,7 @@ pub fn episode(v: &Value) -> Option<Track> {
         available: v["AVAILABLE"].as_bool() != Some(false),
         available_from: String::new(),
         episode: Some(Episode { url, show_id: text(&v["SHOW_ID"]), published }),
+        server: None,
     })
 }
 

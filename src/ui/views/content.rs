@@ -95,11 +95,8 @@ impl App {
             right = cap.left() - 8.0;
         }
         let input = Rect::from_min_max(pos2(rect.left() + 34.0, rect.top() + 9.0), pos2(right, rect.bottom() - 7.0));
-        let field = egui::TextEdit::singleline(&mut self.search)
-            .id(id)
-            .hint_text("Search, or paste a Deezer link")
-            .frame(egui::Frame::new())
-            .text_color(p.text);
+        let hint = if self.features().links { "Search, or paste a Deezer link" } else { "Search your library" };
+        let field = egui::TextEdit::singleline(&mut self.search).id(id).hint_text(hint).frame(egui::Frame::new()).text_color(p.text);
         let edit = ui.put(input, field);
         if pill.hovered() || edit.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Text);

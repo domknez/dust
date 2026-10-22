@@ -1,7 +1,8 @@
 //! What the UI is showing and what it can open: views, collections and their sources.
 
-use crate::deezer::{self, ArtistRef, Deezer, Item, Playlist, Track};
+use crate::deezer::{self, ArtistRef, Item, Playlist, Track};
 use crate::player::Cmd;
+use crate::provider::Provider;
 
 /// The page in the main area.
 #[derive(Clone, PartialEq, Debug)]
@@ -52,7 +53,7 @@ pub enum Source {
 }
 
 impl Source {
-    pub fn fetch(&self, client: &Deezer) -> deezer::Result<Vec<Track>> {
+    pub fn fetch(&self, client: &Provider) -> deezer::Result<Vec<Track>> {
         match self {
             Source::Playlist(id) => client.playlist(*id),
             Source::Album(id) => client.album(id),
@@ -182,6 +183,7 @@ mod tests {
             available: true,
             available_from: String::new(),
             episode: None,
+            server: None,
         };
         let coll = Coll::album_of(&track).unwrap();
         assert_eq!((coll.source, coll.title.as_str(), coll.subtitle.as_str()), (Source::Album("302127".into()), "Discovery", "Daft Punk"));
@@ -205,6 +207,7 @@ mod tests {
             available,
             available_from: String::new(),
             episode: None,
+            server: None,
         };
         let tracks = [t(1, true), t(2, false), t(3, false), t(4, true)];
         let ids = |(q, i): (Vec<Track>, usize)| (q.iter().map(|t| t.id).collect::<Vec<_>>(), i);

@@ -70,8 +70,9 @@ impl App {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             let (r, _) = ui.allocate_exact_size(vec2(196.0, 22.0), Sense::hover());
-            text_left(ui.painter(), pos2(r.left(), r.center().y), "recommended by deezer", ty::META, p.dim, r.width());
-            reload = widgets::icon_button(ui, Icon::Refresh, 12.0, p.dim).on_hover_text("Refresh recommendations").clicked();
+            let line = if self.features().flow { "recommended by deezer".to_string() } else { format!("from {}", self.source_host()) };
+            text_left(ui.painter(), pos2(r.left(), r.center().y), &line, ty::META, p.dim, r.width());
+            reload = widgets::icon_button(ui, Icon::Refresh, 12.0, p.dim).on_hover_text("Refresh").clicked();
         });
         let name = self.account_name();
         let first = name.split_whitespace().next().unwrap_or_default();

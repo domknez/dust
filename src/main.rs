@@ -2,7 +2,8 @@
 // Fixed-size chunk loops read clearer than as_chunks here.
 #![allow(clippy::chunks_exact_to_as_chunks)]
 
-//! dust — a free and open source, lightweight Deezer client with AirPlay output.
+//! dust — a free and open source, lightweight Deezer (and Navidrome) client with
+//! AirPlay output.
 
 #[macro_use]
 mod log;
@@ -14,7 +15,9 @@ mod icon;
 mod login;
 mod output;
 mod player;
+mod provider;
 mod settings;
+mod subsonic;
 mod ui;
 mod update;
 

@@ -63,6 +63,7 @@ mod tests {
             available: true,
             available_from: String::new(),
             episode: None,
+            server: None,
         };
         assert_eq!(total_clock(&[t(100), t(3012)]), "51:52");
         assert_eq!(total_clock(&[t(3600), t(123)]), "1:02:03");

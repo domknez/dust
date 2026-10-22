@@ -1,13 +1,18 @@
 //! The queue saved between runs (`queue.json` next to `settings.conf`): tracks, the
-//! current one, where it was, and whether it was endless Flow.
+//! current one, where it was, and whether it was endless Flow. Each music source
+//! keeps its own: Deezer's in `queue.json`, a music server's in `queue-<key>.json`.
 
 use super::Status;
-use crate::deezer::{ArtistRef, Episode, Track};
+use crate::deezer::{ArtistRef, Episode, ServerSong, Track};
 use crate::settings;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
-const FILE: &str = "queue.json";
+/// The queue file of a source; `source` is empty for Deezer.
+fn file(source: &str) -> String {
+    let safe: String = source.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect();
+    if safe.is_empty() { "queue.json".into() } else { format!("queue-{safe}.json") }
+}
 const VERSION: u64 = 1;
 
 /// A queue to restore.
@@ -20,13 +25,14 @@ pub struct Saved {
     pub flow: Option<Option<String>>,
 }
 
-fn path() -> Option<PathBuf> {
-    Some(settings::dir()?.join(FILE))
+fn path(source: &str) -> Option<PathBuf> {
+    Some(settings::dir()?.join(file(source)))
 }
 
-/// Write the player's queue; an empty queue removes the file.
-pub fn save(st: &Status) {
-    let Some(path) = path() else { return };
+/// Write the player's queue for `source` (see [`file`]); an empty queue removes the
+/// file.
+pub fn save(st: &Status, source: &str) {
+    let Some(path) = path(source) else { return };
     if st.queue.is_empty() {
         let _ = std::fs::remove_file(&path);
         return;
@@ -42,8 +48,8 @@ pub fn save(st: &Status) {
     }
 }
 
-pub fn load() -> Option<Saved> {
-    let text = std::fs::read_to_string(path()?).ok()?;
+pub fn load(source: &str) -> Option<Saved> {
+    let text = std::fs::read_to_string(path(source)?).ok()?;
     let saved = decode(&serde_json::from_str(&text).ok()?);
     if saved.is_none() {
         log_warn!("ignoring an unreadable saved queue");
@@ -90,6 +96,7 @@ fn encode_track(t: &Track) -> Value {
         "available": t.available,
         "available_from": t.available_from,
         "episode": t.episode.as_ref().map(|e| json!({"url": e.url, "show_id": e.show_id, "published": e.published})),
+        "server": t.server.as_ref().map(|s| json!({"id": s.id, "suffix": s.suffix})),
     })
 }
 
@@ -118,6 +125,10 @@ fn decode_track(v: &Value) -> Option<Track> {
             let s = |k: &str| e.get(k).and_then(Value::as_str).map(str::to_string);
             Some(Episode { url: s("url")?, show_id: s("show_id").unwrap_or_default(), published: s("published").unwrap_or_default() })
         }),
+        server: v["server"].as_object().and_then(|s| {
+            let text = |k: &str| s.get(k).and_then(Value::as_str).map(str::to_string);
+            Some(ServerSong { id: text("id")?, suffix: text("suffix").unwrap_or_default() })
+        }),
     })
 }
 
@@ -141,6 +152,7 @@ mod tests {
             available: true,
             available_from: String::new(),
             episode: None,
+            server: None,
         }
     }
 
@@ -164,6 +176,20 @@ mod tests {
         };
         let st = Status { queue: Arc::new(vec![track(1), episode.clone()]), index: 1, ..Default::default() };
         assert_eq!(decode(&encode(&st)).unwrap().tracks, vec![track(1), episode]);
+    }
+
+    #[test]
+    fn server_songs_keep_their_id() {
+        let song = Track { server: Some(ServerSong { id: "qPyR7XLJOiu93qWw1n06xy".into(), suffix: "flac".into() }), ..track(4) };
+        let st = Status { queue: Arc::new(vec![song.clone()]), index: 0, ..Default::default() };
+        assert_eq!(decode(&encode(&st)).unwrap().tracks, vec![song]);
+    }
+
+    #[test]
+    fn each_source_has_its_own_file() {
+        assert_eq!(file(""), "queue.json");
+        assert_eq!(file("navidrome"), "queue-navidrome.json");
+        assert_eq!(file("../x y"), "queue-___x_y.json");
     }
 
     #[test]

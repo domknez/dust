@@ -23,16 +23,17 @@ mod lyrics;
 mod models;
 mod parse;
 mod playlists;
-mod prefetch;
-mod session;
+pub(crate) mod prefetch;
+pub(crate) mod session;
 mod streaming;
 
 pub use catalog::{Likeable, Likes};
 pub use client::Deezer;
 pub use links::{Link, is_link};
-pub use lyrics::Lyrics;
+pub use lyrics::{LyricLine, Lyrics};
 pub use models::{
-    AlbumInfo, ArtistPage, ArtistRef, Episode, Format, Item, Listen, Playlist, Quality, SearchResults, Section, Track, image_url,
+    AlbumInfo, ArtistPage, ArtistRef, Episode, Format, Item, Listen, Playlist, Quality, SearchResults, Section, ServerSong, Track,
+    image_url,
 };
 pub use parse::thousands;
 pub use streaming::StreamSource;

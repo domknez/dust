@@ -2,7 +2,8 @@
 //! a list or the queue), remove tracks, rename, delete. Dialogs ask for names and
 //! confirm deletes; a short notice reports what happened.
 
-use crate::deezer::{Deezer, Error, Playlist, Track};
+use crate::deezer::{Error, Playlist, Track};
+use crate::provider::Provider;
 use crate::ui::app::App;
 use crate::ui::state::{Source, View};
 use crate::ui::style::{colors, typography as ty};
@@ -14,7 +15,7 @@ use std::time::{Duration, Instant};
 /// How long a notice stays up.
 const NOTICE_FOR: Duration = Duration::from_secs(4);
 
-/// A change to make on Deezer.
+/// A change to make on the music source (Deezer or a server).
 pub enum Edit {
     Add { playlist: Playlist, tracks: Vec<Track> },
     Create { title: String, private: bool, tracks: Vec<Track> },
@@ -69,7 +70,7 @@ fn plural(n: usize) -> String {
     if n == 1 { "1 track".into() } else { format!("{n} tracks") }
 }
 
-fn run(client: &Deezer, edit: Edit) -> Result<Done, Error> {
+fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
     let ids = |tracks: &[Track]| tracks.iter().filter(|t| t.available && !t.is_episode()).map(|t| t.id).collect::<Vec<_>>();
     Ok(match edit {
         Edit::Add { playlist, tracks } => {
@@ -142,6 +143,8 @@ impl App {
     pub(in crate::ui) fn playlist_dialog(&mut self, ctx: &egui::Context) {
         let Some(mut dialog) = self.editing.dialog.take() else { return };
         let p = colors();
+        let private_playlists = self.features().private_playlists;
+        let service = self.client.as_ref().map_or("Deezer", Provider::service);
         let mut submit = None;
         let mut close = false;
         let modal = egui::Modal::new(egui::Id::new("playlist-dialog")).frame(widgets::popover_frame(ctx)).show(ctx, |ui| {
@@ -159,7 +162,9 @@ impl App {
                     }
                     let field = ui.add(egui::TextEdit::singleline(title).hint_text("Name").desired_width(f32::INFINITY));
                     field.request_focus();
-                    ui.checkbox(private, "Private (only you can see it)");
+                    if private_playlists {
+                        ui.checkbox(private, "Private (only you can see it)");
+                    }
                     ui.horizontal(|ui| {
                         if confirm(ui, "Create", !title.trim().is_empty()) {
                             submit =
@@ -182,7 +187,7 @@ impl App {
                 }
                 Dialog::Delete { playlist } => {
                     ui.label(RichText::new("Delete playlist?").font(ty::SECTION_TITLE.font()).color(p.text));
-                    ui.label(RichText::new(format!("“{}” will be deleted from your Deezer account.", playlist.title)).color(p.dim));
+                    ui.label(RichText::new(format!("“{}” will be deleted from your {service} account.", playlist.title)).color(p.dim));
                     ui.horizontal(|ui| {
                         if ui.button(RichText::new("Delete").strong().color(p.danger)).clicked() {
                             submit = Some(Edit::Delete { playlist: playlist.clone() });

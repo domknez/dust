@@ -184,7 +184,9 @@ impl App {
         if let Some(pg) = page {
             let releases: usize =
                 DISCOGRAPHY.iter().filter_map(|(title, _)| pg.sections.iter().find(|s| s.title == *title)).map(|s| s.items.len()).sum();
-            let meta = format!("{} FANS · {releases} RELEASES", thousands(pg.fans));
+            // A music server doesn't count fans.
+            let meta =
+                if pg.fans > 0 { format!("{} FANS · {releases} RELEASES", thousands(pg.fans)) } else { format!("{releases} RELEASES") };
             text_left(ui.painter(), pos2(tag.right() + 10.0, tag.center().y), &meta, ty::META, p.dim, x + width - tag.right() - 10.0);
         }
         let name = page.map_or(artist.name.as_str(), |pg| pg.name.as_str());

@@ -41,6 +41,8 @@ pub struct Engine {
     status: Arc<Mutex<Status>>,
     ctx: egui::Context,
     library: Option<SharedLibrary>,
+    /// Which source `library` is (see [`crate::provider::Provider::key`]).
+    source: Option<&'static str>,
     quality: Quality,
     queue: Queue,
     listens: ListenTracker,
@@ -80,6 +82,7 @@ impl Engine {
             status,
             ctx,
             library: None,
+            source: None,
             quality: Quality::Mp3_320,
             queue: Queue::default(),
             listens: ListenTracker::new(),
@@ -144,7 +147,7 @@ impl Engine {
         self.recover_output();
         self.sleep_due();
         match cmd {
-            Cmd::Client(client) => self.library = Some(Arc::new(client)),
+            Cmd::Client(client) => self.set_source(client.key(), Arc::new(client)),
             Cmd::Quality(q) => self.quality = q,
             Cmd::ReportListens(on) => self.listens.enabled = on,
             Cmd::Output(o) => self.switch_output(o),
@@ -446,6 +449,23 @@ impl Engine {
         self.publish(true);
     }
 
+    /// Play from `library` from now on. Another source than before ends playback and
+    /// empties the queue: its tracks belong to the old source.
+    fn set_source(&mut self, key: &'static str, library: SharedLibrary) {
+        if self.source.is_some_and(|k| k != key) {
+            log_info!("music source changed: stopping and clearing the queue");
+            self.stop();
+            if let Some(s) = self.sink.as_mut() {
+                s.pause();
+            }
+            self.pending.clear();
+            self.queue.replace(Vec::new(), 0);
+            self.restored_at = None;
+        }
+        self.source = Some(key);
+        self.library = Some(library);
+    }
+
     fn stop(&mut self) {
         self.listens.finish(self.library.as_deref());
         self.stream = None;
@@ -619,6 +639,7 @@ mod tests {
             available: true,
             available_from: String::new(),
             episode: None,
+            server: None,
         }
     }
 
@@ -935,6 +956,22 @@ mod tests {
         play_out(&mut e);
         assert_eq!(*library.started.lock().unwrap(), vec![2]);
         assert_eq!(library.listens.lock().unwrap().iter().map(|l| l.song_id).collect::<Vec<_>>(), vec![2]);
+    }
+
+    #[test]
+    fn switching_source_clears_the_queue() {
+        let (mut e, library, _tx) = engine(FakeLibrary::default());
+        e.set_source("", library.clone());
+        e.handle(Cmd::Play(vec![track(1, 60), track(2, 60)], 0));
+        assert_eq!(now_playing(&e), Some(1));
+        // Logging in again to the same source keeps playing.
+        e.set_source("", library.clone());
+        assert_eq!(now_playing(&e), Some(1));
+        e.set_source("navidrome", library);
+        e.publish(true);
+        assert_eq!(now_playing(&e), None);
+        assert!(!e.playing && e.queue.is_empty());
+        assert_eq!(e.status.lock().unwrap().state, State::Stopped);
     }
 
     #[test]
