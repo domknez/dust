@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Navidrome (and other Subsonic / OpenSubsonic servers): play your own music in dust,
+  with the same pages and design. Connect a server from the account menu (*Music from*)
+  or the login screen; switch between Deezer and the server there, each with its own
+  queue. Home shelves and mixes, albums, artists, playlists (with editing), search, stars
+  as likes, synced lyrics and play reports; MP3, FLAC, AAC/ALAC, Ogg Vorbis and WAV play
+  as they are at any sample rate, other formats are converted by the server
+- Navidrome Home opens with Radio, in place of Deezer's Flow: endless random songs from
+  your library, or from one of its genres
+- Cover art in PNG and WebP shows too (music servers send those)
+
 ## 0.17.1 (2026-10-22)
 
 - README screenshots show the Graphite look; `DUST_DISPLAY_NAME` hides the account name

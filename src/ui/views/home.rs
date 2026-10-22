@@ -70,8 +70,9 @@ impl App {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             let (r, _) = ui.allocate_exact_size(vec2(196.0, 22.0), Sense::hover());
-            text_left(ui.painter(), pos2(r.left(), r.center().y), "recommended by deezer", ty::META, p.dim, r.width());
-            reload = widgets::icon_button(ui, Icon::Refresh, 12.0, p.dim).on_hover_text("Refresh recommendations").clicked();
+            let line = if self.features().flow { "recommended by deezer".to_string() } else { format!("from {}", self.source_host()) };
+            text_left(ui.painter(), pos2(r.left(), r.center().y), &line, ty::META, p.dim, r.width());
+            reload = widgets::icon_button(ui, Icon::Refresh, 12.0, p.dim).on_hover_text("Refresh").clicked();
         });
         let name = self.account_name();
         let first = name.split_whitespace().next().unwrap_or_default();
@@ -106,15 +107,17 @@ pub(in crate::ui) fn card_row(
     st: &Status,
     picked: &mut CardPicks,
 ) {
-    let is_flow = items.iter().all(|it| it.kind == "flow");
-    let items: Vec<&Item> = items.iter().filter(|it| it.kind == "flow" || Coll::from_item(it).is_some()).collect();
+    // Deezer's Flow, or a music server's Radio (random songs by genre) in its place.
+    let is_radio = items.iter().all(|it| it.kind == "radio");
+    let is_flow = is_radio || items.iter().all(|it| it.kind == "flow");
+    let items: Vec<&Item> = items.iter().filter(|it| is_flow || Coll::from_item(it).is_some()).collect();
     if items.is_empty() {
         return;
     }
     if is_flow {
         ui.add_space(18.0);
         let moods: Vec<(&str, &str)> = items.iter().filter(|it| it.id != "default").map(|it| (it.id.as_str(), it.title.as_str())).collect();
-        if let Some(pick) = widgets::flow_panel(ui, &moods, st.flow.as_deref()) {
+        if let Some(pick) = widgets::flow_panel(ui, &moods, st.flow.as_deref(), is_radio) {
             picked.flow = Some(pick);
         }
         return;
@@ -148,6 +151,6 @@ pub(in crate::ui) fn card_row(
 /// Section order with the Flow section first, as on Deezer.
 fn flow_first(sections: &[Section]) -> Vec<usize> {
     let mut order: Vec<usize> = (0..sections.len()).collect();
-    order.sort_by_key(|&i| !sections[i].items.iter().any(|it| it.kind == "flow"));
+    order.sort_by_key(|&i| !sections[i].items.iter().any(|it| it.kind == "flow" || it.kind == "radio"));
     order
 }

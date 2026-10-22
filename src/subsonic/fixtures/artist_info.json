@@ -1,0 +1,14 @@
+{
+ "subsonic-response": {
+  "status": "ok",
+  "version": "1.16.1",
+  "type": "navidrome",
+  "serverVersion": "0.58.0 (9dbe0c18)",
+  "openSubsonic": true,
+  "artistInfo2": {
+   "smallImageUrl": "http://127.0.0.1:4533/share/img/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImFyLTdBUW5LTVFjMnlCeFlEM0laRGpKaTZfMCIsImlzcyI6Ik5EIn0.m9TgFU1_SFxfcebJ0_oGiOWEIPRioOoexmw_K46wjqo?size=300",
+   "mediumImageUrl": "http://127.0.0.1:4533/share/img/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImFyLTdBUW5LTVFjMnlCeFlEM0laRGpKaTZfMCIsImlzcyI6Ik5EIn0.m9TgFU1_SFxfcebJ0_oGiOWEIPRioOoexmw_K46wjqo?size=600",
+   "largeImageUrl": "http://127.0.0.1:4533/share/img/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImFyLTdBUW5LTVFjMnlCeFlEM0laRGpKaTZfMCIsImlzcyI6Ik5EIn0.m9TgFU1_SFxfcebJ0_oGiOWEIPRioOoexmw_K46wjqo?size=1200"
+  }
+ }
+}

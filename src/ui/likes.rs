@@ -2,7 +2,8 @@
 //! hearts across the UI. A toggle shows at once and is sent in the background;
 //! if Deezer refuses, it is rolled back and the error shown.
 
-use crate::deezer::{Deezer, Error, Likeable, Likes};
+use crate::deezer::{Error, Likeable, Likes};
+use crate::provider::Provider;
 use crate::ui::app::App;
 use eframe::egui;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
@@ -67,6 +68,6 @@ impl App {
 }
 
 /// Load the account's likes (after login).
-pub fn load(client: &Deezer) -> Result<Likes, Error> {
+pub fn load(client: &Provider) -> Result<Likes, Error> {
     client.likes()
 }

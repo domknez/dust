@@ -1,9 +1,12 @@
-//! The stored Deezer session (`arl` cookie), kept in the OS keychain.
+//! Stored logins, kept in the OS keychain: the Deezer session (`arl` cookie) and a
+//! Navidrome / Subsonic server (address, user name and password).
 
+use crate::subsonic::Server;
 use std::sync::LazyLock;
 
 const SERVICE: &str = "dust";
 const ACCOUNT: &str = "arl";
+const SERVER_ACCOUNT: &str = "navidrome";
 
 /// The platform's secure store, installed as keyring-core's default once.
 static STORE: LazyLock<Result<(), keyring_core::Error>> = LazyLock::new(|| {
@@ -17,12 +20,16 @@ static STORE: LazyLock<Result<(), keyring_core::Error>> = LazyLock::new(|| {
     Ok(())
 });
 
-fn entry() -> Option<keyring_core::Entry> {
+fn entry_for(account: &str) -> Option<keyring_core::Entry> {
     if let Err(e) = &*STORE {
         log_warn!("no keychain available: {e}");
         return None;
     }
-    keyring_core::Entry::new(SERVICE, ACCOUNT).ok()
+    keyring_core::Entry::new(SERVICE, account).ok()
+}
+
+fn entry() -> Option<keyring_core::Entry> {
+    entry_for(ACCOUNT)
 }
 
 pub fn load() -> Option<String> {
@@ -39,6 +46,25 @@ pub fn save(arl: &str) {
 
 pub fn clear() {
     if let Some(e) = entry() {
+        let _ = e.delete_credential();
+    }
+}
+
+/// The saved music server, if any.
+pub fn load_server() -> Option<Server> {
+    entry_for(SERVER_ACCOUNT).and_then(|e| e.get_password().ok()).and_then(|text| Server::from_json(&text))
+}
+
+pub fn save_server(server: &Server) {
+    if let Some(e) = entry_for(SERVER_ACCOUNT)
+        && let Err(err) = e.set_password(&server.to_json())
+    {
+        log_warn!("could not save the server login to the keychain: {err}");
+    }
+}
+
+pub fn clear_server() {
+    if let Some(e) = entry_for(SERVER_ACCOUNT) {
         let _ = e.delete_credential();
     }
 }

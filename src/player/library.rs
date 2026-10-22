@@ -50,7 +50,7 @@ pub trait Playback {
 impl Library for Deezer {
     fn open(&self, track: &Track, quality: Quality, at: f64) -> Result<Box<dyn Playback>, String> {
         let source = self.stream_source(track, quality).map_err(|e| e.to_string())?;
-        Ok(Box::new(Stream::open(self, source, at)?))
+        Ok(Box::new(Stream::open_deezer(self, source, at)?))
     }
 
     fn flow(&self, mood: Option<&str>) -> Result<Vec<Track>, String> {

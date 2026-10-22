@@ -7,6 +7,7 @@
 //! - [`style`]: colours, type scale, metrics, icons
 //! - [`now_playing`]: media keys and the OS "Now Playing" widget
 //! - [`updates`]: background update checks and installs
+//! - [`sources`]: Deezer and a Navidrome server: connecting and switching
 //! - [`state`], [`tasks`], [`format`], [`covers`]: supporting pieces
 
 mod app;
@@ -16,6 +17,7 @@ mod history;
 mod likes;
 mod now_playing;
 mod playlist_edit;
+mod sources;
 mod state;
 mod style;
 mod tasks;

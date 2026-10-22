@@ -1,0 +1,164 @@
+{
+ "subsonic-response": {
+  "status": "ok",
+  "version": "1.16.1",
+  "type": "navidrome",
+  "serverVersion": "0.58.0 (9dbe0c18)",
+  "openSubsonic": true,
+  "searchResult3": {
+   "album": [
+    {
+     "id": "7DMk4TPjyYNIy9yBTzfAOS",
+     "name": "Live at the Lab",
+     "artist": "Sine Collective",
+     "artistId": "7AQnKMQc2yBxYD3IZDjJi6",
+     "coverArt": "al-7DMk4TPjyYNIy9yBTzfAOS_6ada25f1",
+     "songCount": 2,
+     "duration": 40,
+     "created": "2026-10-22T15:04:27.373333042Z",
+     "starred": "2026-10-22T15:05:03.394643958Z",
+     "year": 2025,
+     "genre": "Test",
+     "userRating": 0,
+     "genres": [
+      {
+       "name": "Test"
+      }
+     ],
+     "musicBrainzId": "",
+     "isCompilation": false,
+     "sortName": "live at the lab",
+     "discTitles": [],
+     "originalReleaseDate": {},
+     "releaseDate": {},
+     "releaseTypes": [],
+     "recordLabels": [],
+     "moods": [],
+     "artists": [
+      {
+       "id": "7AQnKMQc2yBxYD3IZDjJi6",
+       "name": "Sine Collective"
+      }
+     ],
+     "displayArtist": "Sine Collective",
+     "explicitStatus": "",
+     "version": ""
+    }
+   ],
+   "song": [
+    {
+     "id": "OjfpWUdsXbpAdHwk28UlJs",
+     "parent": "7DMk4TPjyYNIy9yBTzfAOS",
+     "isDir": false,
+     "title": "Lab Intro",
+     "album": "Live at the Lab",
+     "artist": "Sine Collective",
+     "track": 1,
+     "year": 2025,
+     "genre": "Test",
+     "coverArt": "al-7DMk4TPjyYNIy9yBTzfAOS_0",
+     "size": 69425,
+     "contentType": "audio/ogg",
+     "suffix": "ogg",
+     "duration": 20,
+     "bitRate": 26,
+     "path": "Sine Collective/Live at the Lab/01 - Lab Intro.ogg",
+     "created": "2026-10-22T15:04:27.373333042Z",
+     "albumId": "7DMk4TPjyYNIy9yBTzfAOS",
+     "artistId": "7AQnKMQc2yBxYD3IZDjJi6",
+     "type": "music",
+     "isVideo": false,
+     "bpm": 0,
+     "comment": "",
+     "sortName": "lab intro",
+     "mediaType": "song",
+     "musicBrainzId": "",
+     "isrc": [],
+     "genres": [
+      {
+       "name": "Test"
+      }
+     ],
+     "replayGain": {},
+     "channelCount": 2,
+     "samplingRate": 44100,
+     "bitDepth": 0,
+     "moods": [],
+     "artists": [
+      {
+       "id": "7AQnKMQc2yBxYD3IZDjJi6",
+       "name": "Sine Collective"
+      }
+     ],
+     "displayArtist": "Sine Collective",
+     "albumArtists": [
+      {
+       "id": "7AQnKMQc2yBxYD3IZDjJi6",
+       "name": "Sine Collective"
+      }
+     ],
+     "displayAlbumArtist": "Sine Collective",
+     "contributors": [],
+     "displayComposer": "",
+     "explicitStatus": ""
+    },
+    {
+     "id": "A7qnRjhlE71N0omCWJPvX9",
+     "parent": "7DMk4TPjyYNIy9yBTzfAOS",
+     "isDir": false,
+     "title": "Lab Outro",
+     "album": "Live at the Lab",
+     "artist": "Sine Collective",
+     "track": 2,
+     "year": 2025,
+     "genre": "Test",
+     "coverArt": "al-7DMk4TPjyYNIy9yBTzfAOS_0",
+     "size": 267695,
+     "contentType": "audio/ogg",
+     "suffix": "opus",
+     "duration": 20,
+     "bitRate": 107,
+     "path": "Sine Collective/Live at the Lab/02 - Lab Outro.opus",
+     "created": "2026-10-22T15:04:27.373403167Z",
+     "albumId": "7DMk4TPjyYNIy9yBTzfAOS",
+     "artistId": "7AQnKMQc2yBxYD3IZDjJi6",
+     "type": "music",
+     "isVideo": false,
+     "bpm": 0,
+     "comment": "",
+     "sortName": "lab outro",
+     "mediaType": "song",
+     "musicBrainzId": "",
+     "isrc": [],
+     "genres": [
+      {
+       "name": "Test"
+      }
+     ],
+     "replayGain": {},
+     "channelCount": 2,
+     "samplingRate": 48000,
+     "bitDepth": 0,
+     "moods": [],
+     "artists": [
+      {
+       "id": "7AQnKMQc2yBxYD3IZDjJi6",
+       "name": "Sine Collective"
+      }
+     ],
+     "displayArtist": "Sine Collective",
+     "albumArtists": [
+      {
+       "id": "7AQnKMQc2yBxYD3IZDjJi6",
+       "name": "Sine Collective"
+      }
+     ],
+     "displayAlbumArtist": "Sine Collective",
+     "contributors": [],
+     "displayComposer": "",
+     "explicitStatus": ""
+    }
+   ]
+  }
+ }
+}

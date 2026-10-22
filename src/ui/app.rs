@@ -3,9 +3,10 @@
 
 use super::covers::Covers;
 use super::history::{History, Visit};
-use super::likes::{self, LikeState};
+use super::likes::LikeState;
 use super::now_playing::NowPlaying;
 use super::playlist_edit::PlaylistEditing;
+use super::sources::Sources;
 use super::state::{ArtistView, Coll, PlayMode, Source, View};
 use super::style::{self, Appearance, colors, metrics};
 use super::tasks::{self, Task};
@@ -15,6 +16,7 @@ use crate::deezer::{self, AlbumInfo, ArtistPage, Deezer, Error, Item, Likes, Lin
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
 use crate::player::{Cmd, Output, PlayerHandle, Repeat, Status, saved};
+use crate::provider::Provider;
 use crate::settings;
 use eframe::egui::{self, Key, Margin, Ui};
 
@@ -37,7 +39,10 @@ impl App {
 /// directly; nothing outside `ui` does.
 pub struct App {
     pub(super) player: PlayerHandle,
-    pub(super) client: Option<Deezer>,
+    /// The music source in use (Deezer or a Navidrome server).
+    pub(super) client: Option<Provider>,
+    /// Both sources' logins.
+    pub(super) sources: Sources,
 
     // Login
     pub(super) arl_input: String,
@@ -82,7 +87,7 @@ pub struct App {
     pub(super) favorite_shows: Vec<Item>,
     pub(super) favorite_shows_task: Task<Vec<Item>>,
     pub(super) likes: LikeState,
-    likes_task: Task<Likes>,
+    pub(super) likes_task: Task<Likes>,
     pub(super) home_task: Task<Vec<Section>>,
     /// Tracks fetched to play straight from a home card.
     pub(super) quick_play: Task<(Vec<Track>, PlayMode)>,
@@ -131,9 +136,9 @@ pub struct App {
     /// What the saved queue file last reflected (queue snapshot, index, Flow);
     /// None until the saved queue was offered to the player after login, so the
     /// empty startup queue never overwrites it.
-    queue_saved: Option<(usize, usize, Option<String>)>,
+    pub(super) queue_saved: Option<(usize, usize, Option<String>)>,
     /// A restore was sent and the player hasn't shown the queue yet.
-    restore_pending: bool,
+    pub(super) restore_pending: bool,
 }
 
 impl App {
@@ -166,6 +171,7 @@ impl App {
             restore_pending: false,
             player,
             client: None,
+            sources: Sources::new(),
             arl_input: String::new(),
             login: None,
             remember_login: false,
@@ -221,6 +227,7 @@ impl App {
         if let Some(arl) = credentials::load() {
             app.login = tasks::spawn(ctx, move || Deezer::login(&arl));
         }
+        app.start_sources(ctx);
         app
     }
 
@@ -239,41 +246,12 @@ impl App {
         self.login = tasks::spawn(ctx, || Deezer::login(&crate::login::obtain_arl().map_err(crate::deezer::Error::Other)?));
     }
 
-    pub(super) fn log_out(&mut self) {
-        credentials::clear();
-        self.client = None;
-        self.tracks.clear();
-        self.playlists.clear();
-        self.home.clear();
-        self.followed.clear();
-        self.favorite_albums.clear();
-        self.favorite_shows.clear();
-        self.likes = LikeState::default();
-    }
-
     fn on_logged_in(&mut self, ctx: &egui::Context, client: Deezer) {
         if std::mem::take(&mut self.remember_login) {
             credentials::save(client.arl());
         }
         self.arl_input.clear();
-        self.player.send(Cmd::Client(client.clone()));
-        self.player.send(Cmd::Quality(self.quality));
-        self.player.send(Cmd::ReportListens(self.report_listens));
-        // Bring back the queue from last time, paused where it was.
-        if self.queue_saved.is_none() {
-            if let Some(s) = saved::load() {
-                log_info!("restoring a queue of {} tracks", s.tracks.len());
-                self.player.send(Cmd::Restore { tracks: s.tracks, index: s.index, position: s.position, flow: s.flow });
-                self.restore_pending = true;
-            }
-            self.queue_saved = Some((0, usize::MAX, None));
-        }
-        let c = client.clone();
-        self.playlists_task = tasks::spawn(ctx, move || c.playlists());
-        let c = client.clone();
-        self.likes_task = tasks::spawn(ctx, move || likes::load(&c));
-        self.client = Some(client);
-        self.open_view(ctx, View::Home);
+        self.deezer_ready(ctx, client);
     }
 
     // ------------------------------------------------------------ navigation
@@ -333,7 +311,7 @@ impl App {
             View::Home | View::Playlists | View::Artists | View::Albums | View::Podcasts | View::Artist(_) => {}
             View::Search if self.search.trim().is_empty() => {}
             // A pasted Deezer link opens what it points at instead of searching.
-            View::Search if deezer::is_link(&self.search) => {
+            View::Search if client.features().links && deezer::is_link(&self.search) => {
                 let link = self.search.trim().to_string();
                 self.searched.clear();
                 self.link_task = tasks::spawn(ctx, move || client.resolve_link(&link));
@@ -431,6 +409,14 @@ impl App {
         self.player.send(Cmd::Output(output));
     }
 
+    /// Save the queue of source `key` as it is now (unless its restore is still on
+    /// its way, which would save an empty queue over it).
+    pub(super) fn save_queue_now(&mut self, key: &str) {
+        if self.queue_saved.is_some() && !self.restore_pending {
+            saved::save(&self.player.status(), key);
+        }
+    }
+
     /// Keep `queue.json` in step with the queue (after the restore was offered).
     fn save_queue_if_changed(&mut self, st: &Status) {
         // Until the player shows the restored queue, its (empty) queue isn't news.
@@ -443,7 +429,9 @@ impl App {
         let Some(last) = &self.queue_saved else { return };
         let key = (std::sync::Arc::as_ptr(&st.queue) as usize, st.index, st.flow.clone());
         if *last != key {
-            saved::save(st);
+            if let Some(client) = &self.client {
+                saved::save(st, client.key());
+            }
             self.queue_saved = Some(key);
         }
     }
@@ -476,17 +464,18 @@ impl App {
             }
             None => {}
         }
+        self.poll_sources(ctx);
         match tasks::poll(&mut self.tracks_task) {
             Some(Ok((tracks, info))) => {
                 self.tracks = tracks;
                 self.album_info = info;
             }
-            Some(Err(e)) => self.on_load_error(e),
+            Some(Err(e)) => self.on_load_error(ctx, e),
             None => {}
         }
         match tasks::poll(&mut self.link_task) {
             Some(Ok(link)) => self.open_link(ctx, link),
-            Some(Err(e)) => self.on_load_error(e),
+            Some(Err(e)) => self.on_load_error(ctx, e),
             None => {}
         }
         match tasks::poll(&mut self.search_task) {
@@ -498,12 +487,12 @@ impl App {
                     self.search_sections.insert(0, own);
                 }
             }
-            Some(Err(e)) => self.on_load_error(e),
+            Some(Err(e)) => self.on_load_error(ctx, e),
             None => {}
         }
         match tasks::poll(&mut self.artist_task) {
             Some(Ok(page)) => self.artist_page = Some(page),
-            Some(Err(e)) => self.on_load_error(e),
+            Some(Err(e)) => self.on_load_error(ctx, e),
             None => {}
         }
         match tasks::poll(&mut self.likes_task) {
@@ -513,29 +502,29 @@ impl App {
         }
         match tasks::poll(&mut self.favorite_albums_task) {
             Some(Ok(albums)) => self.favorite_albums = albums,
-            Some(Err(e)) => self.on_load_error(e),
+            Some(Err(e)) => self.on_load_error(ctx, e),
             None => {}
         }
         self.poll_likes();
         self.poll_playlist_edits(ctx);
         match tasks::poll(&mut self.favorite_shows_task) {
             Some(Ok(shows)) => self.favorite_shows = shows,
-            Some(Err(e)) => self.on_load_error(e),
+            Some(Err(e)) => self.on_load_error(ctx, e),
             None => {}
         }
         match tasks::poll(&mut self.followed_task) {
             Some(Ok(artists)) => self.followed = artists,
-            Some(Err(e)) => self.on_load_error(e),
+            Some(Err(e)) => self.on_load_error(ctx, e),
             None => {}
         }
         match tasks::poll(&mut self.playlists_task) {
             Some(Ok(p)) => self.playlists = p,
-            Some(Err(e)) => self.on_load_error(e),
+            Some(Err(e)) => self.on_load_error(ctx, e),
             None => {}
         }
         match tasks::poll(&mut self.home_task) {
             Some(Ok(h)) => self.home = h,
-            Some(Err(e)) => self.on_load_error(e),
+            Some(Err(e)) => self.on_load_error(ctx, e),
             None => {}
         }
         match tasks::poll(&mut self.quick_play) {
@@ -545,17 +534,17 @@ impl App {
                     self.player.send(mode.command(tracks));
                 }
             }
-            Some(Err(e)) => self.on_load_error(e),
+            Some(Err(e)) => self.on_load_error(ctx, e),
             _ => {}
         }
     }
 
     /// A background load failed: an expired session sends the listener back to the
     /// login screen with the reason; anything else is shown in place.
-    fn on_load_error(&mut self, error: Error) {
+    fn on_load_error(&mut self, ctx: &egui::Context, error: Error) {
         log_warn!("{error}");
         if error.is_session_expired() {
-            self.log_out();
+            self.log_out(ctx);
             self.login_error = Some(error.to_string());
         } else {
             self.list_error = Some(error.to_string());
@@ -614,8 +603,8 @@ impl eframe::App for App {
     /// Quitting: a downloaded update installs now, so the next start is the new version.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         // Once more with the exact position, to resume right there next time.
-        if self.queue_saved.is_some() && !self.restore_pending {
-            saved::save(&self.player.status());
+        if let Some(client) = &self.client {
+            self.save_queue_now(client.key());
         }
         self.updates.apply_on_exit();
     }
@@ -629,6 +618,7 @@ impl eframe::App for App {
         self.updates.poll(&ctx);
         if self.client.is_none() {
             self.login_screen(ui);
+            self.server_dialog(&ctx);
             return;
         }
         if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(Key::Space)) {
@@ -695,6 +685,7 @@ impl eframe::App for App {
         }
         self.playlist_dialog(&ctx);
         self.settings_window(&ctx);
+        self.server_dialog(&ctx);
         if let Some(what) = self.pending_like.take() {
             self.toggle_like(&ctx, what);
         }

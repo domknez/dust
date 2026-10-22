@@ -139,20 +139,94 @@ fn worker(queue: Queue, tx: Sender<Done>, agent: ureq::Agent, ctx: egui::Context
 }
 
 fn fetch(agent: &ureq::Agent, url: &str) -> Option<ColorImage> {
+    if url.is_empty() {
+        return None;
+    }
     let bytes = agent.get(url).call().ok()?.into_body().read_to_vec().ok()?;
-    let mut dec = JpegDecoder::new_with_options(&bytes[..], DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA));
+    decode(&bytes)
+}
+
+/// JPEG (Deezer, most servers), PNG or WebP (music servers), by their signature.
+fn decode(bytes: &[u8]) -> Option<ColorImage> {
+    if bytes.starts_with(b"\x89PNG") {
+        return decode_png(bytes);
+    }
+    if bytes.len() > 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return decode_webp(bytes);
+    }
+    decode_jpeg(bytes)
+}
+
+fn decode_jpeg(bytes: &[u8]) -> Option<ColorImage> {
+    let mut dec = JpegDecoder::new_with_options(bytes, DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA));
     let pixels = dec.decode().ok()?;
     let info = dec.info()?;
-    let size = [info.width as usize, info.height as usize];
-    // Greyscale JPEGs come back as one byte per pixel even when RGBA is asked for.
+    image_from(&pixels, [info.width as usize, info.height as usize])
+}
+
+fn decode_png(bytes: &[u8]) -> Option<ColorImage> {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    // 8-bit samples, palettes expanded.
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().ok()?;
+    let mut pixels = vec![0; reader.output_buffer_size()?];
+    let frame = reader.next_frame(&mut pixels).ok()?;
+    pixels.truncate(frame.buffer_size());
+    let size = [frame.width as usize, frame.height as usize];
+    match frame.color_type {
+        // Grey with alpha: drop the alpha, artwork is opaque.
+        png::ColorType::GrayscaleAlpha => image_from(&pixels.chunks_exact(2).map(|p| p[0]).collect::<Vec<_>>(), size),
+        _ => image_from(&pixels, size),
+    }
+}
+
+fn decode_webp(bytes: &[u8]) -> Option<ColorImage> {
+    let mut decoder = image_webp::WebPDecoder::new(std::io::Cursor::new(bytes)).ok()?;
+    let (width, height) = decoder.dimensions();
+    let mut pixels = vec![0; decoder.output_buffer_size()?];
+    decoder.read_image(&mut pixels).ok()?;
+    image_from(&pixels, [width as usize, height as usize])
+}
+
+/// An image from 1 (grey), 3 (RGB) or 4 (RGBA) bytes per pixel.
+fn image_from(pixels: &[u8], size: [usize; 2]) -> Option<ColorImage> {
     let area = size[0] * size[1];
-    if area == 0 || pixels.len() % area != 0 {
+    if area == 0 || !pixels.len().is_multiple_of(area) {
         return None;
     }
     match pixels.len() / area {
-        1 => Some(ColorImage::from_gray(size, &pixels)),
-        3 => Some(ColorImage::from_rgb(size, &pixels)),
-        4 => Some(ColorImage::from_rgba_unmultiplied(size, &pixels)),
+        1 => Some(ColorImage::from_gray(size, pixels)),
+        3 => Some(ColorImage::from_rgb(size, pixels)),
+        4 => Some(ColorImage::from_rgba_unmultiplied(size, pixels)),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A 2×1 RGB PNG: one red, one green pixel.
+    fn png_bytes() -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut encoder = png::Encoder::new(&mut out, 2, 1);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.write_header().unwrap().write_image_data(&[255, 0, 0, 0, 255, 0]).unwrap();
+        out
+    }
+
+    #[test]
+    fn decodes_png() {
+        let image = decode(&png_bytes()).unwrap();
+        assert_eq!(image.size, [2, 1]);
+        assert_eq!(image.pixels[0], egui::Color32::from_rgb(255, 0, 0));
+        assert_eq!(image.pixels[1], egui::Color32::from_rgb(0, 255, 0));
+    }
+
+    #[test]
+    fn rejects_garbage() {
+        assert!(decode(b"not an image").is_none());
+        assert!(decode(b"RIFF\0\0\0\0WEBPVP8 ").is_none());
     }
 }

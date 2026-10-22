@@ -254,6 +254,7 @@ mod tests {
             available: true,
             available_from: String::new(),
             episode: None,
+            server: None,
         }
     }
 

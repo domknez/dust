@@ -1,10 +1,12 @@
-//! One playing track: its byte stream (a decrypted Deezer song, or a podcast's own
-//! file), container reader and decoder.
+//! One playing track: its byte stream (a decrypted Deezer song, a podcast's own
+//! file, or a song file from a music server), container reader and decoder.
 
 use super::library::{Decoded, Playback};
 use super::resample::Resampler;
 use crate::deezer::{Deezer, Format, StreamSource};
 use crate::output::RATE;
+use std::io::Read;
+use std::sync::Arc;
 use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
 use symphonia::core::errors::Error as DecodeError;
 use symphonia::core::formats::probe::Hint;
@@ -16,22 +18,79 @@ use symphonia::core::units::TimeBase;
 /// Bytes per second per kbps (1000 / 8).
 const BYTES_PER_KBPS: f64 = 125.0;
 
-pub struct Stream {
+/// A track's bytes, opened at (about) a position.
+pub struct Opened {
+    pub bytes: Box<dyn Read + Send + Sync>,
+    /// Track time (s) the bytes start at (non-zero after a jump into the file).
+    pub base: f64,
+    /// Discard audio before this track time (when the bytes start earlier than asked).
+    pub skip_until: f64,
+}
+
+/// Where a track's bytes come from; opened again for seeks.
+pub trait Opener: Send + Sync {
+    fn open(&self, at: f64) -> Result<Opened, String>;
+}
+
+/// What the decoder needs to know about a stream besides its bytes.
+#[derive(Clone)]
+pub struct StreamInfo {
+    /// Song id reported for listens.
+    pub song_id: u64,
+    pub format: Format,
+    /// File extension, a hint for picking the container reader.
+    pub extension: String,
+    /// Files at another sample rate are converted (otherwise refused).
+    pub any_rate: bool,
+    /// Seeking jumps into the file (opened again at the new time); otherwise it skips
+    /// forward in place and only starts over to go back.
+    pub jumps: bool,
+}
+
+/// A Deezer song or podcast episode.
+struct DeezerBytes {
     client: Deezer,
     source: StreamSource,
+}
+
+impl Opener for DeezerBytes {
+    fn open(&self, at: f64) -> Result<Opened, String> {
+        let source = &self.source;
+        if source.format == Format::Podcast {
+            // Jumps by an estimated byte offset; skips from the start if it can't.
+            let (bytes, start) = self.client.open_direct(&source.url, at, source.duration).map_err(|e| e.to_string())?;
+            return Ok(Opened { bytes, base: start, skip_until: if start > 0.0 { 0.0 } else { at } });
+        }
+        // CBR MP3 maps time to bytes, so jump with an HTTP range; FLAC must start at 0.
+        let (offset, skip_until) = match source.format {
+            Format::Mp3(kbps) if at > 0.0 => ((at * kbps as f64 * BYTES_PER_KBPS) as u64, 0.0),
+            _ => (0, at),
+        };
+        let (bytes, offset) = self.client.open_stream(source, offset).map_err(|e| e.to_string())?;
+        let base = match source.format {
+            Format::Mp3(kbps) => offset as f64 / (kbps as f64 * BYTES_PER_KBPS),
+            Format::Flac | Format::Podcast | Format::File => 0.0,
+        };
+        Ok(Opened { bytes, base, skip_until })
+    }
+}
+
+pub struct Stream {
+    opener: Arc<dyn Opener>,
+    info: StreamInfo,
     reader: Box<dyn FormatReader>,
     decoder: Box<dyn AudioDecoder>,
     audio_track: u32,
     time_base: TimeBase,
-    /// Track time (s) at which this byte stream starts (non-zero after an MP3 range seek).
+    /// Track time (s) at which this byte stream starts (non-zero after a jump).
     base: f64,
-    /// Discard packets before this track time (FLAC seeks).
+    /// Discard packets before this track time (seeks that couldn't jump).
     skip_until: f64,
     /// Track time (s) at the end of the audio handed to the sink.
     written: f64,
     /// Decoded interleaved samples, reused across packets.
     samples: Vec<i16>,
-    /// For files at another sample rate than the output's (podcasts).
+    /// For files at another sample rate than the output's (podcasts, server files).
     resampler: Option<Resampler>,
     /// Stereo samples waiting to be resampled, reused across packets.
     stereo: Vec<i16>,
@@ -39,35 +98,31 @@ pub struct Stream {
 }
 
 impl Stream {
-    /// Open `source` at track time `at` (seconds).
-    pub fn open(client: &Deezer, source: StreamSource, at: f64) -> Result<Stream, String> {
-        let (bytes, base, skip_until) = if source.format == Format::Podcast {
-            // Jumps by an estimated byte offset; skips from the start if it can't.
-            let (bytes, start) = client.open_direct(&source.url, at, source.duration).map_err(|e| e.to_string())?;
-            (bytes, start, if start > 0.0 { 0.0 } else { at })
-        } else {
-            // CBR MP3 maps time to bytes, so jump with an HTTP range; FLAC must start at 0.
-            let (offset, skip_until) = match source.format {
-                Format::Mp3(kbps) if at > 0.0 => ((at * kbps as f64 * BYTES_PER_KBPS) as u64, 0.0),
-                _ => (0, at),
-            };
-            let (bytes, offset) = client.open_stream(&source, offset).map_err(|e| e.to_string())?;
-            let base = match source.format {
-                Format::Mp3(kbps) => offset as f64 / (kbps as f64 * BYTES_PER_KBPS),
-                Format::Flac | Format::Podcast => 0.0,
-            };
-            (bytes, base, skip_until)
+    /// Open a Deezer song or podcast episode at track time `at` (seconds).
+    pub fn open_deezer(client: &Deezer, source: StreamSource, at: f64) -> Result<Stream, String> {
+        let info = StreamInfo {
+            song_id: source.song_id,
+            format: source.format,
+            extension: if source.format == Format::Flac { "flac" } else { "mp3" }.into(),
+            any_rate: source.format == Format::Podcast,
+            jumps: matches!(source.format, Format::Mp3(_) | Format::Podcast),
         };
+        Stream::open(Arc::new(DeezerBytes { client: client.clone(), source }), info, at)
+    }
+
+    /// Open the bytes from `opener` at track time `at` (seconds).
+    pub fn open(opener: Arc<dyn Opener>, info: StreamInfo, at: f64) -> Result<Stream, String> {
+        let Opened { bytes, base, skip_until } = opener.open(at)?;
         let mss = MediaSourceStream::new(Box::new(ReadOnlySource::new(bytes)), Default::default());
         let mut hint = Hint::new();
-        hint.with_extension(if source.format == Format::Flac { "flac" } else { "mp3" });
+        hint.with_extension(&info.extension);
         let reader = symphonia::default::get_probe()
             .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
             .map_err(|e| format!("probe: {e}"))?;
         let track = reader.default_track(TrackType::Audio).ok_or("No audio track")?;
         let params = track.codec_params.as_ref().and_then(|p| p.audio()).ok_or("No audio codec")?;
         let resampler = match params.sample_rate {
-            Some(rate) if rate != RATE && source.format == Format::Podcast => Some(Resampler::new(rate, RATE)),
+            Some(rate) if rate != RATE && info.any_rate => Some(Resampler::new(rate, RATE)),
             Some(rate) if rate != RATE => return Err(format!("Unsupported sample rate {rate}")),
             _ => None,
         };
@@ -76,10 +131,10 @@ impl Stream {
             .map_err(|e| format!("decoder: {e}"))?;
         let time_base = track.time_base.or_else(|| TimeBase::try_new(1, RATE)).ok_or("No time base")?;
         Ok(Stream {
-            client: client.clone(),
             audio_track: track.id,
             time_base,
-            source,
+            opener,
+            info,
             reader,
             decoder,
             base,
@@ -148,11 +203,11 @@ impl Stream {
 
 impl Playback for Stream {
     fn song_id(&self) -> u64 {
-        self.source.song_id
+        self.info.song_id
     }
 
     fn format(&self) -> Format {
-        self.source.format
+        self.info.format
     }
 
     fn written(&self) -> f64 {
@@ -176,11 +231,9 @@ impl Playback for Stream {
     }
 
     fn needs_reopen_for(&self, t: f64) -> bool {
-        match self.source.format {
-            Format::Mp3(_) | Format::Podcast => true,
-            // FLAC over a non-seekable HTTP stream: skip forward, or restart and skip.
-            Format::Flac => t < self.written,
-        }
+        // A file that can't be jumped into over HTTP (FLAC, MP4, ...): skip forward,
+        // or start over and skip.
+        self.info.jumps || t < self.written
     }
 
     fn skip_to(&mut self, t: f64) {
@@ -189,6 +242,6 @@ impl Playback for Stream {
     }
 
     fn reopen(&self, at: f64) -> Result<Box<dyn Playback>, String> {
-        Ok(Box::new(Stream::open(&self.client, self.source.clone(), at)?))
+        Ok(Box::new(Stream::open(self.opener.clone(), self.info.clone(), at)?))
     }
 }

@@ -1,0 +1,160 @@
+{
+ "subsonic-response": {
+  "status": "ok",
+  "version": "1.16.1",
+  "type": "navidrome",
+  "serverVersion": "0.58.0 (9dbe0c18)",
+  "openSubsonic": true,
+  "albumList2": {
+   "album": [
+    {
+     "id": "0YzMawE8pptS6PiSxFoZK1",
+     "name": "Tones",
+     "artist": "Sine Collective",
+     "artistId": "7AQnKMQc2yBxYD3IZDjJi6",
+     "coverArt": "al-0YzMawE8pptS6PiSxFoZK1_6ada25f1",
+     "songCount": 1,
+     "duration": 20,
+     "created": "2026-10-22T15:04:27.37426196Z",
+     "year": 2024,
+     "genre": "Test",
+     "userRating": 0,
+     "genres": [
+      {
+       "name": "Test"
+      }
+     ],
+     "musicBrainzId": "",
+     "isCompilation": false,
+     "sortName": "tones",
+     "discTitles": [],
+     "originalReleaseDate": {},
+     "releaseDate": {
+      "year": 2024
+     },
+     "releaseTypes": [],
+     "recordLabels": [],
+     "moods": [],
+     "artists": [
+      {
+       "id": "7AQnKMQc2yBxYD3IZDjJi6",
+       "name": "Sine Collective"
+      }
+     ],
+     "displayArtist": "Sine Collective",
+     "explicitStatus": "",
+     "version": ""
+    },
+    {
+     "id": "35tdeDcJzoB6ndccXhaDWn",
+     "name": "Tones",
+     "artist": "Sine Collective",
+     "artistId": "7AQnKMQc2yBxYD3IZDjJi6",
+     "coverArt": "al-35tdeDcJzoB6ndccXhaDWn_6ada25f1",
+     "songCount": 2,
+     "duration": 40,
+     "created": "2026-10-22T15:04:27.374162668Z",
+     "year": 2024,
+     "genre": "Test",
+     "userRating": 0,
+     "genres": [
+      {
+       "name": "Test"
+      }
+     ],
+     "musicBrainzId": "",
+     "isCompilation": false,
+     "sortName": "tones",
+     "discTitles": [],
+     "originalReleaseDate": {},
+     "releaseDate": {},
+     "releaseTypes": [],
+     "recordLabels": [],
+     "moods": [],
+     "artists": [
+      {
+       "id": "7AQnKMQc2yBxYD3IZDjJi6",
+       "name": "Sine Collective"
+      }
+     ],
+     "displayArtist": "Sine Collective",
+     "explicitStatus": "",
+     "version": ""
+    },
+    {
+     "id": "5F81DCwcfjVByziJAH9maf",
+     "name": "Single Pulse",
+     "artist": "Square Wave Trio",
+     "artistId": "1cX14wrZBmbXZQpEQ79FiO",
+     "coverArt": "al-5F81DCwcfjVByziJAH9maf_6ada25f1",
+     "songCount": 2,
+     "duration": 40,
+     "created": "2026-10-22T15:04:27.373563792Z",
+     "year": 2023,
+     "genre": "Test",
+     "userRating": 0,
+     "genres": [
+      {
+       "name": "Test"
+      }
+     ],
+     "musicBrainzId": "",
+     "isCompilation": false,
+     "sortName": "single pulse",
+     "discTitles": [],
+     "originalReleaseDate": {},
+     "releaseDate": {},
+     "releaseTypes": [],
+     "recordLabels": [],
+     "moods": [],
+     "artists": [
+      {
+       "id": "1cX14wrZBmbXZQpEQ79FiO",
+       "name": "Square Wave Trio"
+      }
+     ],
+     "displayArtist": "Square Wave Trio",
+     "explicitStatus": "",
+     "version": ""
+    },
+    {
+     "id": "7DMk4TPjyYNIy9yBTzfAOS",
+     "name": "Live at the Lab",
+     "artist": "Sine Collective",
+     "artistId": "7AQnKMQc2yBxYD3IZDjJi6",
+     "coverArt": "al-7DMk4TPjyYNIy9yBTzfAOS_6ada25f1",
+     "songCount": 2,
+     "duration": 40,
+     "created": "2026-10-22T15:04:27.373333042Z",
+     "starred": "2026-10-22T15:05:03.394643958Z",
+     "year": 2025,
+     "genre": "Test",
+     "userRating": 0,
+     "genres": [
+      {
+       "name": "Test"
+      }
+     ],
+     "musicBrainzId": "",
+     "isCompilation": false,
+     "sortName": "live at the lab",
+     "discTitles": [],
+     "originalReleaseDate": {},
+     "releaseDate": {},
+     "releaseTypes": [],
+     "recordLabels": [],
+     "moods": [],
+     "artists": [
+      {
+       "id": "7AQnKMQc2yBxYD3IZDjJi6",
+       "name": "Sine Collective"
+      }
+     ],
+     "displayArtist": "Sine Collective",
+     "explicitStatus": "",
+     "version": ""
+    }
+   ]
+  }
+ }
+}

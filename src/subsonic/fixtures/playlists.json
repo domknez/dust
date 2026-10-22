@@ -1,0 +1,24 @@
+{
+ "subsonic-response": {
+  "status": "ok",
+  "version": "1.16.1",
+  "type": "navidrome",
+  "serverVersion": "0.58.0 (9dbe0c18)",
+  "openSubsonic": true,
+  "playlists": {
+   "playlist": [
+    {
+     "id": "J78Lrnn5aCX1IyCU5feMey",
+     "name": "Testlist",
+     "songCount": 2,
+     "duration": 40,
+     "public": false,
+     "owner": "dust",
+     "created": "2026-10-22T15:05:03.650193475Z",
+     "changed": "2026-10-22T15:05:03.650549267Z",
+     "coverArt": "pl-J78Lrnn5aCX1IyCU5feMey_6ada261f"
+    }
+   ]
+  }
+ }
+}

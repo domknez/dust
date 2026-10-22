@@ -1,4 +1,5 @@
-//! Data types returned by the client.
+//! Data types returned by the client. They're shared by every music source: a
+//! Navidrome / Subsonic server ([`crate::subsonic`]) fills the same types.
 
 /// An artist named on a track or album, so the name can link to their page.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,6 +34,19 @@ pub struct Track {
     /// Set for a podcast episode: then `artist` is the show, `cover` the show's
     /// artwork and the audio a plain file, not a Deezer song.
     pub episode: Option<Episode>,
+    /// Set for a song on a music server (Navidrome / Subsonic): its own id and file.
+    /// `id` is then a hash of the server's id (see [`crate::subsonic`]).
+    pub server: Option<ServerSong>,
+}
+
+/// A song on a Subsonic-compatible server.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ServerSong {
+    /// The server's id for the song.
+    pub id: String,
+    /// File type (`mp3`, `flac`, `m4a`, ...), to pick a decoder or ask for a
+    /// conversion.
+    pub suffix: String,
 }
 
 impl Track {
@@ -111,8 +125,12 @@ pub struct Section {
     pub items: Vec<Item>,
 }
 
-/// Square image from Deezer's CDN, e.g. `image_url("cover", md5, 120)`.
+/// Square image from Deezer's CDN, e.g. `image_url("cover", md5, 120)`. A
+/// music server's artwork (`md5` = `sub:<cover id>`) comes from that server.
 pub fn image_url(kind: &str, md5: &str, size: u32) -> String {
+    if let Some(id) = md5.strip_prefix(crate::subsonic::COVER_PREFIX) {
+        return crate::subsonic::cover_url(id, size);
+    }
     format!("https://cdn-images.dzcdn.net/images/{kind}/{md5}/{size}x{size}-000000-80-0-0.jpg")
 }
 
@@ -166,6 +184,8 @@ pub enum Format {
     Flac,
     /// A podcast episode's own file (MP3 at any bitrate).
     Podcast,
+    /// A song file from a music server (any codec, any sample rate).
+    File,
 }
 
 impl Format {
@@ -180,7 +200,7 @@ impl Format {
     pub(super) fn api_name(self) -> &'static str {
         match self {
             Format::Flac => "FLAC",
-            Format::Mp3(128) | Format::Podcast => "MP3_128",
+            Format::Mp3(128) | Format::Podcast | Format::File => "MP3_128",
             Format::Mp3(_) => "MP3_320",
         }
     }
