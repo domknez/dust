@@ -111,6 +111,74 @@ pub fn thin_slider(ui: &mut Ui, value: &mut f32, width: f32, enabled: bool, lime
     resp
 }
 
+/// Seek bar drawn as a waveform: bars up to `value` in the accent colour, the rest
+/// muted. dust has no real waveform data, so the bar heights are a pattern derived
+/// from `seed` (the track), the same every time the track plays.
+pub fn wave_slider(ui: &mut Ui, value: &mut f32, width: f32, seed: u64, enabled: bool) -> Response {
+    const HEIGHT: f32 = 26.0;
+    const BAR: f32 = 3.0;
+    const GAP: f32 = 2.0;
+    let sense = if enabled { Sense::click_and_drag() } else { Sense::hover() };
+    let (rect, mut resp) = ui.allocate_exact_size(vec2(width, HEIGHT), sense);
+    if enabled
+        && (resp.dragged() || resp.clicked())
+        && let Some(pointer) = resp.interact_pointer_pos()
+    {
+        let new = ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+        if new != *value {
+            *value = new;
+            resp.mark_changed();
+        }
+    }
+    let p = colors();
+    let hovered = enabled && (resp.hovered() || resp.dragged());
+    let n = ((rect.width() + GAP) / (BAR + GAP)).floor().max(1.0) as usize;
+    let levels = wave_levels(seed, n);
+    let played = (*value * n as f32).round() as usize;
+    let painter = ui.painter();
+    for (i, level) in levels.iter().enumerate() {
+        let x = rect.left() + i as f32 * (BAR + GAP);
+        let h = (HEIGHT * level).max(3.0);
+        let bar = Rect::from_center_size(pos2(x + BAR / 2.0, rect.center().y), vec2(BAR, h));
+        let color = if i < played {
+            p.accent
+        } else if hovered {
+            p.dim
+        } else {
+            p.raised
+        };
+        painter.rect_filled(bar, CornerRadius::same(1), color);
+    }
+    if enabled {
+        resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    }
+    resp
+}
+
+/// `n` bar heights in 0.15..=1.0: smoothed noise from `seed`, a little quieter at
+/// both ends like most songs.
+fn wave_levels(seed: u64, n: usize) -> Vec<f32> {
+    let mut state = seed ^ 0x9E37_79B9_7F4A_7C15;
+    let mut next = || {
+        // splitmix64
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        ((z ^ (z >> 31)) >> 40) as f32 / (1u64 << 24) as f32
+    };
+    let raw: Vec<f32> = (0..n).map(|_| next()).collect();
+    (0..n)
+        .map(|i| {
+            let around = &raw[i.saturating_sub(1)..(i + 2).min(n)];
+            let smooth = around.iter().sum::<f32>() / around.len() as f32;
+            let t = i as f32 / n.max(2) as f32;
+            let envelope = 0.55 + 0.45 * (t * std::f32::consts::PI).sin();
+            (0.15 + 0.85 * (0.5 * smooth + 0.5 * raw[i]) * envelope).clamp(0.15, 1.0)
+        })
+        .collect()
+}
+
 /// Segmented control filling the available width; returns the clicked index.
 pub fn segmented(ui: &mut Ui, items: &[(Icon, &str)], selected: usize) -> Option<usize> {
     let p = colors();

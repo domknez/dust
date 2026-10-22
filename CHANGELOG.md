@@ -5,9 +5,10 @@
 - New look, "Graphite": charcoal (or soft grey) with one lime accent, Space Grotesk and
   JetBrains Mono, small crisp corners and hairlines. The sidebar is a compact list
   (`dust_` wordmark, shortcut hints, playlist counts), Home greets you and opens with a
-  Flow panel whose moods sit in a row (with what's playing beside it), Play buttons are
+  Flow panel whose moods sit in a row, Play buttons are
   lime, and the queue and lyrics panels switch with tabs
-- The player bar is one row: transport, times and progress side by side
+- The player bar is one row: transport, times and progress side by side; the progress
+  bar is drawn as a waveform (a pattern per track, not the real audio)
 - Album pages: year, track count and length, the artist and label, compact numbered rows
   with an artist column, and the artist's other releases beside the tracks
 - Artist pages: a large name over a dark band with the picture on the right, popular

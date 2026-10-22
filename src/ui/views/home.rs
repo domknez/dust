@@ -2,7 +2,7 @@
 //! sections as horizontally scrolling rows of cards.
 
 use crate::deezer::{Item, Section};
-use crate::player::{Cmd, State, Status};
+use crate::player::{Cmd, Status};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
 use crate::ui::state::{Coll, PlayMode, Source, View};
@@ -28,9 +28,6 @@ impl CardPicks {
         self.play = Some((source, mode));
     }
 }
-
-/// The now-playing card joins the Flow panel from this width.
-const NOW_PLAYING_MIN_WIDTH: f32 = 760.0;
 
 /// Height [`card_row`] takes: spacing, section title and one row of cards.
 pub(in crate::ui) const CARD_ROW_HEIGHT: f32 = 26.0 + 20.0 + 10.0 + metrics::HOME_CARD + metrics::CARD_TEXT;
@@ -117,22 +114,9 @@ pub(in crate::ui) fn card_row(
     if is_flow {
         ui.add_space(18.0);
         let moods: Vec<(&str, &str)> = items.iter().filter(|it| it.id != "default").map(|it| (it.id.as_str(), it.title.as_str())).collect();
-        // What's playing beside Flow when there's room.
-        let width = ui.available_width();
-        let track = st.track.as_ref().filter(|_| width >= NOW_PLAYING_MIN_WIDTH);
-        let flow_width = if track.is_some() { (width - 14.0) * 0.63 } else { width };
-        ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing.x = 14.0;
-            ui.allocate_ui(vec2(flow_width, widgets::FLOW_PANEL), |ui| {
-                if let Some(pick) = widgets::flow_panel(ui, &moods, st.flow.as_deref()) {
-                    picked.flow = Some(pick);
-                }
-            });
-            if let Some(track) = track {
-                let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), widgets::FLOW_PANEL), Sense::hover());
-                widgets::now_playing_card(ui, covers, rect, track, st.position, st.state == State::Playing);
-            }
-        });
+        if let Some(pick) = widgets::flow_panel(ui, &moods, st.flow.as_deref()) {
+            picked.flow = Some(pick);
+        }
         return;
     }
     ui.add_space(26.0);

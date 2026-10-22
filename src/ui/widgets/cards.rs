@@ -134,32 +134,6 @@ fn sound_bars(painter: &egui::Painter, area: Rect) {
     }
 }
 
-/// What's playing (or paused) next to the Flow panel: cover, title, artist, and a
-/// lime progress line with the time left.
-pub fn now_playing_card(ui: &Ui, covers: &mut Covers, rect: Rect, track: &Track, position: f64, playing: bool) {
-    let p = colors();
-    let painter = ui.painter();
-    let corner = CornerRadius::same(radius::PANEL);
-    painter.rect_filled(rect, corner, p.surface);
-    painter.rect_stroke(rect, corner, egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
-    let inner = rect.shrink(16.0);
-    let caption = if playing { "NOW PLAYING" } else { "PAUSED" };
-    text_left(painter, pos2(inner.left(), inner.top() + 8.0), caption, ty::OVERLINE, p.dim, inner.width());
-    let art = Rect::from_min_size(pos2(inner.left(), inner.top() + 26.0), Vec2::splat(60.0));
-    cover(ui, covers, cover_url(track, metrics::NOW_PLAYING_PX).as_deref(), art, radius::ROW);
-    let x = art.right() + 12.0;
-    let width = inner.right() - x;
-    text_left(ui.painter(), pos2(x, art.center().y - 9.0), &track.title, ty::TITLE.strong(), p.text, width);
-    text_left(ui.painter(), pos2(x, art.center().y + 10.0), &track.artist, ty::SECONDARY, p.dim, width);
-    let duration = track.duration as f64;
-    let done = if duration > 0.0 { (position / duration).clamp(0.0, 1.0) as f32 } else { 0.0 };
-    let line = Rect::from_min_size(pos2(inner.left(), inner.bottom() - 22.0), vec2(inner.width(), 3.0));
-    ui.painter().rect_filled(line, CornerRadius::ZERO, p.line);
-    ui.painter().rect_filled(Rect::from_min_size(line.min, vec2(line.width() * done, 3.0)), CornerRadius::ZERO, p.accent);
-    let left = format!("{} left", mmss(duration - position));
-    text_left(ui.painter(), pos2(inner.left(), inner.bottom() - 6.0), &left, ty::META, p.dim, inner.width());
-}
-
 /// One track in the queue panel. Returns the artist whose name was clicked.
 pub fn queue_row(ui: &Ui, covers: &mut Covers, rect: Rect, t: &Track, current: bool, show_time: bool) -> Option<ArtistRef> {
     let art = Rect::from_min_size(pos2(rect.left() + 6.0, rect.center().y - metrics::LIST_ART / 2.0), Vec2::splat(metrics::LIST_ART));

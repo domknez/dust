@@ -10,8 +10,8 @@ mod nav;
 mod text;
 
 pub use art::{cover, tile};
-pub use cards::{CardClick, FLOW_PANEL, card, flow_panel, now_playing_card, play_knob, queue_row};
-pub use controls::{heart_at, icon_button, pill, play_button, segmented, tag, thin_slider};
+pub use cards::{CardClick, card, flow_panel, play_knob, queue_row};
+pub use controls::{heart_at, icon_button, pill, play_button, segmented, tag, thin_slider, wave_slider};
 pub use decor::{equalizer, fade_to};
 pub use menu::{TrackMenu, add_to_playlist, caption, divider, menu_row, popover_frame, queue_menu, shortcut_row, track_menu};
 pub use nav::sidebar_item;

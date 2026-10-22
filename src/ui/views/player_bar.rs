@@ -13,10 +13,10 @@ use eframe::egui::{self, Align2, Rect, Ui, UiBuilder, Vec2, pos2, vec2};
 use std::time::Duration;
 
 /// Share of the bar width for the now-playing and the controls columns (capped).
-const LEFT_SHARE: f32 = 0.24;
-const LEFT_MAX: f32 = 300.0;
-const RIGHT_SHARE: f32 = 0.32;
-const RIGHT_MAX: f32 = 400.0;
+const LEFT_SHARE: f32 = 0.22;
+const LEFT_MAX: f32 = 280.0;
+const RIGHT_SHARE: f32 = 0.27;
+const RIGHT_MAX: f32 = 340.0;
 const VOLUME_WIDTH: f32 = 64.0;
 /// Shuffle, previous, play/pause, next and repeat.
 const TRANSPORT_WIDTH: f32 = 204.0;
@@ -126,7 +126,7 @@ impl App {
         let (font, color) = (ty::META.font(), colors().dim);
         ui.painter().text(pos2(start + TIME_WIDTH, cy), Align2::RIGHT_CENTER, mmss(position), font.clone(), color);
         ui.painter().text(pos2(end - TIME_WIDTH, cy), Align2::LEFT_CENTER, mmss(duration), font, color);
-        let slider = Rect::from_min_max(pos2(start + TIME_WIDTH + 10.0, cy - 8.0), pos2(end - TIME_WIDTH - 10.0, cy + 8.0));
+        let slider = Rect::from_min_max(pos2(start + TIME_WIDTH + 10.0, cy - 13.0), pos2(end - TIME_WIDTH - 10.0, cy + 13.0));
         self.seek_slider(ui, slider, st);
     }
 
@@ -171,7 +171,8 @@ impl App {
         let position = self.seek_drag.map(|f| f as f64 * duration).unwrap_or(st.position).min(duration);
         ui.scope_builder(UiBuilder::new().max_rect(slider), |ui| {
             let mut fraction = if duration > 0.0 { (position / duration) as f32 } else { 0.0 };
-            let resp = widgets::thin_slider(ui, &mut fraction, slider.width(), duration > 0.0, true);
+            let seed = st.track.as_ref().map_or(0, |t| t.id);
+            let resp = widgets::wave_slider(ui, &mut fraction, slider.width(), seed, duration > 0.0);
             if resp.dragged() {
                 self.seek_drag = Some(fraction);
             }
