@@ -20,13 +20,25 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # Downloaded packages are kept between runs (refreshed monthly), so a stalling
+      # package mirror only matters for what changed.
+      - name: Month
+        id: month
+        run: echo "month=$(date +%Y-%m)" >> "$GITHUB_OUTPUT"
+      - name: Cache system packages
+        uses: actions/cache@v6
+        with:
+          path: ~/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-${{ steps.month.outputs.month }}
+          restore-keys: apt-${{ runner.os }}-${{ runner.arch }}-
       - name: System libraries
-        timeout-minutes: 10
+        timeout-minutes: 25
         run: |
           # The runners' package mirrors sometimes stall: time out each try and retry.
-          apt="sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          mkdir -p ~/apt-archives/partial
+          apt="sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dir::Cache::Archives=$HOME/apt-archives"
           for try in 1 2 3; do
-            timeout 180 $apt update && timeout 300 $apt install -y libasound2-dev libdbus-1-dev libgtk-3-dev libwebkit2gtk-4.1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev pkg-config && exit 0
+            timeout 120 $apt update && timeout 420 $apt install -y libasound2-dev libdbus-1-dev libgtk-3-dev libwebkit2gtk-4.1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev pkg-config && sudo chown -R "$(id -u)" ~/apt-archives && exit 0
             echo "apt attempt $try failed, retrying"; sleep 10
           done
           exit 1
@@ -46,14 +58,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # Downloaded packages are kept between runs (refreshed monthly), so a stalling
+      # package mirror only matters for what changed.
+      - name: Month
+        if: runner.os == 'Linux'
+        id: month
+        run: echo "month=$(date +%Y-%m)" >> "$GITHUB_OUTPUT"
+      - name: Cache system packages
+        if: runner.os == 'Linux'
+        uses: actions/cache@v6
+        with:
+          path: ~/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-${{ steps.month.outputs.month }}
+          restore-keys: apt-${{ runner.os }}-${{ runner.arch }}-
       - name: System libraries (Linux)
         if: runner.os == 'Linux'
-        timeout-minutes: 10
+        timeout-minutes: 25
         run: |
           # The runners' package mirrors sometimes stall: time out each try and retry.
-          apt="sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          mkdir -p ~/apt-archives/partial
+          apt="sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dir::Cache::Archives=$HOME/apt-archives"
           for try in 1 2 3; do
-            timeout 180 $apt update && timeout 300 $apt install -y libasound2-dev libdbus-1-dev libgtk-3-dev libwebkit2gtk-4.1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev pkg-config && exit 0
+            timeout 120 $apt update && timeout 420 $apt install -y libasound2-dev libdbus-1-dev libgtk-3-dev libwebkit2gtk-4.1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev pkg-config && sudo chown -R "$(id -u)" ~/apt-archives && exit 0
             echo "apt attempt $try failed, retrying"; sleep 10
           done
           exit 1
