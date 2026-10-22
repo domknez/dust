@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.15.0 (2026-10-22)
+
 - Lyrics: the speech-bubble button in the player bar opens the playing track's lyrics.
   Synced lyrics follow the song (the sung line highlighted and kept in view); click a
   line to jump to it. Songwriters and copyright are shown underneath
