@@ -141,7 +141,11 @@ impl App {
         self.account_menu(&resp, &name);
     }
 
+    /// The account's display name; `DUST_DISPLAY_NAME` replaces it (for screenshots).
     pub(in crate::ui) fn account_name(&self) -> String {
+        if let Some(name) = std::env::var("DUST_DISPLAY_NAME").ok().filter(|n| !n.is_empty()) {
+            return name;
+        }
         self.client.as_ref().map(|c| c.name().to_string()).unwrap_or_default()
     }
 
