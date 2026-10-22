@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.16.1 (2026-10-22)
+
 - Fixed: keyboard shortcuts in menus showed broken symbols (⌘, ⇧). Menus now show the
   shortcut on the right, as native menus do
 
