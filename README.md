@@ -10,10 +10,10 @@ AirPlay 2 streaming built in.**
 ![Free and open source](https://img.shields.io/badge/free%20%26%20open%20source-yes-brightgreen.svg)
 ![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/home-dark.png">
-  <img src="assets/screenshots/home-light.png" alt="dust home page in the Graphite look: Flow with its moods, album rows, playlists in the sidebar and the player bar with a waveform seek bar, playing on an AirPlay speaker">
-</picture>
+<p align="center">
+  <img src="assets/screenshots/home-dark.png" width="49%" alt="dust home page in the Graphite look: Flow with its moods, album rows, playlists in the sidebar and the player bar with a waveform seek bar, playing on an AirPlay speaker, dark theme">
+  <img src="assets/screenshots/home-light.png" width="49%" alt="dust home page in the Graphite look: Flow with its moods, album rows, playlists in the sidebar and the player bar with a waveform seek bar, playing on an AirPlay speaker, light theme">
+</p>
 
 dust is free software: free to use, study, modify and share under the [MIT license](LICENSE).
 No ads, no telemetry, no account with us — just your Deezer subscription.
