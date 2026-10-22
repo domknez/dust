@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.16.0 (2026-10-22)
+
 - Podcasts: search finds shows; a show's page lists its episodes newest first with their
   dates, to play or queue like tracks. *Podcasts* in the sidebar shows the ones you
   follow on Deezer. Episodes aren't reported as listens and can't be liked or added to
