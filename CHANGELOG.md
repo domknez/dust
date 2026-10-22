@@ -5,8 +5,15 @@
 - New look, "Graphite": charcoal (or soft grey) with one lime accent, Space Grotesk and
   JetBrains Mono, small crisp corners and hairlines. The sidebar is a compact list
   (`dust_` wordmark, shortcut hints, playlist counts), Home greets you and opens with a
-  Flow panel whose moods sit in a row, album and artist pages get lime tags and bigger
-  titles, Play buttons are lime, and the queue and lyrics panels switch with tabs
+  Flow panel whose moods sit in a row (with what's playing beside it), Play buttons are
+  lime, and the queue and lyrics panels switch with tabs
+- The player bar is one row: transport, times and progress side by side
+- Album pages: year, track count and length, the artist and label, compact numbered rows
+  with an artist column, and the artist's other releases beside the tracks
+- Artist pages: a large name over a dark band with the picture on the right, popular
+  tracks next to the discography as a grid with Albums / Singles / Live tabs
+- `⌘1`–`⌘6` (`Ctrl+1`–`Ctrl+6`) open Home, Loved tracks, Playlists, Albums, Artists and
+  Podcasts; the sidebar shows the shortcuts
 
 ## 0.16.1 (2026-10-22)
 

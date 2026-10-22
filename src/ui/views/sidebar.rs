@@ -6,7 +6,7 @@ use crate::ui::state::{Coll, Source, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
-use eframe::egui::{self, Align2, CornerRadius, Rect, Sense, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, Align2, CornerRadius, Key, KeyboardShortcut, Modifiers, Rect, Sense, Ui, Vec2, pos2, vec2};
 
 /// Height kept free below the playlist list for the account card.
 const FOOTER: f32 = 56.0;
@@ -16,9 +16,17 @@ const FADE: f32 = 28.0;
 
 impl App {
     pub(in crate::ui) fn sidebar(&mut self, ui: &mut Ui) {
-        ui.add_space(metrics::TOP_INSET);
-        wordmark(ui);
-        ui.add_space(18.0);
+        if cfg!(target_os = "macos") {
+            // In the title bar, right of the window buttons.
+            let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::TOP_INSET), Sense::hover());
+            wordmark(ui, pos2(bar.right() - 6.0, bar.top() + 16.0), Align2::RIGHT_CENTER);
+            ui.add_space(6.0);
+        } else {
+            ui.add_space(metrics::TOP_INSET);
+            let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
+            wordmark(ui, pos2(row.left() + 10.0, row.center().y), Align2::LEFT_CENTER);
+            ui.add_space(18.0);
+        }
         self.navigation(ui);
         self.playlist_list(ui);
         self.update_button(ui);
@@ -29,7 +37,8 @@ impl App {
         let ctx = ui.ctx().clone();
         let mut go = None;
         ui.spacing_mut().item_spacing.y = 1.0;
-        if widgets::sidebar_item(ui, "Home", None, self.view == View::Home).clicked() {
+        let home = &NAV_SHORTCUTS[0];
+        if widgets::sidebar_item(ui, home.1, Some(&shortcut(home.0)), self.view == home.2).clicked() {
             go = Some(View::Home);
         }
         if widgets::sidebar_item(ui, "Search", Some(SEARCH_KEYS), self.view == View::Search).clicked() {
@@ -40,16 +49,9 @@ impl App {
             self.tracks.clear();
             self.searched.clear();
         }
-        for (label, view) in [
-            ("Loved tracks", View::Loved),
-            ("Playlists", View::Playlists),
-            ("Albums", View::Albums),
-            ("Artists", View::Artists),
-            ("Podcasts", View::Podcasts),
-        ] {
-            let selected = self.view == view;
-            if widgets::sidebar_item(ui, label, None, selected).clicked() {
-                go = Some(view);
+        for (key, label, view) in &NAV_SHORTCUTS[1..] {
+            if widgets::sidebar_item(ui, label, Some(&shortcut(*key)), self.view == *view).clicked() {
+                go = Some(view.clone());
             }
         }
         ui.spacing_mut().item_spacing.y = 6.0;
@@ -142,13 +144,43 @@ impl App {
     pub(in crate::ui) fn account_name(&self) -> String {
         self.client.as_ref().map(|c| c.name().to_string()).unwrap_or_default()
     }
+
+    /// ⌘1 … ⌘6 (Ctrl elsewhere) open the pages listed in the sidebar.
+    pub(in crate::ui) fn nav_shortcuts(&mut self, ctx: &egui::Context) {
+        let pressed =
+            NAV_SHORTCUTS.iter().find(|(key, ..)| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, *key))));
+        if let Some((_, _, view)) = pressed {
+            self.open_view(ctx, view.clone());
+        }
+    }
+}
+
+/// Sidebar pages with their number shortcuts.
+const NAV_SHORTCUTS: [(Key, &str, View); 6] = [
+    (Key::Num1, "Home", View::Home),
+    (Key::Num2, "Loved tracks", View::Loved),
+    (Key::Num3, "Playlists", View::Playlists),
+    (Key::Num4, "Albums", View::Albums),
+    (Key::Num5, "Artists", View::Artists),
+    (Key::Num6, "Podcasts", View::Podcasts),
+];
+
+/// "⌘1" on macOS, "Ctrl+1" elsewhere.
+fn shortcut(key: Key) -> String {
+    let digit = key.symbol_or_name();
+    if cfg!(target_os = "macos") { format!("⌘{digit}") } else { format!("Ctrl+{digit}") }
 }
 
 /// `dust_` in mono, the underscore in lime like a cursor.
-fn wordmark(ui: &mut Ui) {
-    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
-    let word = text_left(ui.painter(), pos2(row.left() + 10.0, row.center().y), "dust", ty::WORDMARK, colors().text, 160.0);
-    text_left(ui.painter(), pos2(word.right(), row.center().y), "_", ty::WORDMARK, colors().accent, 20.0);
+fn wordmark(ui: &Ui, at: egui::Pos2, align: Align2) {
+    let p = colors();
+    let word = ui.painter().layout_no_wrap("dust".into(), ty::WORDMARK.font(), p.text);
+    let cursor = ui.painter().layout_no_wrap("_".into(), ty::WORDMARK.font(), p.accent);
+    let size = vec2(word.size().x + cursor.size().x, word.size().y);
+    let rect = align.anchor_size(at, size);
+    let word_width = word.size().x;
+    ui.painter().galley(rect.min, word, p.text);
+    ui.painter().galley(rect.min + vec2(word_width, 0.0), cursor, p.accent);
 }
 
 /// Square lime tile with the name's initials.
@@ -166,7 +198,13 @@ fn initials(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::initials;
+    use super::{Key, initials, shortcut};
+
+    #[test]
+    fn number_shortcuts_read_like_the_platform() {
+        let expected = if cfg!(target_os = "macos") { "⌘3" } else { "Ctrl+3" };
+        assert_eq!(shortcut(Key::Num3), expected);
+    }
 
     #[test]
     fn initials_of_names() {

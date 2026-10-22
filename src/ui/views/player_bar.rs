@@ -1,5 +1,5 @@
-//! Player bar: now playing on the left, transport and progress in the middle,
-//! queue, output and volume on the right.
+//! Player bar, one row: now playing on the left; transport, times and progress in
+//! the middle; lyrics, queue, the ⋯ menu, output and volume on the right.
 
 use crate::deezer::Likeable;
 use crate::player::{Cmd, Repeat, State, Status};
@@ -12,11 +12,16 @@ use crate::ui::widgets::{self, text_left};
 use eframe::egui::{self, Align2, Rect, Ui, UiBuilder, Vec2, pos2, vec2};
 use std::time::Duration;
 
-/// Share of the bar width for each side column (capped).
-const SIDE_SHARE: f32 = 0.3;
-const SIDE_MAX: f32 = 380.0;
-const PROGRESS_MAX_WIDTH: f32 = 560.0;
-const VOLUME_WIDTH: f32 = 104.0;
+/// Share of the bar width for the now-playing and the controls columns (capped).
+const LEFT_SHARE: f32 = 0.24;
+const LEFT_MAX: f32 = 300.0;
+const RIGHT_SHARE: f32 = 0.32;
+const RIGHT_MAX: f32 = 400.0;
+const VOLUME_WIDTH: f32 = 64.0;
+/// Shuffle, previous, play/pause, next and repeat.
+const TRANSPORT_WIDTH: f32 = 204.0;
+/// Room for "12:34" on each side of the progress bar.
+const TIME_WIDTH: f32 = 40.0;
 /// Progress refresh while playing.
 pub(in crate::ui) const TICK: Duration = Duration::from_millis(500);
 
@@ -24,29 +29,24 @@ impl App {
     pub(in crate::ui) fn player_bar(&mut self, ui: &mut Ui, st: &Status) {
         let full = ui.max_rect();
         ui.painter().hline(full.x_range(), full.top(), egui::Stroke::new(1.0, colors().line));
-        let side = (full.width() * SIDE_SHARE).min(SIDE_MAX);
-        let left = Rect::from_min_max(full.min, pos2(full.left() + side, full.bottom()));
-        let right = Rect::from_min_max(pos2(full.right() - side, full.top()), full.max);
-        let center = Rect::from_min_max(pos2(left.right() + 16.0, full.top()), pos2(right.left() - 16.0, full.bottom()));
+        let left = Rect::from_min_max(full.min, pos2(full.left() + (full.width() * LEFT_SHARE).min(LEFT_MAX), full.bottom()));
+        let right = Rect::from_min_max(pos2(full.right() - (full.width() * RIGHT_SHARE).min(RIGHT_MAX), full.top()), full.max);
+        let center = Rect::from_min_max(pos2(left.right() + 20.0, full.top()), pos2(right.left() - 20.0, full.bottom()));
 
         self.now_playing(ui, left, st);
-        ui.scope_builder(UiBuilder::new().max_rect(center), |ui| {
-            self.transport(ui, center, st);
-            self.progress(ui, center, st);
-        });
+        ui.scope_builder(UiBuilder::new().max_rect(center), |ui| self.transport_row(ui, center, st));
         ui.scope_builder(UiBuilder::new().max_rect(right).layout(egui::Layout::right_to_left(egui::Align::Center)), |ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
+            ui.spacing_mut().item_spacing.x = 4.0;
             self.volume(ui, st);
-            ui.add_space(10.0);
+            ui.add_space(6.0);
             self.output_button(ui, &st.output);
-            ui.add_space(4.0);
+            // ⋯ (sleep timer, mini player), with the timer's countdown in front of it.
+            self.more_button(ui, st);
             for (panel, icon, hint) in [(SidePanel::Queue, Icon::Queue, "Queue"), (SidePanel::Lyrics, Icon::Lyrics, "Lyrics")] {
                 if toggle_button(ui, icon, self.side_panel == Some(panel)).on_hover_text(hint).clicked() {
                     self.toggle_side_panel(panel);
                 }
             }
-            // Less frequent things: sleep timer and mini player.
-            self.more_button(ui, st);
         });
         if st.state == State::Playing {
             ui.ctx().request_repaint_after(TICK);
@@ -111,9 +111,23 @@ impl App {
         }
     }
 
-    pub(in crate::ui) fn transport(&mut self, ui: &mut Ui, area: Rect, st: &Status) {
-        let controls = Rect::from_center_size(pos2(area.center().x, area.top() + 30.0), vec2(248.0, 40.0));
+    /// Transport buttons, then elapsed time, the progress bar and the length; the
+    /// bar gives way first when space runs out.
+    fn transport_row(&mut self, ui: &mut Ui, area: Rect, st: &Status) {
+        let cy = area.center().y;
+        let controls = Rect::from_min_size(pos2(area.left(), cy - 20.0), vec2(TRANSPORT_WIDTH.min(area.width()), 40.0));
         self.transport_buttons(ui, controls, st, true);
+        let (start, end) = (controls.right() + 14.0, area.right());
+        if end - start < 2.0 * TIME_WIDTH + 60.0 {
+            return;
+        }
+        let duration = st.track.as_ref().map_or(0.0, |t| t.duration as f64);
+        let position = self.seek_drag.map(|f| f as f64 * duration).unwrap_or(st.position).min(duration);
+        let (font, color) = (ty::META.font(), colors().dim);
+        ui.painter().text(pos2(start + TIME_WIDTH, cy), Align2::RIGHT_CENTER, mmss(position), font.clone(), color);
+        ui.painter().text(pos2(end - TIME_WIDTH, cy), Align2::LEFT_CENTER, mmss(duration), font, color);
+        let slider = Rect::from_min_max(pos2(start + TIME_WIDTH + 10.0, cy - 8.0), pos2(end - TIME_WIDTH - 10.0, cy + 8.0));
+        self.seek_slider(ui, slider, st);
     }
 
     /// Previous, play/pause and next, laid out left to right in `controls`; with
@@ -151,17 +165,6 @@ impl App {
         });
     }
 
-    fn progress(&mut self, ui: &mut Ui, area: Rect, st: &Status) {
-        let duration = st.track.as_ref().map_or(0.0, |t| t.duration as f64);
-        let row = Rect::from_center_size(pos2(area.center().x, area.top() + 64.0), vec2(area.width().min(PROGRESS_MAX_WIDTH), 16.0));
-        let position = self.seek_drag.map(|f| f as f64 * duration).unwrap_or(st.position).min(duration);
-        let (font, color) = (ty::META.font(), colors().dim);
-        ui.painter().text(pos2(row.left(), row.center().y), Align2::RIGHT_CENTER, mmss(position), font.clone(), color);
-        ui.painter().text(pos2(row.right(), row.center().y), Align2::LEFT_CENTER, mmss(duration), font, color);
-        let slider = Rect::from_min_max(pos2(row.left() + 10.0, row.top()), pos2(row.right() - 10.0, row.bottom()));
-        self.seek_slider(ui, slider, st);
-    }
-
     /// Click or drag to seek; the position follows the drag until release.
     pub(in crate::ui) fn seek_slider(&mut self, ui: &mut Ui, slider: Rect, st: &Status) {
         let duration = st.track.as_ref().map_or(0.0, |t| t.duration as f64);
@@ -190,7 +193,7 @@ impl App {
             self.volume_drag = None;
         }
         let muted = volume <= 0.001;
-        if widgets::icon_button(ui, if muted { Icon::Mute } else { Icon::Volume }, 18.0, colors().dim).on_hover_text("Mute").clicked() {
+        if widgets::icon_button(ui, if muted { Icon::Mute } else { Icon::Volume }, 16.0, colors().dim).on_hover_text("Mute").clicked() {
             if muted {
                 self.player.send(Cmd::Volume(self.unmuted_volume.max(0.1)));
             } else {

@@ -54,7 +54,9 @@ impl Text {
 /// Login screen wordmark.
 pub const DISPLAY: Text = Text::mono(48.0).strong();
 /// Collection (playlist, album, ...) and artist names in page headers.
-pub const HERO: Text = Text::display(52.0);
+pub const HERO: Text = Text::display(60.0);
+/// Artist names in their page header.
+pub const ARTIST_NAME: Text = Text::display(80.0);
 /// Page titles: Home, Playlists, Search.
 pub const PAGE_TITLE: Text = Text::display(34.0);
 /// Sidebar wordmark.

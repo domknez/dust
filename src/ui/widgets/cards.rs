@@ -53,8 +53,8 @@ pub fn play_knob(ui: &Ui, center: egui::Pos2, half: f32) {
     icons::paint(ui.painter(), Rect::from_center_size(center, Vec2::splat(half * 0.75)), Icon::Play, p.on_accent);
 }
 
-/// Height of [`flow_panel`].
-const FLOW_PANEL: f32 = 176.0;
+/// Height of [`flow_panel`] and [`now_playing_card`].
+pub const FLOW_PANEL: f32 = 176.0;
 
 /// The Flow panel: title, a lime play button for plain Flow and the moods as a
 /// segmented row (`moods` are (id, label); the playing one is lit). Returns plain
@@ -69,7 +69,7 @@ pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>) ->
     painter.rect_stroke(rect, corner, egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
     let left = rect.left() + 20.0;
     text_left(&painter, pos2(left, rect.top() + 26.0), "flow · endless, just for you", ty::META, p.dim, rect.width() - 100.0);
-    text_left(&painter, pos2(left, rect.top() + 66.0), "Flow", ty::HERO, p.text, 200.0);
+    text_left(&painter, pos2(left, rect.top() + 74.0), "Flow", ty::HERO, p.text, 200.0);
     let mut pick = None;
 
     let play = Rect::from_min_size(pos2(rect.right() - 68.0, rect.top() + 20.0), Vec2::splat(48.0));
@@ -132,6 +132,32 @@ fn sound_bars(painter: &egui::Painter, area: Rect) {
         x += 12.0;
         i += 1.0;
     }
+}
+
+/// What's playing (or paused) next to the Flow panel: cover, title, artist, and a
+/// lime progress line with the time left.
+pub fn now_playing_card(ui: &Ui, covers: &mut Covers, rect: Rect, track: &Track, position: f64, playing: bool) {
+    let p = colors();
+    let painter = ui.painter();
+    let corner = CornerRadius::same(radius::PANEL);
+    painter.rect_filled(rect, corner, p.surface);
+    painter.rect_stroke(rect, corner, egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
+    let inner = rect.shrink(16.0);
+    let caption = if playing { "NOW PLAYING" } else { "PAUSED" };
+    text_left(painter, pos2(inner.left(), inner.top() + 8.0), caption, ty::OVERLINE, p.dim, inner.width());
+    let art = Rect::from_min_size(pos2(inner.left(), inner.top() + 26.0), Vec2::splat(60.0));
+    cover(ui, covers, cover_url(track, metrics::NOW_PLAYING_PX).as_deref(), art, radius::ROW);
+    let x = art.right() + 12.0;
+    let width = inner.right() - x;
+    text_left(ui.painter(), pos2(x, art.center().y - 9.0), &track.title, ty::TITLE.strong(), p.text, width);
+    text_left(ui.painter(), pos2(x, art.center().y + 10.0), &track.artist, ty::SECONDARY, p.dim, width);
+    let duration = track.duration as f64;
+    let done = if duration > 0.0 { (position / duration).clamp(0.0, 1.0) as f32 } else { 0.0 };
+    let line = Rect::from_min_size(pos2(inner.left(), inner.bottom() - 22.0), vec2(inner.width(), 3.0));
+    ui.painter().rect_filled(line, CornerRadius::ZERO, p.line);
+    ui.painter().rect_filled(Rect::from_min_size(line.min, vec2(line.width() * done, 3.0)), CornerRadius::ZERO, p.accent);
+    let left = format!("{} left", mmss(duration - position));
+    text_left(ui.painter(), pos2(inner.left(), inner.bottom() - 6.0), &left, ty::META, p.dim, inner.width());
 }
 
 /// One track in the queue panel. Returns the artist whose name was clicked.

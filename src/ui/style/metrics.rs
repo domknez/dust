@@ -23,7 +23,10 @@ pub const CONTENT_MARGIN: i8 = 36;
 pub const SEARCH_FIELD: [f32; 2] = [360.0, 38.0];
 
 // Rows
-pub const TRACK_ROW: f32 = 56.0;
+pub const TRACK_ROW: f32 = 52.0;
+/// Compact rows: an album's tracks, an artist's popular ones.
+pub const ALBUM_ROW: f32 = 40.0;
+pub const POPULAR_ROW: f32 = 46.0;
 pub const QUEUE_ROW: f32 = 52.0;
 pub const SIDEBAR_PLAYLIST_ROW: f32 = 32.0;
 pub const NAV_ROW: f32 = 32.0;

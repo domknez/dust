@@ -15,12 +15,6 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, size: f32, color: Color32) -> Respon
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-/// Heart that likes / unlikes: filled in the accent colour when liked.
-pub fn heart_button(ui: &mut Ui, liked: bool, size: f32) -> Response {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size + 12.0), Sense::click());
-    paint_heart(ui, rect, resp, liked, size)
-}
-
 /// A heart button at a fixed spot that takes no layout space, for rows and bars
 /// drawn at absolute positions (allocating there would grow a scroll area's
 /// content on hover and make the list jump).

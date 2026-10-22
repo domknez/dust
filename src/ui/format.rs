@@ -8,11 +8,13 @@ pub fn mmss(secs: f64) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
-/// Total length of a track list: "2 hr 14 min" / "37 min".
-pub fn total_duration(tracks: &[Track]) -> String {
+/// Total length of a track list as a clock: "51:52", or "1:02:03" past an hour.
+pub fn total_clock(tracks: &[Track]) -> String {
     let secs: u64 = tracks.iter().map(|t| t.duration as u64).sum();
-    let (h, m) = (secs / 3600, (secs % 3600) / 60);
-    if h > 0 { format!("{h} hr {m} min") } else { format!("{m} min") }
+    match secs / 3600 {
+        0 => format!("{}:{:02}", secs / 60, secs % 60),
+        h => format!("{h}:{:02}:{:02}", (secs % 3600) / 60, secs % 60),
+    }
 }
 
 /// "2026-11-20" -> "20 Nov 2026"; None for anything else.
@@ -62,7 +64,8 @@ mod tests {
             available_from: String::new(),
             episode: None,
         };
-        assert_eq!(total_duration(&[t(3600), t(840)]), "1 hr 14 min");
-        assert_eq!(total_duration(&[t(125)]), "2 min");
+        assert_eq!(total_clock(&[t(100), t(3012)]), "51:52");
+        assert_eq!(total_clock(&[t(3600), t(123)]), "1:02:03");
+        assert_eq!(total_clock(&[]), "0:00");
     }
 }

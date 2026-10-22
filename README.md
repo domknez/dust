@@ -229,6 +229,7 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 
 - `Space`: play/pause
 - `⌘F` / `Ctrl+F`: search
+- `⌘1`–`⌘6` / `Ctrl+1`–`Ctrl+6`: Home, Loved tracks, Playlists, Albums, Artists, Podcasts
 - `⌘←` / `⌘→` (`Alt+←` / `Alt+→` on Windows and Linux), or the mouse's side buttons:
   back / forward between pages
 - `⌘⇧M` / `Ctrl+Shift+M`: mini player on/off

@@ -64,7 +64,7 @@ pub struct Playlist {
 }
 
 /// One entry on a Deezer page (home): a playlist, album, artist, mix, flow, ...
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Item {
     pub kind: String,
     pub id: String,
@@ -91,6 +91,17 @@ pub struct ArtistPage {
 pub struct SearchResults {
     pub tracks: Vec<Track>,
     pub sections: Vec<Section>,
+}
+
+/// What an album page shows besides its tracks.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AlbumInfo {
+    /// Release year, empty if unknown.
+    pub year: String,
+    pub label: String,
+    /// The artist's other releases (newest first), as album cards whose subtitle is
+    /// the year.
+    pub more: Vec<Item>,
 }
 
 #[derive(Clone, Debug)]
