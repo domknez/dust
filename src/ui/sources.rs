@@ -277,7 +277,7 @@ impl App {
 
                 let mut changed = false;
                 ui.add_enabled_ui(!busy, |ui| {
-                    field_label(ui, "SERVER ADDRESS");
+                    field_label(ui, "SERVER ADDRESS", None);
                     let (url, _) = widgets::text_field(ui, &mut form.url, "192.168.1.10:4533 or https://music.example.com", false, None);
                     if !form.focused {
                         url.request_focus();
@@ -285,19 +285,17 @@ impl App {
                     }
                     changed |= url.changed();
                     ui.add_space(14.0);
-                    field_label(ui, "USER NAME");
+                    field_label(ui, "USER NAME", None);
                     let (user, _) = widgets::text_field(ui, &mut form.user, "Your Navidrome user", false, None);
                     changed |= user.changed();
                     ui.add_space(14.0);
-                    field_label(ui, "PASSWORD");
+                    field_label(ui, "PASSWORD", Some("kept in your keychain"));
                     let action = if form.show_password { "Hide" } else { "Show" };
                     let (password, toggle) = widgets::text_field(ui, &mut form.password, "Password", !form.show_password, Some(action));
                     changed |= password.changed();
                     if toggle {
                         form.show_password = !form.show_password;
                     }
-                    ui.add_space(6.0);
-                    ui.label(RichText::new("Kept in your system's keychain.").font(ty::CAPTION.font()).color(p.faint));
                 });
                 // Typing again clears the last attempt's error.
                 if changed {
@@ -337,9 +335,15 @@ impl App {
 
 const DIALOG_WIDTH: f32 = 400.0;
 
-/// Small mono label above a form field.
-fn field_label(ui: &mut egui::Ui, text: &str) {
-    ui.label(RichText::new(text).font(ty::OVERLINE.font()).color(colors().faint));
+/// Small mono label above a form field, with an optional note at the right end.
+fn field_label(ui: &mut egui::Ui, text: &str, note: Option<&str>) {
+    let p = colors();
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 16.0), egui::Sense::hover());
+    let painter = ui.painter();
+    painter.text(rect.left_center(), egui::Align2::LEFT_CENTER, text, ty::OVERLINE.font(), p.faint);
+    if let Some(note) = note {
+        painter.text(rect.right_center(), egui::Align2::RIGHT_CENTER, note, ty::OVERLINE.font(), p.faint);
+    }
     ui.add_space(6.0);
 }
 
