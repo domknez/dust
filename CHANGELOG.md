@@ -4,6 +4,8 @@
 
 - README screenshots show the Graphite look; `DUST_DISPLAY_NAME` hides the account name
   for screenshots
+- New app icon, "Grain": a lime block breaking into grains of dust on charcoal, to match
+  the Graphite look
 
 ## 0.17.0 (2026-10-22)
 
