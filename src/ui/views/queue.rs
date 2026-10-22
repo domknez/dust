@@ -26,7 +26,8 @@ impl App {
 
         self.queue_title(ui, upcoming > 0, &queue);
         if st.flow.is_some() {
-            text_left(ui.painter(), ui.cursor().min + vec2(4.0, 8.0), "Flow · keeps going", ty::SMALL, colors().accent, 300.0);
+            let label = if self.features().flow { "Flow · keeps going" } else { "Radio · keeps going" };
+            text_left(ui.painter(), ui.cursor().min + vec2(4.0, 8.0), label, ty::SMALL, colors().accent, 300.0);
             ui.add_space(18.0);
         }
         if !has_current && upcoming == 0 {

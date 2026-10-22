@@ -12,13 +12,16 @@ const SHELF: &str = "20";
 const MIX: &str = "50";
 /// Page size when listing the whole library.
 const PAGE: usize = 500;
-/// Mix ids on the home page: random songs, or songs like an artist's.
-const RANDOM_MIX: &str = "random";
+/// Mix ids on the home page: songs like an artist's (anything else: random songs).
 const ARTIST_MIX: &str = "artist:";
+/// Genres offered on the Radio panel, the ones with the most songs first.
+const RADIO_GENRES: usize = 12;
+/// A genre needs this many songs to get its own Radio station.
+const RADIO_MIN_SONGS: u64 = 10;
 
 impl Subsonic {
-    /// Home: shelves of albums (recently added, played, most played, favourites,
-    /// random) and mixes.
+    /// Home: the Radio panel with the library's genres, then shelves of albums
+    /// (recently added, played, most played, favourites, random) and mixes.
     pub fn home(&self) -> Result<Vec<Section>> {
         let shelves = [
             ("newest", "Recently added"),
@@ -46,7 +49,12 @@ impl Subsonic {
             .filter(|s| !s.items.is_empty())
             .collect();
         let mixes = Section { title: "Mixes".into(), layout: "row".into(), items: mix_cards(mix_source) };
-        sections.insert(sections.len().min(1), mixes);
+        if !mixes.items.is_empty() {
+            sections.insert(sections.len().min(1), mixes);
+        }
+        // Without genres the panel still plays the whole library.
+        let genres = self.call("getGenres", &[]).unwrap_or_default();
+        sections.insert(0, Section { title: "Radio".into(), layout: "row".into(), items: radio_stations(&genres) });
         Ok(sections)
     }
 
@@ -230,6 +238,17 @@ impl Subsonic {
         Ok(self.tracks(list(&r["randomSongs"], "song")))
     }
 
+    /// Radio: random songs from the whole library, or from one genre. Asked again
+    /// whenever the queue runs low, so it keeps going like Deezer's Flow.
+    pub fn radio(&self, genre: Option<&str>) -> Result<Vec<Track>> {
+        let mut params = vec![("size", MIX)];
+        if let Some(genre) = genre {
+            params.push(("genre", genre));
+        }
+        let r = self.call("getRandomSongs", &params)?;
+        Ok(self.tracks(list(&r["randomSongs"], "song")))
+    }
+
     /// A song's lyrics: OpenSubsonic's (synced when available), else the classic
     /// plain text found by artist and title.
     pub fn lyrics(&self, song: u64) -> Result<Option<Lyrics>> {
@@ -314,13 +333,7 @@ impl Subsonic {
 
 /// A random mix, then one per artist (up to four) of `albums`.
 fn mix_cards(albums: Option<&Value>) -> Vec<Item> {
-    let mut cards = vec![Item {
-        kind: "smarttracklist".into(),
-        id: RANDOM_MIX.into(),
-        title: "Random mix".into(),
-        subtitle: "Songs from all over your library".into(),
-        picture: None,
-    }];
+    let mut cards = Vec::new();
     let mut seen = Vec::new();
     for album in albums.map(|a| list(a, "album")).unwrap_or_default() {
         let id = text(&album["artistId"]);
@@ -342,9 +355,38 @@ fn mix_cards(albums: Option<&Value>) -> Vec<Item> {
     cards
 }
 
+/// The Radio panel: the whole library ("default"), then the biggest genres.
+fn radio_stations(genres: &Value) -> Vec<Item> {
+    let mut genres: Vec<(&str, u64)> = list(&genres["genres"], "genre")
+        .into_iter()
+        .filter_map(|g| Some((g["value"].as_str()?.trim(), g["songCount"].as_u64().unwrap_or(0))))
+        .filter(|(name, songs)| !name.is_empty() && *songs >= RADIO_MIN_SONGS)
+        .collect();
+    genres.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    let station =
+        |id: &str, title: &str| Item { kind: "radio".into(), id: id.into(), title: title.into(), subtitle: String::new(), picture: None };
+    std::iter::once(station("default", "Everything"))
+        .chain(genres.into_iter().take(RADIO_GENRES).map(|(name, _)| station(name, name)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn radio_offers_the_biggest_genres() {
+        let genres = serde_json::json!({"genres": {"genre": [
+            {"value": "Jazz", "songCount": 12},
+            {"value": "Rock", "songCount": 340},
+            {"value": "Polka", "songCount": 2},
+            {"value": "", "songCount": 99},
+            {"value": "Metal", "songCount": 120},
+        ]}});
+        let ids: Vec<String> = radio_stations(&genres).into_iter().map(|s| s.id).collect();
+        assert_eq!(ids, ["default", "Rock", "Metal", "Jazz"]);
+        assert_eq!(radio_stations(&Value::Null).len(), 1);
+    }
 
     #[test]
     fn mixes_one_per_artist() {
@@ -352,9 +394,9 @@ mod tests {
         let albums = super::parse::response(r).unwrap()["albumList2"].take();
         let cards = mix_cards(Some(&albums));
         let titles: Vec<&str> = cards.iter().map(|c| c.title.as_str()).collect();
-        assert_eq!(titles, ["Random mix", "Sine Collective mix", "Square Wave Trio mix"]);
-        assert_eq!(cards[1].id, "artist:7AQnKMQc2yBxYD3IZDjJi6");
+        assert_eq!(titles, ["Sine Collective mix", "Square Wave Trio mix"]);
+        assert_eq!(cards[0].id, "artist:7AQnKMQc2yBxYD3IZDjJi6");
         assert!(cards.iter().all(|c| c.kind == "smarttracklist"));
-        assert_eq!(mix_cards(None).len(), 1);
+        assert!(mix_cards(None).is_empty());
     }
 }

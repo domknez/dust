@@ -58,8 +58,10 @@ pub const FLOW_PANEL: f32 = 176.0;
 
 /// The Flow panel: title, a lime play button for plain Flow and the moods as a
 /// segmented row (`moods` are (id, label); the playing one is lit). Returns plain
-/// Flow (None) or a mood's id when one was picked.
-pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>) -> Option<Option<String>> {
+/// Flow (None) or a mood's id when one was picked. With `radio`, it's a music
+/// server's Radio and the moods are genres.
+pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, radio: bool) -> Option<Option<String>> {
+    let (line, name) = if radio { ("radio · endless, from your library", "Radio") } else { ("flow · endless, just for you", "Flow") };
     let p = colors();
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), FLOW_PANEL), Sense::hover());
     let painter = ui.painter_at(rect);
@@ -68,12 +70,12 @@ pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>) ->
     sound_bars(&painter, Rect::from_min_max(pos2(rect.center().x, rect.top()), rect.max));
     painter.rect_stroke(rect, corner, egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
     let left = rect.left() + 20.0;
-    text_left(&painter, pos2(left, rect.top() + 26.0), "flow · endless, just for you", ty::META, p.dim, rect.width() - 100.0);
-    text_left(&painter, pos2(left, rect.top() + 74.0), "Flow", ty::HERO, p.text, 200.0);
+    text_left(&painter, pos2(left, rect.top() + 26.0), line, ty::META, p.dim, rect.width() - 100.0);
+    text_left(&painter, pos2(left, rect.top() + 74.0), name, ty::HERO, p.text, 200.0);
     let mut pick = None;
 
     let play = Rect::from_min_size(pos2(rect.right() - 68.0, rect.top() + 20.0), Vec2::splat(48.0));
-    let resp = ui.interact(play, ui.id().with("flow-play"), Sense::click()).on_hover_text("Play Flow");
+    let resp = ui.interact(play, ui.id().with("flow-play"), Sense::click()).on_hover_text(format!("Play {name}"));
     let fill = if resp.hovered() { p.accent_fill.lerp_to_gamma(egui::Color32::WHITE, 0.3) } else { p.accent_fill };
     painter.rect_filled(play, CornerRadius::same(radius::CONTROL), fill);
     icons::paint(&painter, Rect::from_center_size(play.center(), Vec2::splat(20.0)), Icon::Play, p.on_accent);

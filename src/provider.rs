@@ -273,7 +273,7 @@ impl Library for Provider {
     fn flow(&self, mood: Option<&str>) -> std::result::Result<Vec<Track>, String> {
         match self {
             Provider::Deezer(d) => Library::flow(d, mood),
-            Provider::Subsonic(_) => Err(unsupported("Flow").to_string()),
+            Provider::Subsonic(s) => s.radio(mood).map_err(|e| e.to_string()),
         }
     }
 

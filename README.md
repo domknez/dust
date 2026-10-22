@@ -101,9 +101,11 @@ account: *Connect a Navidrome server* on the login screen.
   your user name and password; dust checks them before saving. The password is kept in
   the OS keychain and sent to the server only as a salted token (Subsonic token
   authentication), never in plain text.
-- **What works:** Home shelves (recently added, recently played, most played, favourite
-  albums, random) and mixes (a random mix, and one per artist you play most — songs like
-  theirs if the server knows them, otherwise their own); album pages with the artist's
+- **What works:** Home opens with *Radio* in place of Flow: endless random songs from the
+  whole library, or from one of its biggest genres (the genre chips), fetching more as
+  you listen. Then shelves (recently added, recently played, most played, favourite
+  albums, random) and mixes (one per artist you play most — songs like theirs if the
+  server knows them, otherwise their own); album pages with the artist's
   other releases; artist pages with popular songs and the discography; the whole
   library under *Albums* and *Artists*; your playlists (create, add, remove, rename,
   delete); search; stars as likes (*Loved tracks* are your starred songs); synced or plain

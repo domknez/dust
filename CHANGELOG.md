@@ -8,6 +8,8 @@
   queue. Home shelves and mixes, albums, artists, playlists (with editing), search, stars
   as likes, synced lyrics and play reports; MP3, FLAC, AAC/ALAC, Ogg Vorbis and WAV play
   as they are at any sample rate, other formats are converted by the server
+- Navidrome Home opens with Radio, in place of Deezer's Flow: endless random songs from
+  your library, or from one of its genres
 - Cover art in PNG and WebP shows too (music servers send those)
 
 ## 0.17.1 (2026-10-22)
