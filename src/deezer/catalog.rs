@@ -12,11 +12,16 @@ impl Deezer {
             "deezer.pageSearch",
             json!({"query": query, "start": 0, "nb": 100, "suggest": false, "artist_suggest": false, "top_tracks": false}),
         )?;
-        let sections = [("Artists", "artist", "ARTIST"), ("Albums", "album", "ALBUM"), ("Playlists", "playlist", "PLAYLIST")]
-            .into_iter()
-            .map(|(title, kind, key)| parse::search_section(title, kind, &r[key]["data"]))
-            .filter(|s| !s.items.is_empty())
-            .collect();
+        let sections = [
+            ("Artists", "artist", "ARTIST"),
+            ("Albums", "album", "ALBUM"),
+            ("Playlists", "playlist", "PLAYLIST"),
+            ("Podcasts", "show", "SHOW"),
+        ]
+        .into_iter()
+        .map(|(title, kind, key)| parse::search_section(title, kind, &r[key]["data"]))
+        .filter(|s| !s.items.is_empty())
+        .collect();
         Ok(SearchResults { tracks: parse::tracks(&r["TRACK"]["data"]), sections })
     }
 
@@ -78,6 +83,18 @@ impl Deezer {
             .as_array()
             .map(|a| a.iter().filter_map(|v| parse::card_item("artist", v)).collect())
             .unwrap_or_default())
+    }
+
+    /// A podcast's latest episodes, newest first.
+    pub fn show_episodes(&self, id: &str) -> Result<Vec<Track>> {
+        let r = self.call("deezer.pageShow", json!({"show_id": id, "start": 0, "nb": 100, "user_id": 0, "lang": "en"}))?;
+        Ok(parse::show_episodes(&r))
+    }
+
+    /// The podcasts the account follows, as cards.
+    pub fn favorite_shows(&self) -> Result<Vec<Item>> {
+        let r = self.call("deezer.pageProfile", json!({"user_id": self.0.user_id, "tab": "podcasts", "nb": 200}))?;
+        Ok(r["TAB"]["shows"]["data"].as_array().map(|a| a.iter().filter_map(|v| parse::card_item("show", v)).collect()).unwrap_or_default())
     }
 
     /// A track's mix: similar songs, starting with that track ("Mixes inspired by…").

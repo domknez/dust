@@ -40,6 +40,10 @@ impl App {
             hint(ui, "Play something to see its lyrics");
             return;
         };
+        if track.is_episode() {
+            hint(ui, "Podcasts don't have lyrics");
+            return;
+        }
         self.load_lyrics(ui.ctx(), track.id);
         match &self.lyrics.loaded {
             None => hint(ui, "Loading lyrics…"),

@@ -24,7 +24,7 @@ pub fn release_date(iso: &str) -> Option<String> {
 }
 
 pub fn cover_url(t: &Track, size: u32) -> Option<String> {
-    (!t.cover.is_empty()).then(|| image_url("cover", &t.cover, size))
+    (!t.cover.is_empty()).then(|| image_url(if t.is_episode() { "talk" } else { "cover" }, &t.cover, size))
 }
 
 pub fn playlist_url(p: &Playlist, size: u32) -> Option<String> {
@@ -60,6 +60,7 @@ mod tests {
             fallback: None,
             available: true,
             available_from: String::new(),
+            episode: None,
         };
         assert_eq!(total_duration(&[t(3600), t(840)]), "1 hr 14 min");
         assert_eq!(total_duration(&[t(125)]), "2 min");

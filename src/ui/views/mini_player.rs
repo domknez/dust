@@ -74,8 +74,8 @@ impl App {
                 let x = art.right() + 12.0;
                 let width = controls.left() - 8.0 - x;
                 let title_pos = pos2(x, art.center().y - 10.0);
-                match Coll::album_of(track) {
-                    // The title opens the album in the full window.
+                match Coll::origin_of(track) {
+                    // The title opens the album (or podcast) in the full window.
                     Some(album) => {
                         if widgets::text_link(ui, "mini-title", title_pos, &track.title, ty::TITLE.strong(), p.text, p.text, width).0 {
                             self.pending_album = Some(album);

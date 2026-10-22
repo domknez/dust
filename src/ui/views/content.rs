@@ -33,6 +33,7 @@ impl App {
             View::Search | View::Loved | View::Collection(_) => self.collection_page(ui, st),
             View::Artists => self.artists_page(ui),
             View::Albums => self.albums_page(ui),
+            View::Podcasts => self.podcasts_page(ui),
             View::Artist(artist) => {
                 let artist = artist.as_ref().clone();
                 self.artist_view(ui, st, &artist);

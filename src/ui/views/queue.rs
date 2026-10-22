@@ -73,7 +73,7 @@ impl App {
                 }
                 let save = ui.link(RichText::new("Save").font(ty::BODY.font())).on_hover_text("Save the queue as a new playlist");
                 if !queue.is_empty() && save.clicked() {
-                    self.new_playlist(queue.iter().filter(|t| t.available).cloned().collect());
+                    self.new_playlist(queue.iter().filter(|t| t.available && !t.is_episode()).cloned().collect());
                 }
             });
         });

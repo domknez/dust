@@ -51,6 +51,9 @@ impl App {
         if widgets::nav_item(ui, Icon::Person, "Artists", self.view == View::Artists).clicked() {
             go = Some(View::Artists);
         }
+        if widgets::nav_item(ui, Icon::Podcast, "Podcasts", self.view == View::Podcasts).clicked() {
+            go = Some(View::Podcasts);
+        }
         // "PLAYLISTS" with a + for a new, empty playlist.
         ui.add_space(18.0);
         let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());

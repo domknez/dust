@@ -1,6 +1,8 @@
-//! One playing Deezer track: its decrypted byte stream, container reader and decoder.
+//! One playing track: its byte stream (a decrypted Deezer song, or a podcast's own
+//! file), container reader and decoder.
 
 use super::library::{Decoded, Playback};
+use super::resample::Resampler;
 use crate::deezer::{Deezer, Format, StreamSource};
 use crate::output::RATE;
 use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
@@ -29,21 +31,32 @@ pub struct Stream {
     written: f64,
     /// Decoded interleaved samples, reused across packets.
     samples: Vec<i16>,
+    /// For files at another sample rate than the output's (podcasts).
+    resampler: Option<Resampler>,
+    /// Stereo samples waiting to be resampled, reused across packets.
+    stereo: Vec<i16>,
     eof: bool,
 }
 
 impl Stream {
     /// Open `source` at track time `at` (seconds).
     pub fn open(client: &Deezer, source: StreamSource, at: f64) -> Result<Stream, String> {
-        // CBR MP3 maps time to bytes, so jump with an HTTP range; FLAC must start at 0.
-        let (offset, skip_until) = match source.format {
-            Format::Mp3(kbps) if at > 0.0 => ((at * kbps as f64 * BYTES_PER_KBPS) as u64, 0.0),
-            _ => (0, at),
-        };
-        let (bytes, offset) = client.open_stream(&source, offset).map_err(|e| e.to_string())?;
-        let base = match source.format {
-            Format::Mp3(kbps) => offset as f64 / (kbps as f64 * BYTES_PER_KBPS),
-            Format::Flac => 0.0,
+        let (bytes, base, skip_until) = if source.format == Format::Podcast {
+            // Jumps by an estimated byte offset; skips from the start if it can't.
+            let (bytes, start) = client.open_direct(&source.url, at, source.duration).map_err(|e| e.to_string())?;
+            (bytes, start, if start > 0.0 { 0.0 } else { at })
+        } else {
+            // CBR MP3 maps time to bytes, so jump with an HTTP range; FLAC must start at 0.
+            let (offset, skip_until) = match source.format {
+                Format::Mp3(kbps) if at > 0.0 => ((at * kbps as f64 * BYTES_PER_KBPS) as u64, 0.0),
+                _ => (0, at),
+            };
+            let (bytes, offset) = client.open_stream(&source, offset).map_err(|e| e.to_string())?;
+            let base = match source.format {
+                Format::Mp3(kbps) => offset as f64 / (kbps as f64 * BYTES_PER_KBPS),
+                Format::Flac | Format::Podcast => 0.0,
+            };
+            (bytes, base, skip_until)
         };
         let mss = MediaSourceStream::new(Box::new(ReadOnlySource::new(bytes)), Default::default());
         let mut hint = Hint::new();
@@ -53,9 +66,11 @@ impl Stream {
             .map_err(|e| format!("probe: {e}"))?;
         let track = reader.default_track(TrackType::Audio).ok_or("No audio track")?;
         let params = track.codec_params.as_ref().and_then(|p| p.audio()).ok_or("No audio codec")?;
-        if params.sample_rate.is_some_and(|r| r != RATE) {
-            return Err(format!("Unsupported sample rate {:?}", params.sample_rate));
-        }
+        let resampler = match params.sample_rate {
+            Some(rate) if rate != RATE && source.format == Format::Podcast => Some(Resampler::new(rate, RATE)),
+            Some(rate) if rate != RATE => return Err(format!("Unsupported sample rate {rate}")),
+            _ => None,
+        };
         let decoder = symphonia::default::get_codecs()
             .make_audio_decoder(params, &AudioDecoderOptions::default())
             .map_err(|e| format!("decoder: {e}"))?;
@@ -71,6 +86,8 @@ impl Stream {
             skip_until,
             written: base.max(skip_until),
             samples: Vec::new(),
+            resampler,
+            stereo: Vec::new(),
             eof: false,
         })
     }
@@ -111,10 +128,19 @@ impl Stream {
         let (channels, rate) = (decoded.spec().channels().count(), decoded.spec().rate());
         decoded.copy_to_vec_interleaved(&mut self.samples);
         let samples = &self.samples[..];
+        let stereo = if self.resampler.is_some() {
+            self.stereo.clear();
+            &mut self.stereo
+        } else {
+            &mut *out
+        };
         match channels {
-            2 => out.extend_from_slice(samples),
-            1 => out.extend(samples.iter().flat_map(|&x| [x, x])),
-            _ => out.extend(samples.chunks_exact(channels).flat_map(|f| [f[0], f[1]])),
+            2 => stereo.extend_from_slice(samples),
+            1 => stereo.extend(samples.iter().flat_map(|&x| [x, x])),
+            _ => stereo.extend(samples.chunks_exact(channels).flat_map(|f| [f[0], f[1]])),
+        }
+        if let Some(r) = self.resampler.as_mut() {
+            r.process(&self.stereo, out);
         }
         Decoded::Audio { ends_at: start + frames as f64 / rate as f64 }
     }
@@ -151,7 +177,7 @@ impl Playback for Stream {
 
     fn needs_reopen_for(&self, t: f64) -> bool {
         match self.source.format {
-            Format::Mp3(_) => true,
+            Format::Mp3(_) | Format::Podcast => true,
             // FLAC over a non-seekable HTTP stream: skip forward, or restart and skip.
             Format::Flac => t < self.written,
         }

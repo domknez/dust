@@ -99,7 +99,7 @@ impl App {
                     self.collection_header(ui, head, &mut picked);
                 }
                 if count > 0 {
-                    column_captions(ui, head);
+                    column_captions(ui, head, if self.showing_podcast() { "PUBLISHED" } else { "ALBUM" });
                 }
             });
 
@@ -192,7 +192,9 @@ impl App {
                 tile: None,
                 round: coll.round(),
             },
-            View::Home | View::Search | View::Playlists | View::Artists | View::Albums | View::Artist(_) => Header::default(),
+            View::Home | View::Search | View::Playlists | View::Artists | View::Albums | View::Podcasts | View::Artist(_) => {
+                Header::default()
+            }
         }
     }
 
@@ -251,7 +253,9 @@ impl App {
         text_left(ui.painter(), pos2(x, head.top() + 40.0), kind, ty::CAPTION.strong(), p.dim, width);
         text_left(ui.painter(), pos2(x, head.top() + 82.0), &title, ty::HERO, p.text, width);
         let count = self.tracks.len();
-        let stats = (count > 0).then(|| format!("{count} tracks · {}", total_duration(&self.tracks)));
+        let podcast = self.showing_podcast();
+        let unit = if podcast { "episodes" } else { "tracks" };
+        let stats = (count > 0).then(|| format!("{count} {unit} · {}", total_duration(&self.tracks)));
         let meta_pos = pos2(x, head.top() + 124.0);
         match self.album_artist() {
             // Album by one artist: their name links to the artist page.
@@ -276,21 +280,23 @@ impl App {
             if count > 0 && widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {
                 picked.play = Some((0, false));
             }
-            if count > 1 && widgets::pill(ui, "Shuffle", Some(Icon::Shuffle), false).clicked() {
+            if count > 1 && !podcast && widgets::pill(ui, "Shuffle", Some(Icon::Shuffle), false).clicked() {
                 picked.play = Some((0, true));
             }
             if count > 0 {
                 // Briefly confirms, since the queue panel may be closed.
                 let just_added = self.queued_flash.is_some_and(|t| t.elapsed() < QUEUED_FLASH);
                 let (label, icon) = if just_added { ("Added ✓", Icon::Check) } else { ("Add to queue", Icon::Queue) };
-                if widgets::pill(ui, label, Some(icon), false).on_hover_text("Add every track to the end of the queue").clicked() {
+                let hint = format!("Add every {} to the end of the queue", if podcast { "episode" } else { "track" });
+                if widgets::pill(ui, label, Some(icon), false).on_hover_text(hint).clicked() {
                     picked.queue_all = true;
                 }
                 if just_added {
                     ui.ctx().request_repaint_after(QUEUED_FLASH);
                 }
             }
-            if count > 0 {
+            // Episodes can't go into playlists.
+            if count > 0 && !podcast {
                 let own = self.own_playlists();
                 let editable = self.showing_own_playlist().is_some();
                 let more = widgets::icon_button(ui, Icon::More, 18.0, colors().dim).on_hover_text("More");
@@ -406,6 +412,11 @@ pub(super) fn track_row(
     if let Some(album) = columns.album {
         let width = columns.time - album - 70.0;
         match Coll::album_of(track) {
+            // Episodes show when they came out instead.
+            None if let Some(episode) = &track.episode => {
+                let date = release_date(&episode.published).unwrap_or_default();
+                text_left(painter, pos2(album, cy), &date, ty::BODY, p.dim, width);
+            }
             Some(coll) => {
                 if widgets::text_link(ui, ("album-link", i), pos2(album, cy), &track.album, ty::BODY, p.dim, p.text, width).0 {
                     picked.album = Some(coll);
@@ -417,8 +428,8 @@ pub(super) fn track_row(
         }
     }
     painter.text(pos2(columns.time, cy), Align2::RIGHT_CENTER, mmss(track.duration as f64), ty::BODY.font(), sub_color);
-    // Heart: always shown when liked, on hover otherwise.
-    if (liked || hovered) && widgets::heart_at(ui, pos2(columns.heart, cy), ("row", i), liked, 15.0).clicked() {
+    // Heart: always shown when liked, on hover otherwise (songs only).
+    if !track.is_episode() && (liked || hovered) && widgets::heart_at(ui, pos2(columns.heart, cy), ("row", i), liked, 15.0).clicked() {
         picked.like = Some(Likeable::Track(track.id));
     }
 
@@ -434,7 +445,12 @@ pub(super) fn track_row(
             picked.play = Some((i, false));
         }
     }
-    if let Some(choice) = widgets::track_menu(&resp, menu.playlists, menu.removable) {
+    let choice = if track.is_episode() {
+        widgets::queue_menu(&resp).map(TrackMenu::Play)
+    } else {
+        widgets::track_menu(&resp, menu.playlists, menu.removable)
+    };
+    if let Some(choice) = choice {
         picked.menu = Some((i, choice));
     }
 }
@@ -455,6 +471,11 @@ impl App {
         self.playlists.iter().find(|p| p.id == id && p.owned).cloned()
     }
 
+    /// Whether a podcast's episodes are on screen.
+    fn showing_podcast(&self) -> bool {
+        matches!(&self.view, View::Collection(coll) if matches!(coll.source, Source::Show(_)))
+    }
+
     /// Act on a track's right-click menu.
     pub(in crate::ui) fn track_menu_choice(&mut self, ctx: &egui::Context, track: Track, choice: TrackMenu) {
         match choice {
@@ -470,7 +491,7 @@ impl App {
     }
 }
 
-fn column_captions(ui: &Ui, head: Rect) {
+fn column_captions(ui: &Ui, head: Rect, album_caption: &str) {
     let y = head.bottom() - 22.0;
     let columns = Columns::new(head.left(), head.width());
     let (font, color) = (ty::OVERLINE.font(), colors().faint);
@@ -478,7 +499,7 @@ fn column_captions(ui: &Ui, head: Rect) {
     painter.text(pos2(columns.index + 14.0, y), Align2::CENTER_CENTER, "#", font.clone(), color);
     painter.text(pos2(columns.title, y), Align2::LEFT_CENTER, "TITLE", font.clone(), color);
     if let Some(album) = columns.album {
-        painter.text(pos2(album, y), Align2::LEFT_CENTER, "ALBUM", font.clone(), color);
+        painter.text(pos2(album, y), Align2::LEFT_CENTER, album_caption, font.clone(), color);
     }
     painter.text(pos2(columns.time, y), Align2::RIGHT_CENTER, "TIME", font, color);
     painter.hline(head.x_range(), head.bottom() - 4.0, egui::Stroke::new(1.0, colors().line));

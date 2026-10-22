@@ -253,6 +253,7 @@ mod tests {
             fallback: None,
             available: true,
             available_from: String::new(),
+            episode: None,
         }
     }
 

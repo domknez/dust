@@ -45,7 +45,7 @@ including cover art.
 - **Artist pages:** popular tracks and the full discography (albums, singles & EPs,
   live & compilations), playlists featuring them and related artists; click any
   artist name to get there
-- **Search:** tracks, artists, albums and playlists, with your own playlists first; or
+- **Search:** tracks, artists, albums, playlists and podcasts, with your own playlists first; or
   paste a Deezer link (album, artist, playlist, track, or a share link) to open it
 - **Plays more of the catalogue:** when a track isn't licensed in your region, dust uses
   the alternative version Deezer offers, like the web app does
@@ -55,6 +55,9 @@ including cover art.
   it survives a restart (paused where you left off);
   right-click any track or card → *Play next* / *Add to queue*
 - **Seeking** (HTTP range jumps for MP3)
+- **Podcasts:** find shows in Search and play their episodes (newest first, with dates);
+  the podcasts you follow on Deezer are under *Podcasts* in the sidebar. Episodes play
+  from the show's own audio file, at any sample rate
 - **Lyrics:** the lyrics button in the player bar opens the playing track's lyrics; synced
   ones follow the song with the sung line highlighted, and clicking a line jumps there
 - **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs

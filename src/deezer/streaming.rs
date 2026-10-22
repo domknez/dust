@@ -18,13 +18,18 @@ pub struct StreamSource {
     pub url: String,
     pub format: Format,
     pub song_id: u64,
+    /// The track's length (s), to find positions in podcast files.
+    pub duration: u32,
 }
 
 impl Deezer {
     /// Best available stream for `track`: its own token, a refreshed token, then
     /// Deezer's regional fallback version.
     pub fn stream_source(&self, track: &Track, quality: Quality) -> Result<StreamSource> {
-        let with_id = |(url, format): (String, Format), song_id| StreamSource { url, format, song_id };
+        if let Some(episode) = &track.episode {
+            return Ok(StreamSource { url: episode.url.clone(), format: Format::Podcast, song_id: track.id, duration: track.duration });
+        }
+        let with_id = |(url, format): (String, Format), song_id| StreamSource { url, format, song_id, duration: track.duration };
         let first_error = match self.media_url(&track.token, quality) {
             Ok(found) => return Ok(with_id(found, track.id)),
             Err(e) => e,
@@ -36,6 +41,32 @@ impl Deezer {
             Some((id, token)) => self.media_url(token, quality).map(|found| with_id(found, *id)).map_err(|_| first_error),
             None => Err(first_error),
         }
+    }
+
+    /// Open a podcast episode's own audio file at about `at` seconds into its
+    /// `duration`. The byte offset is estimated from the file size (exact for
+    /// constant bitrates, close enough for speech otherwise). Returns the reader and
+    /// the time (s) it starts at; 0 when the host can't jump, so the caller skips.
+    pub fn open_direct(&self, url: &str, at: f64, duration: u32) -> Result<(Box<dyn Read + Send + Sync>, f64)> {
+        let get = || self.0.agent.get(url).config().timeout_global(None).timeout_recv_response(Some(CALL_TIMEOUT)).build();
+        let size = if at > 0.0 && duration > 0 { self.file_size(url) } else { None };
+        let (req, start) = match size {
+            Some(size) => {
+                let offset = (size as f64 * (at / duration as f64).min(1.0)) as u64;
+                (get().header("Range", &format!("bytes={offset}-")), offset as f64 / size as f64 * duration as f64)
+            }
+            None => (get(), 0.0),
+        };
+        let resp = req.call()?;
+        // A host that ignores the range sends the whole file from the start.
+        let start = if resp.status() == 206 { start } else { 0.0 };
+        Ok((Box::new(Prefetch::new(resp.into_body().into_reader(), CALL_TIMEOUT)), start))
+    }
+
+    /// Size of a file on the web, if the host says.
+    fn file_size(&self, url: &str) -> Option<u64> {
+        let resp = self.0.agent.head(url).config().timeout_global(Some(CALL_TIMEOUT)).build().call().ok()?;
+        resp.headers().get("content-length")?.to_str().ok()?.parse().ok().filter(|&n| n > 0)
     }
 
     /// Open a decrypted byte stream, starting at `offset` rounded down to a stripe

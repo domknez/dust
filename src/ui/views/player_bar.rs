@@ -64,14 +64,15 @@ impl App {
             let x = art.right() + 14.0;
             // Heart for the playing track at the end of the column.
             let heart = pos2(area.right() - 16.0, area.center().y);
+            // Episodes can't be liked.
             let what = Likeable::Track(track.id);
             let liked = self.likes.likes.contains(&what);
-            if widgets::heart_at(ui, heart, "now-playing", liked, 16.0).clicked() {
+            if !track.is_episode() && widgets::heart_at(ui, heart, "now-playing", liked, 16.0).clicked() {
                 self.pending_like = Some(what);
             }
             let width = heart.x - 22.0 - x;
-            // Cover and title open the album.
-            let album = Coll::album_of(track);
+            // Cover and title open the album (an episode's podcast).
+            let album = Coll::origin_of(track);
             let cover = ui.interact(art, ui.id().with("now-playing-cover"), egui::Sense::click());
             let title_pos = pos2(x, area.center().y - 9.0);
             let title_clicked = match &album {

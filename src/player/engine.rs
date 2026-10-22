@@ -371,7 +371,11 @@ impl Engine {
     }
 
     fn begin(&mut self, stream: Box<dyn Playback>, track: &Track) {
-        self.listens.start(self.library.as_deref(), stream.song_id(), stream.format(), track.duration);
+        // Podcast episodes aren't songs: Deezer's listen reports (history, Flow,
+        // Last.fm) are for its catalogue only.
+        if !track.is_episode() {
+            self.listens.start(self.library.as_deref(), stream.song_id(), stream.format(), track.duration);
+        }
         self.stream = Some(stream);
     }
 
@@ -577,6 +581,7 @@ mod tests {
             fallback: None,
             available: true,
             available_from: String::new(),
+            episode: None,
         }
     }
 
@@ -801,6 +806,19 @@ mod tests {
         assert!(e.sleep_due());
         assert!(!e.playing && e.stream.is_some(), "paused, not stopped");
         assert_eq!(e.sleep, None);
+    }
+
+    #[test]
+    fn episodes_are_not_reported_as_listens() {
+        let (mut e, library, _tx) = engine(FakeLibrary::default());
+        let episode = crate::deezer::Episode { url: "https://example.com/ep.mp3".into(), show_id: "1".into(), published: String::new() };
+        e.handle(Cmd::Play(vec![Track { episode: Some(episode), ..track(1, 5) }, track(2, 5)], 0));
+        e.listens.heard(Duration::from_secs(5));
+        e.handle(Cmd::Next);
+        e.listens.heard(Duration::from_secs(5));
+        play_out(&mut e);
+        assert_eq!(*library.started.lock().unwrap(), vec![2]);
+        assert_eq!(library.listens.lock().unwrap().iter().map(|l| l.song_id).collect::<Vec<_>>(), vec![2]);
     }
 
     #[test]

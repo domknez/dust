@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Podcasts: search finds shows; a show's page lists its episodes newest first with their
+  dates, to play or queue like tracks. *Podcasts* in the sidebar shows the ones you
+  follow on Deezer. Episodes aren't reported as listens and can't be liked or added to
+  playlists
+
 ## 0.15.0 (2026-10-22)
 
 - Lyrics: the speech-bubble button in the player bar opens the playing track's lyrics.

@@ -14,6 +14,8 @@ pub enum View {
     Artists,
     /// Albums the account has liked.
     Albums,
+    /// Podcasts the account follows.
+    Podcasts,
     Collection(Box<Coll>),
     Artist(Box<ArtistView>),
 }
@@ -45,6 +47,8 @@ pub enum Source {
     /// Songs like a track, starting with it ("Mixes inspired by…").
     TrackMix(String),
     Mix(String),
+    /// A podcast: its episodes, newest first.
+    Show(String),
 }
 
 impl Source {
@@ -55,6 +59,7 @@ impl Source {
             Source::Artist(id) | Source::TopTracks(id) => client.artist_top(id),
             Source::TrackMix(id) => client.track_mix(id),
             Source::Mix(id) => client.mix(id),
+            Source::Show(id) => client.show_episodes(id),
         }
     }
 }
@@ -82,6 +87,21 @@ impl Coll {
         })
     }
 
+    /// Where the title of a playing track leads: its album, or an episode's podcast.
+    pub fn origin_of(track: &Track) -> Option<Self> {
+        match &track.episode {
+            Some(episode) if !episode.show_id.is_empty() => Some(Coll {
+                source: Source::Show(episode.show_id.clone()),
+                kind: "PODCAST",
+                title: track.artist.clone(),
+                subtitle: String::new(),
+                picture: (!track.cover.is_empty()).then(|| ("talk".to_string(), track.cover.clone())),
+            }),
+            Some(_) => None,
+            None => Self::album_of(track),
+        }
+    }
+
     pub fn from_playlist(p: &Playlist) -> Self {
         Coll {
             source: Source::Playlist(p.id),
@@ -100,6 +120,7 @@ impl Coll {
             "artist" => (Source::Artist(it.id.clone()), "ARTIST · TOP TRACKS"),
             "smarttracklist" => (Source::Mix(it.id.clone()), "MIX"),
             "track" => (Source::TrackMix(it.id.clone()), "TRACK MIX"),
+            "show" => (Source::Show(it.id.clone()), "PODCAST"),
             _ => return None,
         };
         Some(Coll { source, kind, title: it.title.clone(), subtitle: it.subtitle.clone(), picture: it.picture.clone() })
@@ -160,6 +181,7 @@ mod tests {
             fallback: None,
             available: true,
             available_from: String::new(),
+            episode: None,
         };
         let coll = Coll::album_of(&track).unwrap();
         assert_eq!((coll.source, coll.title.as_str(), coll.subtitle.as_str()), (Source::Album("302127".into()), "Discovery", "Daft Punk"));
@@ -182,6 +204,7 @@ mod tests {
             fallback: None,
             available,
             available_from: String::new(),
+            episode: None,
         };
         let tracks = [t(1, true), t(2, false), t(3, false), t(4, true)];
         let ids = |(q, i): (Vec<Track>, usize)| (q.iter().map(|t| t.id).collect::<Vec<_>>(), i);
@@ -198,5 +221,6 @@ mod tests {
         assert!(Coll::from_item(&item("channel", "x")).is_none());
         assert_eq!(Coll::from_item(&item("track", "4229026412")).map(|c| c.source), Some(Source::TrackMix("4229026412".into())));
         assert!(Coll::from_item(&item("playlist", "not-a-number")).is_none());
+        assert_eq!(Coll::from_item(&item("show", "724752")).map(|c| c.source), Some(Source::Show("724752".into())));
     }
 }
