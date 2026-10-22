@@ -55,7 +55,11 @@ including cover art.
   it survives a restart (paused where you left off);
   right-click any track or card → *Play next* / *Add to queue*
 - **Seeking** (HTTP range jumps for MP3)
+- **Lyrics:** the lyrics button in the player bar opens the playing track's lyrics; synced
+  ones follow the song with the sung line highlighted, and clicking a line jumps there
 - **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs
+- **Sleep timer:** the moon in the player bar pauses after 15 minutes to 1½ hours, or stops
+  at the end of the track (the next one waits for play)
 - **AirPlay 2 and AirPlay 1** output with automatic discovery — Sonos (incl. Era 100/300),
   HomePod-class receivers, Apple TV, AirPort Express, shairport-sync and most AirPlay speakers
 - **Last.fm scrobbling, history and Flow learning:** dust reports what you listen to

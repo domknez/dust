@@ -5,6 +5,7 @@
 //! - [`catalog`]: search, playlists, home page, albums, artists, mixes, Flow
 //! - [`streaming`]: stream URL resolution (with regional fallbacks) and decrypted reads
 //! - [`playlists`]: creating and editing the account's own playlists
+//! - [`lyrics`]: synced and plain song lyrics
 //! - [`listens`]: listen reports (history, Flow, Last.fm scrobbling)
 //! - [`models`] / [`parse`]: data types and their construction from API JSON
 //! - [`crypto`]: the `BF_CBC_STRIPE` stream cipher
@@ -18,6 +19,7 @@ mod crypto;
 mod error;
 mod links;
 mod listens;
+mod lyrics;
 mod models;
 mod parse;
 mod playlists;
@@ -28,6 +30,7 @@ mod streaming;
 pub use catalog::{Likeable, Likes};
 pub use client::Deezer;
 pub use links::{Link, is_link};
+pub use lyrics::Lyrics;
 pub use models::{ArtistPage, ArtistRef, Format, Item, Listen, Playlist, Quality, SearchResults, Section, Track, image_url};
 pub use parse::thousands;
 pub use streaming::StreamSource;

@@ -99,6 +99,8 @@ pub enum Cmd {
     /// Shuffle the upcoming tracks, or put the queue back in order.
     Shuffle(bool),
     Repeat(Repeat),
+    /// Set or cancel the sleep timer.
+    Sleep(Option<Sleep>),
 
     /// Append to the end of the queue.
     Enqueue(Vec<Track>),
@@ -122,6 +124,15 @@ pub enum Cmd {
     },
 }
 
+/// When the sleep timer stops the music.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Sleep {
+    /// Pause at this moment.
+    At(std::time::Instant),
+    /// Stop when the playing track ends (the next one waits, paused).
+    EndOfTrack,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum State {
     #[default]
@@ -143,6 +154,7 @@ pub struct Status {
     pub volume: f32,
     pub shuffle: bool,
     pub repeat: Repeat,
+    pub sleep: Option<Sleep>,
     /// Active Flow config ("default" for plain Flow), if playing Flow.
     pub flow: Option<String>,
     pub output: String,

@@ -7,9 +7,13 @@ mod collection;
 mod content;
 mod home;
 mod login;
+mod lyrics;
 mod mini_player;
 mod output_picker;
 mod player_bar;
 mod playlists;
 mod queue;
 mod sidebar;
+mod sleep_timer;
+
+pub use lyrics::LyricsState;

@@ -4,7 +4,7 @@
 use super::mini_player::MINI_PLAYER_HINT;
 use crate::deezer::Likeable;
 use crate::player::{Cmd, Repeat, State, Status};
-use crate::ui::app::App;
+use crate::ui::app::{App, SidePanel};
 use crate::ui::format::{cover_url, mmss};
 use crate::ui::state::Coll;
 use crate::ui::style::icons::Icon;
@@ -15,7 +15,7 @@ use std::time::Duration;
 
 /// Share of the bar width for each side column (capped).
 const SIDE_SHARE: f32 = 0.3;
-const SIDE_MAX: f32 = 360.0;
+const SIDE_MAX: f32 = 400.0;
 const PROGRESS_MAX_WIDTH: f32 = 560.0;
 const VOLUME_WIDTH: f32 = 104.0;
 /// Progress refresh while playing.
@@ -40,9 +40,12 @@ impl App {
             self.volume(ui, st);
             ui.add_space(10.0);
             self.output_button(ui, &st.output);
-            let color = if self.show_queue { colors().accent } else { colors().dim };
-            if widgets::icon_button(ui, Icon::Queue, 18.0, color).on_hover_text("Queue").clicked() {
-                self.show_queue = !self.show_queue;
+            self.sleep_timer_button(ui, st);
+            for (panel, icon, hint) in [(SidePanel::Queue, Icon::Queue, "Queue"), (SidePanel::Lyrics, Icon::Lyrics, "Lyrics")] {
+                let color = if self.side_panel == Some(panel) { colors().accent } else { colors().dim };
+                if widgets::icon_button(ui, icon, 18.0, color).on_hover_text(hint).clicked() {
+                    self.toggle_side_panel(panel);
+                }
             }
             if widgets::icon_button(ui, Icon::MiniPlayer, 18.0, colors().dim).on_hover_text(MINI_PLAYER_HINT).clicked() {
                 self.toggle_mini_player(ui.ctx());

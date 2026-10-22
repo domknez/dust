@@ -18,6 +18,21 @@ use crate::player::{Cmd, Output, PlayerHandle, Repeat, Status, saved};
 use crate::settings;
 use eframe::egui::{self, Key, Margin, Ui};
 
+/// What the panel on the right shows.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SidePanel {
+    Queue,
+    Lyrics,
+}
+
+impl App {
+    /// Open `panel` on the right, or close it if it's the one showing.
+    pub(super) fn toggle_side_panel(&mut self, panel: SidePanel) {
+        self.side_panel = (self.side_panel != Some(panel)).then_some(panel);
+        self.lyrics.reopened();
+    }
+}
+
 /// Field visibility is `pub(super)`: the views in `ui::views` read and update state
 /// directly; nothing outside `ui` does.
 pub struct App {
@@ -63,7 +78,9 @@ pub struct App {
     pub(super) quick_play: Task<(Vec<Track>, PlayMode)>,
 
     // Interaction
-    pub(super) show_queue: bool,
+    /// The panel open on the right, if any.
+    pub(super) side_panel: Option<SidePanel>,
+    pub(super) lyrics: super::views::LyricsState,
     /// Queue row being dragged (index into the queue).
     pub(super) queue_drag: Option<usize>,
     pub(super) seek_drag: Option<f32>,
@@ -164,7 +181,8 @@ impl App {
             likes_task: None,
             home_task: None,
             quick_play: None,
-            show_queue: false,
+            side_panel: None,
+            lyrics: Default::default(),
             queue_drag: None,
             seek_drag: None,
             volume_drag: None,
@@ -612,13 +630,16 @@ impl eframe::App for App {
             .show_separator_line(false)
             .frame(panel_frame(p.sidebar, Margin { left: 12, right: 12, top: 0, bottom: 10 }))
             .show(ui, |ui| self.sidebar(ui));
-        if self.show_queue {
-            egui::Panel::right("queue")
+        if let Some(panel) = self.side_panel {
+            egui::Panel::right("side-panel")
                 .exact_size(metrics::QUEUE_WIDTH)
                 .resizable(false)
                 .show_separator_line(false)
                 .frame(panel_frame(p.sidebar, Margin { left: 14, right: 14, top: 0, bottom: 10 }))
-                .show(ui, |ui| self.queue_panel(ui, &st));
+                .show(ui, |ui| match panel {
+                    SidePanel::Queue => self.queue_panel(ui, &st),
+                    SidePanel::Lyrics => self.lyrics_panel(ui, &st),
+                });
         }
         let margin = metrics::CONTENT_MARGIN;
         egui::CentralPanel::default()

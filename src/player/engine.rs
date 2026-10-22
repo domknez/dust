@@ -5,7 +5,7 @@ use super::awake::{self, Awake};
 use super::library::{Decoded, Playback, SharedLibrary};
 use super::listens::ListenTracker;
 use super::queue::{Flow, Queue, Removed};
-use super::{Cmd, Output, Repeat, State, Status};
+use super::{Cmd, Output, Repeat, Sleep, State, Status};
 use crate::deezer::{Quality, Track};
 use crate::output::airplay::AirPlaySink;
 use crate::output::local::LocalSink;
@@ -47,6 +47,7 @@ pub struct Engine {
     make_sink: SinkFactory,
     volume: f32,
     repeat: Repeat,
+    sleep: Option<Sleep>,
     stream: Option<Box<dyn Playback>>,
     playing: bool,
     /// Decoded samples the sink hasn't accepted yet, and the track time they end at.
@@ -83,6 +84,7 @@ impl Engine {
             make_sink,
             volume,
             repeat: Repeat::Off,
+            sleep: None,
             stream: None,
             playing: false,
             pending: Vec::new(),
@@ -108,6 +110,9 @@ impl Engine {
             }
             tick = now;
             self.recover_output();
+            if self.sleep_due() {
+                self.publish(true);
+            }
             let busy = self.playing && self.stream.is_some();
             was_playing = busy;
             if busy {
@@ -132,6 +137,7 @@ impl Engine {
 
     fn handle(&mut self, cmd: Cmd) {
         self.recover_output();
+        self.sleep_due();
         match cmd {
             Cmd::Client(client) => self.library = Some(Arc::new(client)),
             Cmd::Quality(q) => self.quality = q,
@@ -154,6 +160,7 @@ impl Engine {
             Cmd::VolumeStep(d) => self.set_volume((self.volume + d).clamp(0.0, 1.0)),
             Cmd::Shuffle(on) => self.queue.set_shuffle(on),
             Cmd::Repeat(r) => self.repeat = r,
+            Cmd::Sleep(s) => self.sleep = s,
 
             Cmd::Enqueue(tracks) => self.queue.enqueue(tracks),
             Cmd::PlayNext(tracks) => self.queue.play_next(tracks),
@@ -328,6 +335,10 @@ impl Engine {
     /// Continue with the next track after the current one ended, without flushing the
     /// sink so the transition stays tight.
     fn continue_after_end(&mut self) {
+        if self.sleep == Some(Sleep::EndOfTrack) {
+            self.sleep_now();
+            return;
+        }
         if self.repeat != Repeat::One && !self.forward() {
             self.stop();
             return;
@@ -362,6 +373,36 @@ impl Engine {
     fn begin(&mut self, stream: Box<dyn Playback>, track: &Track) {
         self.listens.start(self.library.as_deref(), stream.song_id(), stream.format(), track.duration);
         self.stream = Some(stream);
+    }
+
+    /// The sleep timer ran out: pause. Returns whether it did (also when nothing was
+    /// playing; the timer is cleared either way).
+    fn sleep_due(&mut self) -> bool {
+        let Some(Sleep::At(at)) = self.sleep else { return false };
+        if Instant::now() < at {
+            return false;
+        }
+        self.sleep = None;
+        if self.playing && self.stream.is_some() {
+            log_info!("sleep timer: pausing");
+            self.toggle();
+        }
+        true
+    }
+
+    /// The track ended with the sleep timer set to its end: stop, with the next track
+    /// waiting at its start for play.
+    fn sleep_now(&mut self) {
+        log_info!("sleep timer: stopping at the end of the track");
+        self.sleep = None;
+        self.stop();
+        if let Some(s) = self.sink.as_mut() {
+            s.pause();
+        }
+        if self.forward() {
+            self.restored_at = Some(0.0);
+        }
+        self.publish(true);
     }
 
     fn stop(&mut self) {
@@ -492,6 +533,7 @@ impl Engine {
         st.volume = self.volume;
         st.shuffle = self.queue.shuffled();
         st.repeat = self.repeat;
+        st.sleep = self.sleep;
         st.index = self.queue.index();
         if let Some(snapshot) = self.queue.take_snapshot() {
             st.queue = Arc::new(snapshot);
@@ -731,6 +773,34 @@ mod tests {
         let listens = library.listens.lock().unwrap();
         assert_eq!(listens.len(), 1);
         assert!(!listens[0].skipped, "heard to the end");
+    }
+
+    #[test]
+    fn sleep_timer_at_end_of_track_waits_at_the_next() {
+        let (mut e, _library, _tx) = engine(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 5), track(2, 5)], 0));
+        e.handle(Cmd::Sleep(Some(Sleep::EndOfTrack)));
+        play_out(&mut e);
+        {
+            let st = e.status.lock().unwrap();
+            assert_eq!((st.state, st.track.as_ref().map(|t| t.id), st.position), (State::Paused, Some(2), 0.0));
+            assert_eq!(st.sleep, None, "used up");
+        }
+        e.handle(Cmd::Toggle);
+        assert_eq!(now_playing(&e), Some(2));
+        assert!(e.playing);
+    }
+
+    #[test]
+    fn sleep_timer_pauses_when_due() {
+        let (mut e, _library, _tx) = engine(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 60)], 0));
+        e.handle(Cmd::Sleep(Some(Sleep::At(Instant::now() + Duration::from_secs(60)))));
+        assert!(!e.sleep_due() && e.playing, "not yet");
+        e.sleep = Some(Sleep::At(Instant::now()));
+        assert!(e.sleep_due());
+        assert!(!e.playing && e.stream.is_some(), "paused, not stopped");
+        assert_eq!(e.sleep, None);
     }
 
     #[test]
