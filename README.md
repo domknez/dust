@@ -168,7 +168,7 @@ Choices are saved in `settings.conf` in your config directory
 The queue is saved next to it, in `queue.json`, and comes back paused when dust starts.
 
 dust keeps a log of playback and AirPlay events (tracks opened and how long that took,
-speaker connections, flushes, packet stats) for troubleshooting: account menu → **Show
+speaker connections, flushes, packet stats) for troubleshooting: Settings → **Show
 log file**. It lives in `~/Library/Logs/dust/dust.log` on macOS,
 `%LOCALAPPDATA%\dust\dust.log` on Windows and `~/.local/state/dust/dust.log` on Linux,
 stays on your computer and is started over beyond 5 MB (the previous one is kept as
@@ -181,7 +181,7 @@ way Deezer's apps do. Deezer uses that for your listening history, "Recently pla
 Flow recommendations and, if you've connected Last.fm in your Deezer account settings,
 scrobbles it to Last.fm. Nothing is sent anywhere else.
 
-Turn it off under **Share listening with Deezer** in the account menu.
+Turn it off under **Share listening with Deezer** in Settings.
 
 ## AirPlay
 
@@ -231,6 +231,7 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 - `⌘←` / `⌘→` (`Alt+←` / `Alt+→` on Windows and Linux), or the mouse's side buttons:
   back / forward between pages
 - `⌘⇧M` / `Ctrl+Shift+M`: mini player on/off
+- `⌘,` / `Ctrl+,`: Settings (`Esc` closes them)
 - Double-click a track, or click its number: play from there
 - Home cards: click to open, click the round play button to play right away
 - Right-click a track: *Play next*, *Add to queue*, *Add to playlist ›* (and *Remove
