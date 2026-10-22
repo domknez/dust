@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.17.0 (2026-10-22)
+
 - New look, "Graphite": charcoal (or soft grey) with one lime accent, Space Grotesk and
   JetBrains Mono, small crisp corners and hairlines. The sidebar is a compact list
   (`dust_` wordmark, shortcut hints, playlist counts), Home greets you and opens with a
