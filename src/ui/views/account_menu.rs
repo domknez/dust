@@ -45,7 +45,7 @@ impl App {
         if let Some(deezer) = self.sources.deezer.clone() {
             let provider = Provider::Deezer(deezer);
             let selected = active == Some("");
-            if widgets::menu_row(ui, None, "Deezer", Some(&provider.name()), selected, p.text).clicked() && !selected {
+            if widgets::menu_row(ui, Some(Icon::Streaming), "Deezer", Some(&provider.name()), selected, p.text).clicked() && !selected {
                 pick = Some(provider);
             }
         } else {
@@ -56,13 +56,15 @@ impl App {
                 let provider = Provider::Subsonic(server);
                 let key = provider.key();
                 let sub = provider.label().trim_start_matches("Navidrome · ").to_string();
-                if widgets::menu_row(ui, None, "Navidrome", Some(&sub), active == Some(key), p.text).clicked() && active != Some(key) {
+                if widgets::menu_row(ui, Some(Icon::Server), "Navidrome", Some(&sub), active == Some(key), p.text).clicked()
+                    && active != Some(key)
+                {
                     pick = Some(provider);
                 }
             }
             None => {
                 let sub = if self.sources.connecting() { "Connecting…" } else { "Connect a server…" };
-                if widgets::menu_row(ui, Some(Icon::Plus), "Navidrome", Some(sub), false, p.dim).clicked() {
+                if widgets::menu_row(ui, Some(Icon::Server), "Navidrome", Some(sub), false, p.dim).clicked() {
                     self.open_server_form();
                     ui.close();
                 }
@@ -79,7 +81,7 @@ impl App {
     /// "Log in…" for Deezer when only a server is connected.
     #[cfg(feature = "login-window")]
     fn deezer_login_row(&mut self, ui: &mut Ui) {
-        if widgets::menu_row(ui, None, "Deezer", Some("Log in…"), false, colors().dim).clicked() {
+        if widgets::menu_row(ui, Some(Icon::Streaming), "Deezer", Some("Log in…"), false, colors().dim).clicked() {
             self.log_in_with_browser(ui.ctx());
             ui.close();
         }

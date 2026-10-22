@@ -15,7 +15,7 @@ use crate::player::{Cmd, saved};
 use crate::provider::Provider;
 use crate::settings;
 use crate::subsonic::{Server, Subsonic};
-use eframe::egui::{self, Key, RichText};
+use eframe::egui::{self, Key, RichText, vec2};
 
 /// Settings values of the sources ([`Provider::key`] is empty for Deezer).
 const DEEZER: &str = "deezer";
@@ -296,6 +296,8 @@ impl App {
                     if toggle {
                         form.show_password = !form.show_password;
                     }
+                    ui.add_space(6.0);
+                    ui.label(RichText::new("Kept in your system's keychain.").font(ty::CAPTION.font()).color(p.faint));
                 });
                 // Typing again clears the last attempt's error.
                 if changed {
@@ -306,19 +308,17 @@ impl App {
                     error_box(ui, e);
                 }
                 ui.add_space(22.0);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Your password stays in the system keychain.").font(ty::CAPTION.font()).color(p.faint));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
-                        let label = if busy { "Connecting…" } else { "Connect" };
-                        connect = ui.add_enabled_ui(ready, |ui| widgets::pill(ui, label, None, true)).inner.clicked()
-                            || (ready && ui.input(|i| i.key_pressed(Key::Enter)));
-                        if busy {
-                            ui.add(egui::Spinner::new().size(16.0).color(p.dim));
-                        } else {
-                            close |= widgets::pill(ui, "Cancel", None, false).clicked();
-                        }
-                    });
+                // Buttons on their own row, right-aligned.
+                ui.allocate_ui_with_layout(vec2(ui.available_width(), 40.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    let label = if busy { "Connecting…" } else { "Connect" };
+                    connect = ui.add_enabled_ui(ready, |ui| widgets::pill(ui, label, None, true)).inner.clicked()
+                        || (ready && ui.input(|i| i.key_pressed(Key::Enter)));
+                    if busy {
+                        ui.add(egui::Spinner::new().size(16.0).color(p.dim));
+                    } else {
+                        close |= widgets::pill(ui, "Cancel", None, false).clicked();
+                    }
                 });
             });
         });

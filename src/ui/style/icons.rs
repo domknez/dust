@@ -48,6 +48,10 @@ pub enum Icon {
     Plus,
     /// Three dots: more actions.
     More,
+    /// Bars of different heights: a streaming service (Deezer as a source).
+    Streaming,
+    /// Two stacked drive bays: a music server (Navidrome as a source).
+    Server,
     /// Back / forward.
     ChevronLeft,
     ChevronRight,
@@ -223,6 +227,20 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             painter.rect_stroke(Rect::from_min_max(p(r, 0.24, 0.1), p(r, 0.76, 0.9)), w * 0.1, s, eframe::egui::StrokeKind::Middle);
             painter.circle_stroke(p(r, 0.5, 0.6), w * 0.14, s);
             painter.circle_filled(p(r, 0.5, 0.28), w * 0.05, color);
+        }
+        Icon::Streaming => {
+            for (x, top) in [(0.14, 0.62), (0.32, 0.4), (0.5, 0.18), (0.68, 0.46), (0.86, 0.3)] {
+                painter.rect_filled(Rect::from_min_max(p(r, x - 0.06, top), p(r, x + 0.06, 0.86)), 1.0, color);
+            }
+        }
+        Icon::Server => {
+            let s = Stroke::new(stroke.width * 0.85, color);
+            for (top, bottom) in [(0.14, 0.46), (0.54, 0.86)] {
+                let bay = Rect::from_min_max(p(r, 0.12, top), p(r, 0.88, bottom));
+                painter.rect_stroke(bay, w * 0.08, s, eframe::egui::StrokeKind::Middle);
+                painter.circle_filled(p(r, 0.26, (top + bottom) / 2.0), w * 0.05, color);
+                line(p(r, 0.46, (top + bottom) / 2.0), p(r, 0.74, (top + bottom) / 2.0));
+            }
         }
         Icon::Timer => {
             let c = p(r, 0.5, 0.56);
