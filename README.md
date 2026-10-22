@@ -3,7 +3,7 @@
 # dust
 
 **A free and open source, ultra-lightweight Deezer desktop client written in Rust — with
-AirPlay 2 streaming built in.**
+AirPlay 2 streaming built in. Plays your own music from a Navidrome server too.**
 
 [![CI](https://github.com/domknez/dust/actions/workflows/ci.yml/badge.svg)](https://github.com/domknez/dust/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -87,6 +87,39 @@ including cover art.
 - **Secure sign-in:** "Log in with Deezer" opens Deezer's own login page; the session is
   kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service)
 - Runs on macOS, Linux and Windows
+
+## Navidrome / Subsonic
+
+dust also plays your own music from a [Navidrome](https://www.navidrome.org) server (or
+another Subsonic / OpenSubsonic-compatible one), in the same app and the same design.
+Switch between Deezer and the server from the account card at the bottom of the sidebar
+(*Music from*); each keeps its own queue. You can use dust with only a server, no Deezer
+account: *Connect a Navidrome server* on the login screen.
+
+- **Connect:** account card → *Music from* → *Navidrome · Connect a server…* (or the link
+  on the login screen). Enter the server's address (e.g. `http://192.168.1.10:4533`),
+  your user name and password; dust checks them before saving. The password is kept in
+  the OS keychain and sent to the server only as a salted token (Subsonic token
+  authentication), never in plain text.
+- **What works:** Home shelves (recently added, recently played, most played, favourite
+  albums, random) and mixes (a random mix, and one per artist you play most — songs like
+  theirs if the server knows them, otherwise their own); album pages with the artist's
+  other releases; artist pages with popular songs and the discography; the whole
+  library under *Albums* and *Artists*; your playlists (create, add, remove, rename,
+  delete); search; stars as likes (*Loved tracks* are your starred songs); synced or plain
+  lyrics; play counts and "now playing" reported to the server (and Last.fm, if the
+  server scrobbles), unless turned off in Settings; queue, AirPlay, mini player, sleep
+  timer — everything else in dust.
+- **Formats:** MP3, FLAC, AAC/ALAC (M4A), Ogg Vorbis and WAV stream as they are, at any
+  sample rate; anything else (Opus, WMA, ...) is converted to MP3 320 by the server as it
+  plays. Seeking jumps straight into MP3s and converted files; other formats skip ahead
+  from the start (quick on a home network).
+- **Deezer only:** Flow, podcasts, track mixes, opening pasted Deezer links and the
+  streaming quality setting.
+- **Trying it without a server:** `scripts/navidrome-test-server.sh` starts a throwaway
+  Navidrome in Docker with a few generated test tones (user `dust`, password
+  `dust-test-pw`), and `DUST_TEST_SUBSONIC="http://127.0.0.1:4533|dust|dust-test-pw" cargo
+  test subsonic::live -- --ignored` runs the live checks against it.
 
 ## Install
 
@@ -255,7 +288,10 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 src/
 ├── main.rs            entry point: run the app, or a command-line mode (cli.rs)
 ├── log.rs             DUST_LOG levels, log macros and the log file
-├── deezer/            Deezer client: session, catalogue, streaming, listen reports, stream cipher
+├── deezer/            Deezer client: session, catalogue, streaming, listen reports, stream cipher;
+│                      models.rs holds the data types every source fills
+├── subsonic/          Navidrome / Subsonic client: token auth, catalogue, likes, playlists, streams
+├── provider.rs        the source in use (Deezer or a server) behind one interface
 ├── player/            playback engine thread, queue (pure, tested), decoding, listen tracking
 ├── output/            audio outputs behind the Sink trait
 │   ├── local.rs       sound card (cpal)
@@ -263,11 +299,12 @@ src/
 │                      ap2/ (pairing, plists, PTP clock), dacp (speaker remote control)
 ├── ui/
 │   ├── app.rs         UI state, lifecycle and panel layout
+│   ├── sources.rs     Deezer and a Navidrome server: connecting, switching, logging out
 │   ├── now_playing.rs media keys and the OS Now Playing widget
 │   ├── views/         one file per screen or panel
 │   ├── widgets/       reusable painted components
 │   └── style/         palette, type scale, metrics, icons — all visual constants live here
-├── credentials.rs     session in the OS keychain
+├── credentials.rs     Deezer session and server login in the OS keychain
 ├── settings.rs        settings file
 ├── update.rs          self-update from GitHub Releases
 └── login.rs           "Log in with Deezer" webview helper
