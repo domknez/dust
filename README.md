@@ -61,7 +61,7 @@ including cover art.
 - **Lyrics:** the lyrics button in the player bar opens the playing track's lyrics; synced
   ones follow the song with the sung line highlighted, and clicking a line jumps there
 - **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs
-- **Sleep timer:** the moon in the player bar pauses after 15 minutes to 1½ hours, or stops
+- **Sleep timer:** in the player bar's ⋯ menu; pauses after 15 minutes to 1½ hours, or stops
   at the end of the track (the next one waits for play)
 - **AirPlay 2 and AirPlay 1** output with automatic discovery — Sonos (incl. Era 100/300),
   HomePod-class receivers, Apple TV, AirPort Express, shairport-sync and most AirPlay speakers
@@ -79,7 +79,7 @@ including cover art.
   Now Playing controls with cover art (macOS Control Center, Windows media overlay,
   Linux MPRIS)
 - **Modern UI:** Tidal-style layout with cover art, soft dark and light themes (or follow
-  the system), Inter typeface
+  the system), Figtree text with Bricolage Grotesque titles
 - **Secure sign-in:** "Log in with Deezer" opens Deezer's own login page; the session is
   kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service)
 - Runs on macOS, Linux and Windows
@@ -276,8 +276,14 @@ audio output and the Deezer API.
 - AirPlay 2 pairing, encryption and PTP timing follow the approach of
   [OwnTone](https://github.com/owntone/owntone-server) (its PTP library, libairptp, is MIT)
   and were validated against [shairport-sync](https://github.com/mikebrady/shairport-sync).
-- [Inter](https://rsms.me/inter/) typeface by Rasmus Andersson, SIL Open Font License
-  ([assets/fonts/OFL-Inter.txt](assets/fonts/OFL-Inter.txt)).
+- Typefaces, all under the SIL Open Font License:
+  [Figtree](https://github.com/erikdkennedy/figtree) by Erik Kennedy
+  ([license](assets/fonts/OFL-Figtree.txt)),
+  [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) by Mathieu Triay
+  ([license](assets/fonts/OFL-BricolageGrotesque.txt)),
+  [IBM Plex Mono](https://github.com/IBM/plex) by IBM ([license](assets/fonts/OFL-IBMPlexMono.txt))
+  and [Inter](https://rsms.me/inter/) by Rasmus Andersson for symbols
+  ([license](assets/fonts/OFL-Inter.txt)).
 - Built with [egui](https://github.com/emilk/egui), [symphonia](https://github.com/pdeljanov/Symphonia),
   [cpal](https://github.com/RustAudio/cpal), [souvlaki](https://github.com/Sinono3/souvlaki)
   and [wry](https://github.com/tauri-apps/wry).

@@ -17,16 +17,25 @@ pub use palette::{Appearance, colors};
 use eframe::egui::{self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle, Visuals};
 use std::sync::Arc;
 
-/// Register Inter (regular and semibold) ahead of egui's fallback fonts.
+/// Register the app's typefaces ahead of egui's fallback fonts. Inter stays behind
+/// them for symbols they lack (⌘, ⇧, ♪).
 pub fn install_fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
-    fonts.font_data.insert("Inter".into(), Arc::new(FontData::from_static(include_bytes!("../../../assets/fonts/Inter-Regular.ttf"))));
-    fonts
-        .font_data
-        .insert("Inter-SemiBold".into(), Arc::new(FontData::from_static(include_bytes!("../../../assets/fonts/Inter-SemiBold.ttf"))));
+    for (name, bytes) in [
+        ("Figtree", &include_bytes!("../../../assets/fonts/Figtree-Regular.ttf")[..]),
+        ("Figtree-SemiBold", include_bytes!("../../../assets/fonts/Figtree-SemiBold.ttf")),
+        ("Bricolage", include_bytes!("../../../assets/fonts/BricolageGrotesque-Bold.ttf")),
+        ("PlexMono", include_bytes!("../../../assets/fonts/IBMPlexMono-Medium.ttf")),
+        ("Inter", include_bytes!("../../../assets/fonts/Inter-Regular.ttf")),
+    ] {
+        fonts.font_data.insert(name.into(), Arc::new(FontData::from_static(bytes)));
+    }
     let fallbacks = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
-    fonts.families.insert(FontFamily::Proportional, [vec!["Inter".to_string()], fallbacks.clone()].concat());
-    fonts.families.insert(typography::semibold(), [vec!["Inter-SemiBold".to_string()], fallbacks].concat());
+    let chain = |first: &str| [vec![first.to_string(), "Inter".to_string()], fallbacks.clone()].concat();
+    fonts.families.insert(FontFamily::Proportional, chain("Figtree"));
+    fonts.families.insert(typography::semibold(), chain("Figtree-SemiBold"));
+    fonts.families.insert(typography::display(), chain("Bricolage"));
+    fonts.families.insert(FontFamily::Monospace, chain("PlexMono"));
     ctx.set_fonts(fonts);
 }
 
