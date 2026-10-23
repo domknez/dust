@@ -56,11 +56,23 @@ impl App {
             }
         }
         ui.spacing_mut().item_spacing.y = 6.0;
-        // "PLAYLISTS / n" with a + for a new, empty playlist.
+        // "PLAYLISTS / n ›" folds the list away or brings it back; + makes a new,
+        // empty playlist.
         ui.add_space(18.0);
         let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
         let caption = format!("PLAYLISTS / {}", self.playlists.len());
-        text_left(ui.painter(), pos2(row.left() + 10.0, row.center().y), &caption, ty::OVERLINE, colors().dim, row.width() - 40.0);
+        let width = ui.painter().layout_no_wrap(caption.clone(), ty::OVERLINE.font(), colors().dim).size().x;
+        let fold = Rect::from_min_max(row.min, pos2((row.left() + width + 34.0).min(row.right() - 28.0), row.bottom()));
+        let fold = ui.interact(fold, ui.id().with("fold-playlists"), Sense::click());
+        let caption_color = if fold.hovered() { colors().text } else { colors().dim };
+        text_left(ui.painter(), pos2(row.left() + 10.0, row.center().y), &caption, ty::OVERLINE, caption_color, row.width() - 40.0);
+        let open = ui.ctx().animate_bool(ui.id().with("playlists-open"), self.playlists_open);
+        disclosure(ui.painter(), pos2(row.left() + width + 22.0, row.center().y), 8.0, open, caption_color);
+        let hint = if self.playlists_open { "Hide playlists" } else { "Show playlists" };
+        if fold.on_hover_text(hint).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+            self.playlists_open = !self.playlists_open;
+            crate::settings::set("sidebar_playlists", if self.playlists_open { "open" } else { "closed" });
+        }
         let plus = Rect::from_center_size(pos2(row.right() - 12.0, row.center().y), Vec2::splat(22.0));
         let resp = ui.interact(plus, ui.id().with("new-playlist"), Sense::click());
         let color = if resp.hovered() { colors().text } else { colors().faint };
@@ -80,6 +92,11 @@ impl App {
         let mut open = None;
         let mut queue = None;
         let height = (ui.available_height() - FOOTER - self.update_button_height()).max(0.0);
+        if !self.playlists_open {
+            // Keep the account card at the bottom.
+            ui.allocate_space(vec2(ui.available_width(), height));
+            return;
+        }
         egui::ScrollArea::vertical().max_height(height).auto_shrink([false, false]).show(ui, |ui| {
             if self.playlists_task.is_some() {
                 ui.spinner();
@@ -180,6 +197,16 @@ fn shortcut(key: Key) -> String {
 }
 
 /// `dust_` in mono, the underscore in lime like a cursor.
+/// Disclosure chevron: pointing right when folded (`open` 0), down when open (1);
+/// in between while it turns.
+fn disclosure(painter: &egui::Painter, center: egui::Pos2, size: f32, open: f32, color: egui::Color32) {
+    let angle = open * std::f32::consts::FRAC_PI_2;
+    let (sin, cos) = angle.sin_cos();
+    let turn = |x: f32, y: f32| center + vec2(x * cos - y * sin, x * sin + y * cos) * size;
+    let points = vec![turn(-0.2, -0.45), turn(0.25, 0.0), turn(-0.2, 0.45)];
+    painter.add(egui::Shape::line(points, egui::Stroke::new(1.4, color)));
+}
+
 fn wordmark(ui: &Ui, at: egui::Pos2, align: Align2) {
     let p = colors();
     let word = ui.painter().layout_no_wrap("dust".into(), ty::WORDMARK.font(), p.text);

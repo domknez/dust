@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The sidebar's playlist list folds away: click *PLAYLISTS* (a chevron shows which way
+  it is); dust remembers it
+
 ## 0.18.0 (2026-10-22)
 
 - Navidrome (and other Subsonic / OpenSubsonic servers): play your own music in dust,
