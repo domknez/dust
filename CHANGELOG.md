@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.1 (2026-10-23)
+
 - Updated the UI toolkit (egui 0.37) and other libraries
 
 ## 0.20.0 (2026-10-23)
