@@ -5,6 +5,7 @@
 use crate::deezer::{Playlist, Track};
 use crate::model::Error;
 use crate::provider::Provider;
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::load::Load;
 use crate::ui::state::{Source, View, for_playlist};
@@ -130,7 +131,7 @@ impl App {
     }
 
     /// The open dialog, if any (call once per frame).
-    pub(in crate::ui) fn playlist_dialog(&mut self, ctx: &egui::Context) {
+    pub(in crate::ui) fn playlist_dialog(&mut self, ctx: &egui::Context, acts: &mut Actions) {
         let Some(mut dialog) = self.library.editing.dialog.take() else { return };
         let p = colors();
         let private_playlists = self.features().private_playlists;
@@ -189,7 +190,7 @@ impl App {
         });
         close |= modal.should_close();
         match submit {
-            Some(edit) => self.edit_playlist(ctx, edit),
+            Some(edit) => acts.push(Action::EditPlaylist(edit)),
             None if !close => self.library.editing.dialog = Some(dialog),
             None => {}
         }

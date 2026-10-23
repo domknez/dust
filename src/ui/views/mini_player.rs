@@ -57,9 +57,9 @@ impl App {
     }
 
     /// ⌘⇧M / Ctrl+Shift+M switches modes.
-    pub(in crate::ui) fn mini_player_shortcut(&mut self, ctx: &egui::Context) {
+    pub(in crate::ui) fn mini_player_shortcut(&self, ctx: &egui::Context, acts: &mut Actions) {
         if ctx.input_mut(|i| i.consume_shortcut(&TOGGLE_SHORTCUT)) {
-            self.toggle_mini_player(ctx);
+            acts.push(Action::ToggleMiniPlayer);
         }
     }
 

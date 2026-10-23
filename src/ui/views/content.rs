@@ -1,7 +1,7 @@
 //! The main area: search field on top, then the current page.
 
 use crate::player::Status;
-use crate::ui::action::Actions;
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::state::View;
 use crate::ui::style::icons::{self, Icon};
@@ -13,9 +13,9 @@ impl App {
     pub(in crate::ui) fn content(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
         ui.add_space(metrics::TOP_INSET);
         ui.horizontal(|ui| {
-            self.history_buttons(ui);
+            self.history_buttons(ui, acts);
             ui.add_space(6.0);
-            self.search_field(ui);
+            self.search_field(ui, acts);
             if let Some(e) = &st.error {
                 ui.add_space(12.0);
                 ui.label(RichText::new(e).color(colors().danger).font(ty::SECONDARY.font()));
@@ -44,8 +44,7 @@ impl App {
     }
 
     /// ‹ › next to the search field; dimmed when there's nowhere to go.
-    fn history_buttons(&mut self, ui: &mut Ui) {
-        let ctx = ui.ctx().clone();
+    fn history_buttons(&self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
         let shortcut = if cfg!(target_os = "macos") { ("⌘←", "⌘→") } else { ("Alt+←", "Alt+→") };
         ui.spacing_mut().item_spacing.x = 2.0;
@@ -56,16 +55,12 @@ impl App {
             let color = if enabled { p.dim } else { p.faint.gamma_multiply(0.6) };
             let resp = widgets::icon_button(ui, icon, 16.0, color);
             if enabled && resp.on_hover_text(hint).clicked() {
-                if back {
-                    self.go_back(&ctx);
-                } else {
-                    self.go_forward(&ctx);
-                }
+                acts.push(if back { Action::Back } else { Action::Forward });
             }
         }
     }
 
-    fn search_field(&mut self, ui: &mut Ui) {
+    fn search_field(&mut self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
         let [width, height] = metrics::SEARCH_FIELD;
         let id = ui.id().with("search-field");
@@ -107,8 +102,7 @@ impl App {
             edit.request_focus();
         }
         if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-            let ctx = ui.ctx().clone();
-            self.open_view(&ctx, View::Search);
+            acts.push(Action::Open(View::Search));
         }
     }
 }

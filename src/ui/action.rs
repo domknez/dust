@@ -9,14 +9,24 @@ use super::app::{App, SidePanel};
 use super::load::Load;
 use super::playlist_edit::{Dialog, Edit};
 use super::state::{ArtistView, Coll, PlayMode, Source, View, playable};
-use super::views::SleepChoice;
+use super::style::Appearance;
+use super::views::{SleepChoice, reveal_log};
 use super::widgets::TrackMenu;
-use crate::deezer::{ArtistRef, Likeable, Track};
-use crate::player::{Cmd, Output, Repeat};
+use crate::deezer::{ArtistRef, Likeable, Quality, Track};
+use crate::player::{Cmd, Output, Repeat, Sleep};
+use crate::provider::Provider;
+use crate::subsonic::Server;
 use eframe::egui;
+use std::time::{Duration, Instant};
 
 pub enum Action {
     // Pages
+    /// Go to a page, remembering the current one for Back.
+    Open(View),
+    /// The Search page, empty (the sidebar's Search).
+    OpenSearch,
+    Back,
+    Forward,
     OpenArtist(ArtistRef),
     /// A collection's tracks; an artist gets their page.
     OpenCollection(Coll),
@@ -61,12 +71,41 @@ pub enum Action {
     /// Show this panel on the right; None closes it.
     ShowPanel(Option<SidePanel>),
     ToggleMiniPlayer,
+    ShowSettings(bool),
+    /// Fold the sidebar's playlist list away, or bring it back.
+    ToggleSidebarPlaylists,
+
+    // Settings
+    Quality(Quality),
+    Appearance(Appearance),
+    ToggleReportListens,
+    AutoUpdate(bool),
+    CheckForUpdates,
+    /// The sidebar's update button: install and restart, or open the download page.
+    InstallUpdate,
+    /// Show the log file in the file manager.
+    RevealLog,
+
+    // Sources
+    /// Log in to Deezer with a pasted ARL.
+    LogIn(String),
+    /// Log in to Deezer in a browser window.
+    #[cfg(feature = "login-window")]
+    LogInWithBrowser,
+    OpenServerForm,
+    ConnectServer(Server),
+    SwitchSource(Provider),
+    /// Log out of the source in use (or disconnect the server).
+    LogOut,
 }
 
 impl Action {
     /// Whether it shows a page (in the full window, so the mini player gives way).
     fn opens_page(&self) -> bool {
-        matches!(self, Action::OpenArtist(_) | Action::OpenCollection(_))
+        matches!(
+            self,
+            Action::Open(_) | Action::OpenSearch | Action::Back | Action::Forward | Action::OpenArtist(_) | Action::OpenCollection(_)
+        )
     }
 }
 
@@ -105,6 +144,10 @@ impl App {
             self.toggle_mini_player(ctx);
         }
         match action {
+            Action::Open(view) => self.open_view(ctx, view),
+            Action::OpenSearch => self.open_search(),
+            Action::Back => self.go_back(ctx),
+            Action::Forward => self.go_forward(ctx),
             Action::OpenArtist(artist) => self.open_artist(ctx, ArtistView::from_ref(&artist)),
             Action::OpenCollection(coll) => self.open_collection(ctx, coll),
             Action::ReloadHome => {
@@ -114,7 +157,7 @@ impl App {
             Action::PlayFrom { tracks, index, shuffle } => self.play_from(tracks, index, shuffle),
             Action::QueueAll(tracks) => {
                 self.player.send(Cmd::Enqueue(playable(tracks)));
-                self.queued_flash = Some(std::time::Instant::now());
+                self.queued_flash = Some(Instant::now());
             }
             Action::PlaySource(source, mode) => self.play_source(ctx, source, mode),
             Action::Player(cmd) => self.player.send(cmd),
@@ -138,6 +181,49 @@ impl App {
                 self.lyrics.reopened();
             }
             Action::ToggleMiniPlayer => self.toggle_mini_player(ctx),
+            Action::ShowSettings(show) => self.show_settings = show,
+            Action::ToggleSidebarPlaylists => self.prefs.update(|p| p.sidebar_playlists = !p.sidebar_playlists),
+            Action::Quality(quality) => self.set_quality(quality),
+            Action::Appearance(appearance) => self.set_appearance(appearance),
+            Action::ToggleReportListens => self.toggle_report_listens(),
+            Action::AutoUpdate(on) => {
+                self.updates.set_auto(on);
+                self.prefs.update(|p| p.auto_update = on);
+            }
+            Action::CheckForUpdates => self.updates.check_now(ctx),
+            Action::InstallUpdate => self.install_update(ctx),
+            Action::RevealLog => reveal_log(),
+            Action::LogIn(arl) => self.log_in_with(ctx, arl),
+            #[cfg(feature = "login-window")]
+            Action::LogInWithBrowser => self.log_in_with_browser(ctx),
+            Action::OpenServerForm => self.open_server_form(),
+            Action::ConnectServer(server) => self.connect_server(ctx, server),
+            Action::SwitchSource(provider) => self.switch_source(ctx, provider),
+            Action::LogOut => self.log_out(ctx),
         }
+    }
+
+    /// Act on a track's right-click menu.
+    fn track_menu_choice(&mut self, ctx: &egui::Context, track: Track, choice: TrackMenu) {
+        match choice {
+            TrackMenu::Play(mode) => self.player.send(mode.command(vec![track])),
+            TrackMenu::AddTo(playlist) => self.edit_playlist(ctx, Edit::Add { playlist, tracks: vec![track] }),
+            TrackMenu::NewPlaylist => self.new_playlist(vec![track]),
+            TrackMenu::Remove => {
+                if let Some(playlist) = self.showing_own_playlist() {
+                    self.edit_playlist(ctx, Edit::Remove { playlist: playlist.id, tracks: vec![track.id] });
+                }
+            }
+        }
+    }
+
+    /// Set the sleep timer (None turns it off).
+    fn set_sleep(&mut self, choice: Option<SleepChoice>) {
+        self.sleep_choice = choice;
+        let sleep = choice.map(|c| match c {
+            SleepChoice::Minutes(m) => Sleep::At(Instant::now() + Duration::from_secs(m * 60)),
+            SleepChoice::EndOfTrack => Sleep::EndOfTrack,
+        });
+        self.player.send(Cmd::Sleep(sleep));
     }
 }

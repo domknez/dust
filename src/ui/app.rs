@@ -1,7 +1,7 @@
 //! The [`App`]: UI state, its lifecycle (login, background loads, settings) and the
 //! top-level panel layout. Screens are drawn by the modules in `views/`.
 
-use super::action::Actions;
+use super::action::{Action, Actions};
 use super::browse::Browse;
 use super::covers::Covers;
 use super::history::Visit;
@@ -171,6 +171,16 @@ impl App {
     }
 
     // ------------------------------------------------------------ navigation
+
+    /// The Search page as the sidebar opens it: empty, with nothing from the page
+    /// before (its list, a load or error); the query field is in the main area.
+    pub(super) fn open_search(&mut self) {
+        let current = self.current_visit();
+        self.browse.history.leave(current, &Visit { view: View::Search, query: String::new() });
+        self.browse.view = View::Search;
+        self.browse.clear_list();
+        self.browse.searched.clear();
+    }
 
     /// Go to `view`, remembering the current page for Back.
     pub(super) fn open_view(&mut self, ctx: &egui::Context, view: View) {
@@ -412,6 +422,19 @@ impl App {
         }
     }
 
+    /// Keyboard shortcuts that work anywhere (some only in the full window).
+    fn shortcuts(&self, ctx: &egui::Context, acts: &mut Actions) {
+        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(Key::Space)) {
+            acts.push(Action::Player(Cmd::Toggle));
+        }
+        self.mini_player_shortcut(ctx, acts);
+        if self.mini_player.is_none() {
+            self.history_input(ctx, acts);
+            self.settings_shortcut(ctx, acts);
+            self.nav_shortcuts(ctx, acts);
+        }
+    }
+
     /// Follow the chosen appearance (and the OS setting live when on System).
     fn sync_appearance(&self, ctx: &egui::Context) {
         let dark = self.prefs.theme.is_dark(ctx);
@@ -459,20 +482,14 @@ impl eframe::App for App {
         self.covers.begin_frame();
         self.poll_loads(&ctx);
         self.updates.poll(&ctx);
+        let mut acts = Actions::default();
         if self.client.is_none() {
-            self.login_screen(ui);
-            self.server_dialog(&ctx);
+            self.login_screen(ui, &mut acts);
+            self.server_dialog(&ctx, &mut acts);
+            self.apply(&ctx, acts);
             return;
         }
-        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(Key::Space)) {
-            self.player.send(Cmd::Toggle);
-        }
-        self.mini_player_shortcut(&ctx);
-        if self.mini_player.is_none() {
-            self.history_input(&ctx);
-            self.settings_shortcut(&ctx);
-            self.nav_shortcuts(&ctx);
-        }
+        self.shortcuts(&ctx, &mut acts);
         let st = self.player.status();
         self.persist_playback(&st);
         self.save_queue_if_changed(&st);
@@ -480,7 +497,6 @@ impl eframe::App for App {
             np.update(&st);
         }
         let p = colors();
-        let mut acts = Actions::default();
         if self.mini_player.is_some() {
             egui::CentralPanel::default().frame(panel_frame(p.bar, Margin::ZERO)).show(ui, |ui| self.mini_player(ui, &st, &mut acts));
             self.apply(&ctx, acts);
@@ -497,7 +513,7 @@ impl eframe::App for App {
             .resizable(false)
             .show_separator_line(false)
             .frame(panel_frame(p.sidebar, Margin { left: 12, right: 12, top: 0, bottom: 10 }))
-            .show(ui, |ui| self.sidebar(ui));
+            .show(ui, |ui| self.sidebar(ui, &mut acts));
         if let Some(panel) = self.side_panel {
             egui::Panel::right("side-panel")
                 .exact_size(metrics::QUEUE_WIDTH)
@@ -513,9 +529,9 @@ impl eframe::App for App {
         egui::CentralPanel::default()
             .frame(panel_frame(p.bg, Margin { left: margin, right: margin, top: 0, bottom: 0 }))
             .show(ui, |ui| self.content(ui, &st, &mut acts));
-        self.playlist_dialog(&ctx);
-        self.settings_window(&ctx);
-        self.server_dialog(&ctx);
+        self.playlist_dialog(&ctx, &mut acts);
+        self.settings_window(&ctx, &mut acts);
+        self.server_dialog(&ctx, &mut acts);
         self.apply(&ctx, acts);
     }
 }

@@ -2,6 +2,7 @@
 //! connecting a server, switching between them (each keeps its own queue) and
 //! logging out of one.
 
+use super::action::{Action, Actions};
 use super::app::App;
 use super::browse::Browse;
 use super::library::Library;
@@ -233,8 +234,15 @@ impl App {
         self.sources.form = Some(ServerForm::default());
     }
 
+    /// Connect to a server typed into the form; it's saved and switched to once
+    /// that works.
+    pub(super) fn connect_server(&mut self, ctx: &egui::Context, server: Server) {
+        self.sources.connecting_new = Some(server.clone());
+        self.sources.connecting.start(ctx, move || Subsonic::connect(&server));
+    }
+
     /// The "Connect to Navidrome" dialog, while open (call once per frame).
-    pub(super) fn server_dialog(&mut self, ctx: &egui::Context) {
+    pub(super) fn server_dialog(&mut self, ctx: &egui::Context, acts: &mut Actions) {
         let Some(mut form) = self.sources.form.take() else { return };
         let p = colors();
         let busy = self.sources.connecting();
@@ -314,8 +322,7 @@ impl App {
         if connect {
             form.error = None;
             let server = Server { url: form.url.trim().into(), user: form.user.trim().into(), password: form.password.clone() };
-            self.sources.connecting_new = Some(server.clone());
-            self.sources.connecting.start(ctx, move || Subsonic::connect(&server));
+            acts.push(Action::ConnectServer(server));
         }
         if !close {
             self.sources.form = Some(form);

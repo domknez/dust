@@ -1,12 +1,13 @@
 //! Login screen: "Log in with Deezer" (webview) or paste an ARL cookie, or connect
 //! a Navidrome server.
 
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::style::{colors, metrics, typography as ty};
 use eframe::egui::{self, Key, Margin, RichText, Sense, Ui, Vec2, vec2};
 
 impl App {
-    pub(in crate::ui) fn login_screen(&mut self, ui: &mut Ui) {
+    pub(in crate::ui) fn login_screen(&mut self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
         egui::CentralPanel::default().frame(egui::Frame::new().fill(p.sidebar)).show(ui, |ui| {
             ui.vertical_centered(|ui| {
@@ -29,12 +30,12 @@ impl App {
                     ui.spinner();
                     return;
                 }
-                self.login_options(ui);
+                self.login_options(ui, acts);
                 ui.add_space(28.0);
                 ui.label(RichText::new("Have your own music?").color(p.faint).font(ty::SMALL.font()));
                 ui.add_space(4.0);
                 if ui.link(RichText::new("Connect a Navidrome server").font(ty::BODY.font())).clicked() {
-                    self.open_server_form();
+                    acts.push(Action::OpenServerForm);
                 }
                 if let Some(e) = &self.login.error {
                     ui.add_space(12.0);
@@ -44,12 +45,12 @@ impl App {
         });
     }
 
-    fn login_options(&mut self, ui: &mut Ui) {
+    fn login_options(&mut self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
         #[cfg(feature = "login-window")]
         {
             if crate::ui::widgets::pill(ui, "Log in with Deezer", None, true).clicked() {
-                self.log_in_with_browser(ui.ctx());
+                acts.push(Action::LogInWithBrowser);
             }
             ui.add_space(10.0);
             ui.label(RichText::new("Deezer Premium required").color(p.faint).font(ty::SMALL.font()));
@@ -71,8 +72,7 @@ impl App {
                 .margin(Margin::symmetric(12, 8));
             let edit = ui.add(field);
             if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !self.login.arl.trim().is_empty() {
-                let arl = self.login.arl.trim().to_string();
-                self.log_in_with(ui.ctx(), arl);
+                acts.push(Action::LogIn(self.login.arl.trim().to_string()));
             }
             ui.label(RichText::new("deezer.com → DevTools → Application → Cookies → arl").color(p.faint).font(ty::SMALL.font()));
         }

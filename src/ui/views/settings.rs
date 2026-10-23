@@ -2,6 +2,7 @@
 //! troubleshooting. Opens from the account menu or with ⌘, (Ctrl+, elsewhere).
 
 use crate::deezer::Quality;
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{Appearance, colors, typography as ty};
@@ -15,14 +16,14 @@ const WIDTH: f32 = 380.0;
 
 impl App {
     /// Open (or close) Settings on its shortcut.
-    pub(in crate::ui) fn settings_shortcut(&mut self, ctx: &egui::Context) {
+    pub(in crate::ui) fn settings_shortcut(&self, ctx: &egui::Context, acts: &mut Actions) {
         if ctx.input_mut(|i| i.consume_shortcut(&SHORTCUT)) {
-            self.show_settings = !self.show_settings;
+            acts.push(Action::ShowSettings(!self.show_settings));
         }
     }
 
     /// The Settings window, while open (call once per frame).
-    pub(in crate::ui) fn settings_window(&mut self, ctx: &egui::Context) {
+    pub(in crate::ui) fn settings_window(&self, ctx: &egui::Context, acts: &mut Actions) {
         if !self.show_settings {
             return;
         }
@@ -33,27 +34,27 @@ impl App {
                 ui.label(RichText::new("Settings").font(ty::SECTION_TITLE.font()).color(colors().text));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if widgets::icon_button(ui, Icon::Close, 14.0, colors().dim).on_hover_text("Close (Esc)").clicked() {
-                        self.show_settings = false;
+                        acts.push(Action::ShowSettings(false));
                     }
                 });
             });
             ui.add_space(6.0);
             egui::ScrollArea::vertical().max_height(max_height).auto_shrink([false, true]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
-                self.settings_sections(ui);
+                self.settings_sections(ui, acts);
             });
         });
         if modal.should_close() {
-            self.show_settings = false;
+            acts.push(Action::ShowSettings(false));
         }
     }
 
-    fn settings_sections(&mut self, ui: &mut Ui) {
-        self.appearance_picker(ui);
+    fn settings_sections(&self, ui: &mut Ui, acts: &mut Actions) {
+        self.appearance_picker(ui, acts);
         ui.add_space(12.0);
         // A server plays its files as they are.
         if self.features().quality {
-            self.quality_picker(ui);
+            self.quality_picker(ui, acts);
             ui.add_space(12.0);
         }
         widgets::caption(ui, "LISTENING");
@@ -63,30 +64,29 @@ impl App {
             ("Report plays to the server", "Play counts and \"Recently played\" (and Last.fm, if the server scrobbles)")
         };
         if widgets::menu_row(ui, None, title, Some(sub), self.prefs.report_listens, colors().text).clicked() {
-            self.toggle_report_listens();
+            acts.push(Action::ToggleReportListens);
         }
         ui.add_space(12.0);
         widgets::caption(ui, "UPDATES");
         let auto = self.updates.auto;
         if widgets::menu_row(ui, None, "Check automatically", Some("Asks GitHub about new versions"), auto, colors().text).clicked() {
-            self.updates.set_auto(!auto);
-            self.prefs.update(|p| p.auto_update = !auto);
+            acts.push(Action::AutoUpdate(!auto));
         }
         let status = self.updates.status();
         if widgets::menu_row(ui, Some(Icon::Refresh), "Check now", Some(&status), false, colors().text).clicked() {
-            self.updates.check_now(ui.ctx());
+            acts.push(Action::CheckForUpdates);
         }
         ui.add_space(12.0);
         widgets::caption(ui, "TROUBLESHOOTING");
         if widgets::menu_row(ui, None, "Show log file", Some("What happened with playback and AirPlay"), false, colors().text).clicked() {
-            reveal_log();
+            acts.push(Action::RevealLog);
         }
         ui.add_space(4.0);
         let version = format!("dust {}", env!("CARGO_PKG_VERSION"));
         ui.label(RichText::new(version).font(ty::CAPTION.font()).color(colors().faint));
     }
 
-    fn appearance_picker(&mut self, ui: &mut Ui) {
+    fn appearance_picker(&self, ui: &mut Ui, acts: &mut Actions) {
         widgets::caption(ui, "APPEARANCE");
         let options = Appearance::ALL.map(|a| {
             let icon = match a {
@@ -98,11 +98,11 @@ impl App {
         });
         let current = Appearance::ALL.iter().position(|a| *a == self.prefs.theme).unwrap_or(0);
         if let Some(i) = widgets::segmented(ui, &options, current) {
-            self.set_appearance(Appearance::ALL[i]);
+            acts.push(Action::Appearance(Appearance::ALL[i]));
         }
     }
 
-    fn quality_picker(&mut self, ui: &mut Ui) {
+    fn quality_picker(&self, ui: &mut Ui, acts: &mut Actions) {
         widgets::caption(ui, "STREAMING QUALITY");
         for quality in Quality::ALL {
             let description = match quality {
@@ -111,14 +111,14 @@ impl App {
                 Quality::Flac => "Lossless · needs a HiFi plan",
             };
             if widgets::menu_row(ui, None, quality.label(), Some(description), self.prefs.quality == quality, colors().text).clicked() {
-                self.set_quality(quality);
+                acts.push(Action::Quality(quality));
             }
         }
     }
 }
 
 /// Show the log file in the system's file manager.
-fn reveal_log() {
+pub fn reveal_log() {
     let Some(path) = crate::log::file_path() else { return };
     let opened = if cfg!(target_os = "macos") {
         std::process::Command::new("open").arg("-R").arg(&path).spawn()

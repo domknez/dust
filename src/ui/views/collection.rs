@@ -529,20 +529,6 @@ impl App {
     fn showing_podcast(&self) -> bool {
         matches!(&self.browse.view, View::Collection(coll) if matches!(coll.source, Source::Show(_)))
     }
-
-    /// Act on a track's right-click menu.
-    pub(in crate::ui) fn track_menu_choice(&mut self, ctx: &egui::Context, track: Track, choice: TrackMenu) {
-        match choice {
-            TrackMenu::Play(mode) => self.player.send(mode.command(vec![track])),
-            TrackMenu::AddTo(playlist) => self.edit_playlist(ctx, Edit::Add { playlist, tracks: vec![track] }),
-            TrackMenu::NewPlaylist => self.new_playlist(vec![track]),
-            TrackMenu::Remove => {
-                if let Some(playlist) = self.showing_own_playlist() {
-                    self.edit_playlist(ctx, Edit::Remove { playlist: playlist.id, tracks: vec![track.id] });
-                }
-            }
-        }
-    }
 }
 
 fn column_captions(ui: &Ui, head: Rect, columns: &Columns, album_caption: &str) {

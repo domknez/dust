@@ -2,7 +2,7 @@
 //! the time left and the choices), plus the timer's countdown chip next to it.
 
 use super::mini_player::MINI_PLAYER_KEYS;
-use crate::player::{Cmd, SLEEP_FADE, Sleep, Status};
+use crate::player::{SLEEP_FADE, Sleep, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::style::icons::{self, Icon};
@@ -65,16 +65,6 @@ impl App {
             ui.ctx().request_repaint_after(Duration::from_secs(1));
         }
         acts.extend(pick.map(Action::Sleep));
-    }
-
-    /// Set the sleep timer (None turns it off).
-    pub(in crate::ui) fn set_sleep(&mut self, choice: Option<SleepChoice>) {
-        self.sleep_choice = choice;
-        let sleep = choice.map(|c| match c {
-            SleepChoice::Minutes(m) => Sleep::At(Instant::now() + Duration::from_secs(m * 60)),
-            SleepChoice::EndOfTrack => Sleep::EndOfTrack,
-        });
-        self.player.send(Cmd::Sleep(sleep));
     }
 }
 

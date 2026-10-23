@@ -2,6 +2,7 @@
 //! then offer "Restart to update" in the sidebar. A staged update that was never
 //! applied installs when dust quits.
 
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, radius, typography as ty};
@@ -198,7 +199,7 @@ impl App {
         }
     }
 
-    pub(in crate::ui) fn update_button(&mut self, ui: &mut Ui) {
+    pub(in crate::ui) fn update_button(&self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
         let (icon, label, hint, color) = match &self.updates.state {
             State::UpToDate | State::Downloading { .. } => return,
@@ -222,11 +223,17 @@ impl App {
         let icon_rect = Rect::from_center_size(pos2(rect.left() + 20.0, rect.center().y), Vec2::splat(14.0));
         icons::paint(ui.painter(), icon_rect, icon, color);
         text_left(ui.painter(), pos2(rect.left() + 38.0, rect.center().y), &label, ty::ITEM.strong(), color, rect.width() - 46.0);
-        if resp.on_hover_text(hint).on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
-            && let Some(restart) = self.updates.act(ui.ctx())
-        {
+        if resp.on_hover_text(hint).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+            acts.push(Action::InstallUpdate);
+        }
+    }
+
+    /// The update button was clicked: swap the update in and restart, or open the
+    /// download page.
+    pub(in crate::ui) fn install_update(&mut self, ctx: &egui::Context) {
+        if let Some(restart) = self.updates.act(ctx) {
             update::relaunch(&restart);
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
 }
