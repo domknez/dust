@@ -5,7 +5,7 @@ use crate::deezer::Quality;
 use crate::player::Repeat;
 use crate::ui::Appearance;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// dust's folder in the platform config directory.
 pub fn dir() -> Option<PathBuf> {
@@ -58,15 +58,19 @@ pub struct Prefs {
     pub auto_update: bool,
     /// The sidebar's playlist list is shown.
     pub sidebar_playlists: bool,
+    /// The settings file changes are saved to; None keeps them in memory.
+    file: Option<PathBuf>,
 }
 
 impl Prefs {
     /// The saved preferences (defaults for anything missing or unreadable).
     pub fn load() -> Prefs {
-        Prefs::parse(&read())
+        let file = path();
+        Prefs { file: file.clone(), ..Prefs::parse(&file.as_deref().map(read).unwrap_or_default()) }
     }
 
-    /// Preferences from the settings file's text.
+    /// Preferences from a settings file's text, not tied to the file: changes stay
+    /// in memory.
     pub fn parse(text: &str) -> Prefs {
         let saved = entries(text);
         let get = |k: &str| saved.get(k).map(String::as_str);
@@ -82,6 +86,7 @@ impl Prefs {
             volume: get("volume").and_then(|v| v.parse::<f32>().ok()).map_or(0.5, |v| v.clamp(0.0, 1.0)),
             auto_update: get("auto_update") != Some("false"),
             sidebar_playlists: get("sidebar_playlists") != Some("closed"),
+            file: None,
         }
     }
 
@@ -94,11 +99,11 @@ impl Prefs {
         if changed.is_empty() {
             return;
         }
-        let Some(p) = path() else { return };
+        let Some(p) = &self.file else { return };
         if let Some(dir) = p.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        if let Err(e) = std::fs::write(&p, merge(&read(), &changed)) {
+        if let Err(e) = std::fs::write(p, merge(&read(p), &changed)) {
             log_warn!("could not save settings to {}: {e}", p.display());
         }
     }
@@ -121,9 +126,9 @@ impl Prefs {
     }
 }
 
-/// The settings file's text; empty when there is none.
-fn read() -> String {
-    path().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default()
+/// A settings file's text; empty when there is none.
+fn read(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_default()
 }
 
 /// The `key=value` lines of a settings file.

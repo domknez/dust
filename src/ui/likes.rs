@@ -30,16 +30,15 @@ impl App {
     }
 
     /// Flip a like: shown immediately, confirmed by Deezer in the background.
-    pub(in crate::ui) fn toggle_like(&mut self, ctx: &egui::Context, what: Likeable) {
+    pub(in crate::ui) fn toggle_like(&mut self, what: Likeable) {
         let Some(client) = self.client.clone() else { return };
         let liked = !self.is_liked(&what);
         self.library.likes.likes.set(&what, liked);
         self.like_changed(&what);
-        let (tx, ctx) = (self.library.likes.done_tx.clone(), ctx.clone());
-        std::thread::spawn(move || {
+        let tx = self.library.likes.done_tx.clone();
+        self.jobs.run(move || {
             let result = client.set_liked(&what, liked);
             let _ = tx.send((what, liked, result));
-            ctx.request_repaint();
         });
     }
 

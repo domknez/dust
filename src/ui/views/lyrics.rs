@@ -44,7 +44,7 @@ impl App {
             hint(ui, "Podcasts don't have lyrics");
             return;
         }
-        self.load_lyrics(ui.ctx(), track.id);
+        self.load_lyrics(track.id);
         let LyricsState { loaded, scrolled_to, .. } = &mut self.lyrics;
         match loaded {
             Load::Idle | Load::Loading(_) => hint(ui, "Loading lyrics…"),
@@ -56,7 +56,7 @@ impl App {
     }
 
     /// Fetch the lyrics of `track` unless they're loaded or loading.
-    fn load_lyrics(&mut self, ctx: &egui::Context, track: u64) {
+    fn load_lyrics(&mut self, track: u64) {
         let state = &mut self.lyrics;
         // Shown in the panel; nothing else to do about an error.
         let _ = state.loaded.poll();
@@ -65,7 +65,7 @@ impl App {
         }
         let Some(client) = self.client.clone() else { return };
         *state = LyricsState { track: Some(track), ..Default::default() };
-        state.loaded.start(ctx, move || client.lyrics(track));
+        state.loaded.start(&self.jobs, move || client.lyrics(track));
     }
 }
 

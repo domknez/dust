@@ -33,6 +33,8 @@ pub struct Covers {
     slots: HashMap<String, Slot>,
     queue: Queue,
     done: Receiver<Done>,
+    /// For the workers, until they start (with the first cover asked for).
+    done_tx: Option<Sender<Done>>,
     frame: u64,
     bytes: usize,
 }
@@ -40,16 +42,21 @@ pub struct Covers {
 impl Covers {
     pub fn new(ctx: &egui::Context) -> Self {
         let queue: Queue = Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
-        let (tx, done) = mpsc::channel();
+        let (done_tx, done) = mpsc::channel();
+        Self { ctx: ctx.clone(), slots: HashMap::new(), queue, done, done_tx: Some(done_tx), frame: 0, bytes: 0 }
+    }
+
+    /// Start the fetching threads, once.
+    fn start_workers(&mut self) {
+        let Some(tx) = self.done_tx.take() else { return };
         let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(15))).build().into();
         for i in 0..WORKERS {
-            let (queue, tx, agent, ctx) = (queue.clone(), tx.clone(), agent.clone(), ctx.clone());
+            let (queue, tx, agent, ctx) = (self.queue.clone(), tx.clone(), agent.clone(), self.ctx.clone());
             std::thread::Builder::new()
                 .name(format!("covers-{i}"))
                 .spawn(move || worker(queue, tx, agent, ctx))
                 .expect("spawn cover worker");
         }
-        Self { ctx: ctx.clone(), slots: HashMap::new(), queue, done, frame: 0, bytes: 0 }
     }
 
     /// Call once per frame before drawing.
@@ -101,6 +108,7 @@ impl Covers {
             }
             Some(_) => None,
             None => {
+                self.start_workers();
                 self.slots.insert(url.to_string(), Slot::Loading);
                 let (lock, cvar) = &*self.queue;
                 let mut q = lock.lock().unwrap();

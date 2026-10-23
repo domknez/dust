@@ -1,10 +1,60 @@
 //! Background loads for the UI: run a closure on a thread, collect its result on a
 //! later frame (the thread wakes the UI when it finishes) and keep it, or why it
-//! failed, with the resource it was for.
+//! failed, with the resource it was for. [`Jobs`] is where the threads come from.
 
 use crate::model::{Error, Result};
 use eframe::egui;
 use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::{Arc, Mutex};
+
+type Job = Box<dyn FnOnce() + Send>;
+
+/// Where background work runs: each job on a thread of its own, waking the UI
+/// when it's done. Tests hold the jobs instead, so nothing runs (or reaches the
+/// network) unless the test runs it.
+#[derive(Clone)]
+pub struct Jobs {
+    ctx: egui::Context,
+    held: Option<Arc<Mutex<Vec<Job>>>>,
+}
+
+impl Jobs {
+    pub fn threads(ctx: &egui::Context) -> Self {
+        Jobs { ctx: ctx.clone(), held: None }
+    }
+
+    /// Jobs that wait until [`Jobs::run_held`].
+    #[cfg(test)]
+    pub fn held() -> Self {
+        Jobs { ctx: egui::Context::default(), held: Some(Arc::default()) }
+    }
+
+    pub fn run(&self, job: impl FnOnce() + Send + 'static) {
+        match &self.held {
+            Some(held) => held.lock().unwrap().push(Box::new(job)),
+            None => {
+                let ctx = self.ctx.clone();
+                std::thread::spawn(move || {
+                    job();
+                    ctx.request_repaint();
+                });
+            }
+        }
+    }
+
+    /// How many jobs are waiting.
+    #[cfg(test)]
+    pub fn waiting(&self) -> usize {
+        self.held.as_ref().map_or(0, |held| held.lock().unwrap().len())
+    }
+
+    /// Run the waiting jobs now, on this thread.
+    #[cfg(test)]
+    pub fn run_held(&self) {
+        let jobs = std::mem::take(&mut *self.held.as_ref().expect("held jobs").lock().unwrap());
+        jobs.into_iter().for_each(|job| job());
+    }
+}
 
 /// One resource loaded in the background. Starting it again, or replacing the
 /// `Load`, drops the receiver: a result still on its way is never applied.
@@ -19,13 +69,11 @@ pub enum Load<T> {
 }
 
 impl<T: Send + 'static> Load<T> {
-    /// Run `work` on a thread; whatever was here before is dropped.
-    pub fn start(&mut self, ctx: &egui::Context, work: impl FnOnce() -> Result<T> + Send + 'static) {
+    /// Run `work` in the background; whatever was here before is dropped.
+    pub fn start(&mut self, jobs: &Jobs, work: impl FnOnce() -> Result<T> + Send + 'static) {
         let (tx, rx) = std::sync::mpsc::channel();
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
+        jobs.run(move || {
             let _ = tx.send(work());
-            ctx.request_repaint();
         });
         *self = Load::Loading(rx);
     }
@@ -178,14 +226,27 @@ mod tests {
 
     #[test]
     fn starting_again_drops_the_old_result() {
-        let ctx = egui::Context::default();
+        let jobs = Jobs::threads(&egui::Context::default());
         let (mut load, old) = loading::<u32>();
-        load.start(&ctx, || Ok(2));
+        load.start(&jobs, || Ok(2));
         assert!(old.send(Ok(1)).is_err(), "the old receiver is gone");
         while load.is_loading() {
             load.poll();
             std::thread::yield_now();
         }
         assert_eq!(load.ready(), Some(&2));
+    }
+
+    #[test]
+    fn held_jobs_wait_for_the_test() {
+        let jobs = Jobs::held();
+        let mut load = Load::Idle;
+        load.start(&jobs, || Ok(5));
+        assert_eq!(jobs.waiting(), 1);
+        assert!(load.poll().is_none() && load.is_loading(), "nothing ran yet");
+        jobs.run_held();
+        assert_eq!(jobs.waiting(), 0);
+        load.poll();
+        assert_eq!(load.ready(), Some(&5));
     }
 }

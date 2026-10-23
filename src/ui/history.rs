@@ -65,26 +65,26 @@ impl App {
         Visit { view: self.browse.view.clone(), query }
     }
 
-    pub(in crate::ui) fn go_back(&mut self, ctx: &egui::Context) {
+    pub(in crate::ui) fn go_back(&mut self) {
         let current = self.current_visit();
         if let Some(visit) = self.browse.history.back(current) {
-            self.revisit(ctx, visit);
+            self.revisit(visit);
         }
     }
 
-    pub(in crate::ui) fn go_forward(&mut self, ctx: &egui::Context) {
+    pub(in crate::ui) fn go_forward(&mut self) {
         let current = self.current_visit();
         if let Some(visit) = self.browse.history.forward(current) {
-            self.revisit(ctx, visit);
+            self.revisit(visit);
         }
     }
 
-    fn revisit(&mut self, ctx: &egui::Context, visit: Visit) {
+    fn revisit(&mut self, visit: Visit) {
         if visit.view == View::Search {
             self.browse.search = visit.query.clone();
             self.browse.searched = visit.query;
         }
-        self.show_view(ctx, visit.view);
+        self.show_view(visit.view);
     }
 
     /// Keyboard shortcuts and mouse side buttons (not while typing in a field).

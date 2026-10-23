@@ -48,7 +48,6 @@ pub struct Updates {
 
 impl Updates {
     pub fn new(auto: bool) -> Self {
-        update::clean_up();
         Self { auto, state: State::UpToDate, checking: None, checked: false, next_check: Instant::now() + FIRST_CHECK, last_error: None }
     }
 

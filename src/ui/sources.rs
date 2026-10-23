@@ -14,7 +14,7 @@ use super::style::{colors, radius, typography as ty};
 use super::widgets;
 use crate::credentials;
 use crate::deezer::Deezer;
-use crate::player::{Cmd, saved};
+use crate::player::Cmd;
 use crate::provider::Provider;
 use crate::settings::SourcePref;
 use crate::subsonic::{Server, Subsonic};
@@ -80,30 +80,30 @@ fn setting(provider: &Provider) -> SourcePref {
 
 impl App {
     /// At start: connect the stored server too (Deezer's session is App::new's).
-    pub(super) fn start_sources(&mut self, ctx: &egui::Context) {
+    pub(super) fn start_sources(&mut self) {
         if let Some(server) = credentials::load_server() {
-            self.sources.connecting.start(ctx, move || Subsonic::connect(&server));
+            self.sources.connecting.start(&self.jobs, move || Subsonic::connect(&server));
         }
     }
 
     /// Deezer logged in.
-    pub(super) fn deezer_ready(&mut self, ctx: &egui::Context, client: Deezer) {
+    pub(super) fn deezer_ready(&mut self, client: Deezer) {
         self.sources.deezer = Some(client.clone());
-        self.offer(ctx, Provider::Deezer(client));
+        self.offer(Provider::Deezer(client));
     }
 
     /// Use a source that just became available if nothing is in use yet, or if it's
     /// the one used last time and that hasn't been settled.
-    fn offer(&mut self, ctx: &egui::Context, provider: Provider) {
+    fn offer(&mut self, provider: Provider) {
         let preferred = setting(&provider) == self.prefs.source;
         let same = self.client.as_ref().is_some_and(|c| c.key() == provider.key());
         if self.client.is_none() || same || (preferred && !self.sources.settled) {
-            self.activate(ctx, provider, preferred);
+            self.activate(provider, preferred);
         }
     }
 
     /// Server connections finishing.
-    pub(super) fn poll_sources(&mut self, ctx: &egui::Context) {
+    pub(super) fn poll_sources(&mut self) {
         let Some(result) = self.sources.connecting.poll_take() else { return };
         let typed = self.sources.connecting_new.take();
         match result {
@@ -115,9 +115,9 @@ impl App {
                 self.sources.server = Some(server.clone());
                 if typed.is_some() {
                     // Just added: switch to it.
-                    self.switch_source(ctx, Provider::Subsonic(server));
+                    self.switch_source(Provider::Subsonic(server));
                 } else {
-                    self.offer(ctx, Provider::Subsonic(server));
+                    self.offer(Provider::Subsonic(server));
                 }
             }
             Err(e) => {
@@ -136,7 +136,7 @@ impl App {
     /// Make `provider` the source in use; `chosen`: the listener's choice (or the
     /// one used last time), remembered for next time. Another source than before
     /// stops playback; its queue is saved and the new source's comes back.
-    pub(super) fn activate(&mut self, ctx: &egui::Context, provider: Provider, chosen: bool) {
+    pub(super) fn activate(&mut self, provider: Provider, chosen: bool) {
         let old = self.client.as_ref().map(Provider::key);
         let new = provider.key();
         if chosen {
@@ -158,17 +158,17 @@ impl App {
             self.restore_queue(&provider);
         }
         let c = provider.clone();
-        self.library.playlists_load.start(ctx, move || c.playlists());
+        self.library.playlists_load.start(&self.jobs, move || c.playlists());
         let c = provider.clone();
-        self.library.likes_load.start(ctx, move || likes::load(&c));
+        self.library.likes_load.start(&self.jobs, move || likes::load(&c));
         self.client = Some(provider);
-        self.open_view(ctx, View::Home);
+        self.open_view(View::Home);
     }
 
     /// Bring back the source's queue from last time, paused where it was.
     fn restore_queue(&mut self, provider: &Provider) {
         self.restore_pending = false;
-        if let Some(s) = saved::load(provider.key()) {
+        if let Some(s) = self.queues.load(provider.key()) {
             log_info!("restoring a queue of {} tracks", s.tracks.len());
             provider.adopt(&s.tracks);
             self.player.send(Cmd::Restore { tracks: s.tracks, index: s.index, position: s.position, flow: s.flow });
@@ -178,13 +178,13 @@ impl App {
     }
 
     /// Switch from the account menu.
-    pub(super) fn switch_source(&mut self, ctx: &egui::Context, provider: Provider) {
-        self.activate(ctx, provider, true);
+    pub(super) fn switch_source(&mut self, provider: Provider) {
+        self.activate(provider, true);
     }
 
     /// Log out of the source in use and forget its login; the other one takes over
     /// if it's logged in, otherwise the login screen shows.
-    pub(super) fn log_out(&mut self, ctx: &egui::Context) {
+    pub(super) fn log_out(&mut self) {
         match self.client.as_ref() {
             Some(Provider::Deezer(_)) => {
                 credentials::clear();
@@ -198,7 +198,7 @@ impl App {
         }
         let other = self.sources.deezer.clone().map(Provider::Deezer).or_else(|| self.sources.server.clone().map(Provider::Subsonic));
         match other {
-            Some(provider) => self.switch_source(ctx, provider),
+            Some(provider) => self.switch_source(provider),
             None => {
                 if let Some(old) = self.client.as_ref().map(Provider::key) {
                     self.save_queue_now(old);
@@ -236,9 +236,9 @@ impl App {
 
     /// Connect to a server typed into the form; it's saved and switched to once
     /// that works.
-    pub(super) fn connect_server(&mut self, ctx: &egui::Context, server: Server) {
+    pub(super) fn connect_server(&mut self, server: Server) {
         self.sources.connecting_new = Some(server.clone());
-        self.sources.connecting.start(ctx, move || Subsonic::connect(&server));
+        self.sources.connecting.start(&self.jobs, move || Subsonic::connect(&server));
     }
 
     /// The "Connect to Navidrome" dialog, while open (call once per frame).

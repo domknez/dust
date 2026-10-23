@@ -204,6 +204,14 @@ impl PlayerHandle {
         }
     }
 
+    /// A handle with no player behind it: commands wait in the returned receiver,
+    /// and the status is what the test sets.
+    #[cfg(test)]
+    pub fn detached() -> (Self, mpsc::Receiver<Cmd>) {
+        let (tx, rx) = mpsc::channel();
+        (Self { tx, status: Arc::default() }, rx)
+    }
+
     pub fn status(&self) -> Status {
         // A player thread that panicked while publishing leaves the lock poisoned;
         // the snapshot in it is still the last one.

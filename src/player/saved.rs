@@ -25,36 +25,53 @@ pub struct Saved {
     pub flow: Option<Option<String>>,
 }
 
-fn path(source: &str) -> Option<PathBuf> {
-    Some(settings::dir()?.join(file(source)))
+/// Where the queue files are: next to the settings, or (tests) any folder.
+#[derive(Clone)]
+pub struct QueueFiles {
+    dir: Option<PathBuf>,
 }
 
-/// Write the player's queue for `source` (see [`file`]); an empty queue removes the
-/// file.
-pub fn save(st: &Status, source: &str) {
-    let Some(path) = path(source) else { return };
-    if st.queue.is_empty() {
-        let _ = std::fs::remove_file(&path);
-        return;
+impl QueueFiles {
+    pub fn in_settings_dir() -> Self {
+        QueueFiles { dir: settings::dir() }
     }
-    let text = encode(st).to_string();
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    // Write then rename, so a crash mid-write can't leave a broken file.
-    let tmp = path.with_extension("json.tmp");
-    if let Err(e) = std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, &path)) {
-        log_warn!("could not save the queue to {}: {e}", path.display());
-    }
-}
 
-pub fn load(source: &str) -> Option<Saved> {
-    let text = std::fs::read_to_string(path(source)?).ok()?;
-    let saved = decode(&serde_json::from_str(&text).ok()?);
-    if saved.is_none() {
-        log_warn!("ignoring an unreadable saved queue");
+    #[cfg(test)]
+    pub fn at(dir: PathBuf) -> Self {
+        QueueFiles { dir: Some(dir) }
     }
-    saved
+
+    fn path(&self, source: &str) -> Option<PathBuf> {
+        Some(self.dir.as_ref()?.join(file(source)))
+    }
+
+    /// Write the player's queue for `source` (see [`file`]); an empty queue removes
+    /// the file.
+    pub fn save(&self, st: &Status, source: &str) {
+        let Some(path) = self.path(source) else { return };
+        if st.queue.is_empty() {
+            let _ = std::fs::remove_file(&path);
+            return;
+        }
+        let text = encode(st).to_string();
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        // Write then rename, so a crash mid-write can't leave a broken file.
+        let tmp = path.with_extension("json.tmp");
+        if let Err(e) = std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, &path)) {
+            log_warn!("could not save the queue to {}: {e}", path.display());
+        }
+    }
+
+    pub fn load(&self, source: &str) -> Option<Saved> {
+        let text = std::fs::read_to_string(self.path(source)?).ok()?;
+        let saved = decode(&serde_json::from_str(&text).ok()?);
+        if saved.is_none() {
+            log_warn!("ignoring an unreadable saved queue");
+        }
+        saved
+    }
 }
 
 fn encode(st: &Status) -> Value {

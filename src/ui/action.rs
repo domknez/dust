@@ -144,22 +144,22 @@ impl App {
             self.toggle_mini_player(ctx);
         }
         match action {
-            Action::Open(view) => self.open_view(ctx, view),
+            Action::Open(view) => self.open_view(view),
             Action::OpenSearch => self.open_search(),
-            Action::Back => self.go_back(ctx),
-            Action::Forward => self.go_forward(ctx),
-            Action::OpenArtist(artist) => self.open_artist(ctx, ArtistView::from_ref(&artist)),
-            Action::OpenCollection(coll) => self.open_collection(ctx, coll),
+            Action::Back => self.go_back(),
+            Action::Forward => self.go_forward(),
+            Action::OpenArtist(artist) => self.open_artist(ArtistView::from_ref(&artist)),
+            Action::OpenCollection(coll) => self.open_collection(coll),
             Action::ReloadHome => {
                 self.library.home = Load::Idle;
-                self.open_view(ctx, View::Home);
+                self.open_view(View::Home);
             }
             Action::PlayFrom { tracks, index, shuffle } => self.play_from(tracks, index, shuffle),
             Action::QueueAll(tracks) => {
                 self.player.send(Cmd::Enqueue(playable(tracks)));
                 self.queued_flash = Some(Instant::now());
             }
-            Action::PlaySource(source, mode) => self.play_source(ctx, source, mode),
+            Action::PlaySource(source, mode) => self.play_source(source, mode),
             Action::Player(cmd) => self.player.send(cmd),
             Action::Shuffle(on) => self.set_shuffle(on),
             Action::Repeat(repeat) => self.set_repeat(repeat),
@@ -170,9 +170,9 @@ impl App {
                     discovery.refresh();
                 }
             }
-            Action::ToggleLike(what) => self.toggle_like(ctx, what),
-            Action::TrackMenu(track, choice) => self.track_menu_choice(ctx, *track, choice),
-            Action::EditPlaylist(edit) => self.edit_playlist(ctx, edit),
+            Action::ToggleLike(what) => self.toggle_like(what),
+            Action::TrackMenu(track, choice) => self.track_menu_choice(*track, choice),
+            Action::EditPlaylist(edit) => self.edit_playlist(edit),
             Action::NewPlaylist(tracks) => self.new_playlist(tracks),
             Action::PlaylistDialog(dialog) => self.library.editing.dialog = Some(dialog),
             Action::TogglePanel(panel) => self.toggle_side_panel(panel),
@@ -193,25 +193,25 @@ impl App {
             Action::CheckForUpdates => self.updates.check_now(ctx),
             Action::InstallUpdate => self.install_update(ctx),
             Action::RevealLog => reveal_log(),
-            Action::LogIn(arl) => self.log_in_with(ctx, arl),
+            Action::LogIn(arl) => self.log_in_with(arl),
             #[cfg(feature = "login-window")]
-            Action::LogInWithBrowser => self.log_in_with_browser(ctx),
+            Action::LogInWithBrowser => self.log_in_with_browser(),
             Action::OpenServerForm => self.open_server_form(),
-            Action::ConnectServer(server) => self.connect_server(ctx, server),
-            Action::SwitchSource(provider) => self.switch_source(ctx, provider),
-            Action::LogOut => self.log_out(ctx),
+            Action::ConnectServer(server) => self.connect_server(server),
+            Action::SwitchSource(provider) => self.switch_source(provider),
+            Action::LogOut => self.log_out(),
         }
     }
 
     /// Act on a track's right-click menu.
-    fn track_menu_choice(&mut self, ctx: &egui::Context, track: Track, choice: TrackMenu) {
+    fn track_menu_choice(&mut self, track: Track, choice: TrackMenu) {
         match choice {
             TrackMenu::Play(mode) => self.player.send(mode.command(vec![track])),
-            TrackMenu::AddTo(playlist) => self.edit_playlist(ctx, Edit::Add { playlist, tracks: vec![track] }),
+            TrackMenu::AddTo(playlist) => self.edit_playlist(Edit::Add { playlist, tracks: vec![track] }),
             TrackMenu::NewPlaylist => self.new_playlist(vec![track]),
             TrackMenu::Remove => {
                 if let Some(playlist) = self.showing_own_playlist().map(|p| p.id) {
-                    self.edit_playlist(ctx, Edit::Remove { playlist, tracks: vec![track.id] });
+                    self.edit_playlist(Edit::Remove { playlist, tracks: vec![track.id] });
                 }
             }
         }

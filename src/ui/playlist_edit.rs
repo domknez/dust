@@ -93,9 +93,9 @@ fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
 }
 
 impl App {
-    pub(in crate::ui) fn edit_playlist(&mut self, ctx: &egui::Context, edit: Edit) {
+    pub(in crate::ui) fn edit_playlist(&mut self, edit: Edit) {
         let Some(client) = self.client.clone() else { return };
-        self.library.editing.task.start(ctx, move || run(&client, edit));
+        self.library.editing.task.start(&self.jobs, move || run(&client, edit));
     }
 
     /// Ask for a name, then create a playlist with `tracks`.
@@ -115,13 +115,13 @@ impl App {
         };
         self.notice.info(ctx, done.message);
         if let Some(client) = self.client.clone() {
-            self.library.playlists_load.start(ctx, move || client.playlists());
+            self.library.playlists_load.start(&self.jobs, move || client.playlists());
         }
         let showing = matches!(&self.browse.view, View::Collection(c) if done.playlist.is_some_and(|id| c.source == Source::Playlist(id)));
         if showing && done.deleted {
-            self.open_view(ctx, View::Playlists);
+            self.open_view(View::Playlists);
         } else if showing {
-            self.show_view(ctx, self.browse.view.clone());
+            self.show_view(self.browse.view.clone());
         }
     }
 
