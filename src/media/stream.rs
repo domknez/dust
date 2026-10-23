@@ -2,9 +2,9 @@
 //! decoder.
 
 use super::playback::{Decoded, OpenError, Playback};
-use super::resample::Resampler;
 use crate::model::{Format, TrackId};
 use crate::output::RATE;
+use crate::output::resample::Resampler;
 use std::io::Read;
 use std::sync::Arc;
 use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
@@ -60,7 +60,7 @@ pub struct Stream {
     /// Decoded interleaved samples, reused across packets.
     samples: Vec<i16>,
     /// For files at another sample rate than the output's (podcasts, server files).
-    resampler: Option<Resampler>,
+    resampler: Option<Resampler<i16>>,
     /// Stereo samples waiting to be resampled, reused across packets.
     stereo: Vec<i16>,
     eof: bool,

@@ -328,9 +328,9 @@ src/
 ├── subsonic/          Navidrome / Subsonic client: token auth, catalogue, likes, playlists,
 │                      streams; source.rs makes it a Source
 ├── media/             decoding any source's byte stream: container reader, decoder, seeks,
-│                      resampling, stall-proof network reads
+│                      stall-proof network reads
 ├── player/            playback engine thread, queue (pure, tested), listen tracking, saved queue
-├── output/            audio outputs behind the Sink trait
+├── output/            audio outputs behind the Sink trait (output::open sets one up), resampling
 │   ├── local.rs       sound card (cpal)
 │   └── airplay/       AirPlay 1 & 2 sender: discovery, RTSP, handshakes, packets, network threads,
 │                      ap2/ (pairing, plists, PTP clock), dacp (speaker remote control)

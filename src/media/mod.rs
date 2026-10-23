@@ -5,11 +5,11 @@
 //! - [`playback`]: what the player asks of a playing track, and why one didn't open
 //! - [`stream`]: a byte stream's container reader and decoder (seeks, resampling)
 //! - [`prefetch`]: stall-proof network reads for streams
-//! - [`resample`]: sample rate conversion for files not at the output's rate
+//!
+//! Files not at the output's rate go through [`crate::output::resample`].
 
 mod playback;
 mod prefetch;
-mod resample;
 mod stream;
 
 pub use playback::{Decoded, OpenError, Playback};

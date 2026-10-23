@@ -219,6 +219,10 @@ impl Sink for AirPlaySink {
         LATENCY as usize + LEAD as usize
     }
 
+    fn drops_buffer_on_pause(&self) -> bool {
+        true
+    }
+
     fn pause(&mut self) {
         self.halt();
     }
@@ -246,8 +250,7 @@ impl Sink for AirPlaySink {
     }
 
     fn set_volume(&mut self, volume: f32) {
-        // AirPlay volume: -30.0 (quiet) ..= 0.0 dB, -144 = mute.
-        let db = if volume <= 0.001 { -144.0 } else { -30.0 + 30.0 * volume.clamp(0.0, 1.0) };
+        let db = super::volume::to_db(volume);
         let tenths = (db * 10.0_f32).round() as i32;
         if self.volume_sent == Some(tenths) {
             return;

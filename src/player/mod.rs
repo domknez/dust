@@ -14,29 +14,13 @@ mod listens;
 mod queue;
 pub mod saved;
 
+pub use crate::output::Output;
 pub use queue::Flow;
 
 use crate::model::{Quality, Track};
-use crate::output::airplay::Device;
 use eframe::egui;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
-
-/// Where audio goes.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Output {
-    Local,
-    AirPlay(Device),
-}
-
-impl Output {
-    pub fn name(&self) -> &str {
-        match self {
-            Output::Local => "This computer",
-            Output::AirPlay(d) => &d.name,
-        }
-    }
-}
 
 /// What happens when a track ends.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]

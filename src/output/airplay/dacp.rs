@@ -27,18 +27,13 @@ pub enum Remote {
     Prev,
 }
 
-/// AirPlay volume in dB (-30..=0, -144 = mute) to 0..=1.
-pub fn volume_from_db(db: f32) -> f32 {
-    if db <= -30.0 { 0.0 } else { ((db + 30.0) / 30.0).clamp(0.0, 1.0) }
-}
-
 fn parse(path: &str) -> Option<Remote> {
     let cmd = path.strip_prefix("/ctrl-int/1/")?;
     let (name, query) = cmd.split_once('?').unwrap_or((cmd, ""));
     Some(match name {
         "setproperty" => {
             let db = query.split('&').find_map(|kv| kv.strip_prefix("dmcp.device-volume="))?.parse::<f32>().ok()?;
-            Remote::Volume(volume_from_db(db))
+            Remote::Volume(super::volume::from_db(db))
         }
         "volumeup" => Remote::VolumeStep(1.0 / 16.0),
         "volumedown" => Remote::VolumeStep(-1.0 / 16.0),

@@ -98,7 +98,7 @@ impl Drain {
 pub struct LocalSink {
     _stream: cpal::Stream,
     feed: Feed,
-    resampler: Resampler,
+    resampler: Resampler<f32>,
     rate: u32,
     scratch: Vec<f32>,
     resampled: Vec<f32>,

@@ -8,9 +8,7 @@ use super::queue::{Flow, Queue, Removed};
 use super::{Cmd, Output, Repeat, SLEEP_FADE, Sleep, State, Status};
 use crate::media::{Decoded, OpenError, Playback};
 use crate::model::{Quality, Track};
-use crate::output::airplay::AirPlaySink;
-use crate::output::local::LocalSink;
-use crate::output::{RATE, Sink};
+use crate::output::{self, RATE, Sink};
 use crate::source::SourceId;
 use eframe::egui;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
@@ -28,15 +26,9 @@ const FADE_STEPS_PER_SEC: f32 = 2.0;
 /// Consecutive unplayable tracks skipped before giving up.
 const MAX_OPEN_FAILURES: usize = 3;
 
-/// Builds the audio output for an [`Output`] at a volume (real devices in the app).
+/// Builds the audio output for an [`Output`] at a volume: [`output::open`] in the
+/// app, fakes in tests.
 pub type SinkFactory = Box<dyn Fn(&Output, f32) -> Result<Box<dyn Sink>, String>>;
-
-fn real_output(output: &Output, volume: f32) -> Result<Box<dyn Sink>, String> {
-    match output {
-        Output::Local => LocalSink::new(volume).map(|s| Box::new(s) as _),
-        Output::AirPlay(d) => AirPlaySink::connect(d, volume).map(|s| Box::new(s) as _),
-    }
-}
 
 pub struct Engine {
     rx: Receiver<Cmd>,
@@ -61,8 +53,6 @@ pub struct Engine {
     /// Decoded samples the sink hasn't accepted yet, and the track time they end at.
     pending: Vec<i16>,
     pending_end: f64,
-    /// Sinks with a remote buffer (AirPlay) lose it on pause, so resume re-seeks.
-    resume_seek: bool,
     last_publish: Instant,
     alive: bool,
     /// The current track waiting for play (a restored queue, or one stopped by a
@@ -76,7 +66,7 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(rx: Receiver<Cmd>, status: Arc<Mutex<Status>>, ctx: egui::Context, volume: f32) -> Self {
-        Self::with_outputs(rx, status, ctx, volume, Box::new(real_output))
+        Self::with_outputs(rx, status, ctx, volume, Box::new(output::open))
     }
 
     pub fn with_outputs(rx: Receiver<Cmd>, status: Arc<Mutex<Status>>, ctx: egui::Context, volume: f32, make_sink: SinkFactory) -> Self {
@@ -100,7 +90,6 @@ impl Engine {
             playing: false,
             pending: Vec::new(),
             pending_end: 0.0,
-            resume_seek: false,
             last_publish: Instant::now(),
             alive: true,
             restored_at: None,
@@ -220,11 +209,11 @@ impl Engine {
             log_debug!("pause");
             self.playing = false;
             let pos = self.position();
-            if let Some(s) = self.sink.as_mut() {
+            let seek_back = self.sink.as_mut().is_some_and(|s| {
                 s.pause();
-                self.resume_seek = s.latency_frames() > 0;
-            }
-            if self.resume_seek {
+                s.drops_buffer_on_pause()
+            });
+            if seek_back {
                 self.reposition(pos);
             }
         } else {
@@ -906,6 +895,56 @@ mod tests {
         fn flush(&mut self) {}
         fn set_volume(&mut self, v: f32) {
             self.0.lock().unwrap().push(v);
+        }
+    }
+
+    /// Counts flushes; may drop its buffer on pause like an AirPlay receiver.
+    struct PausingSink {
+        drops_buffer: bool,
+        flushes: Arc<Mutex<usize>>,
+    }
+
+    impl Sink for PausingSink {
+        fn write(&mut self, samples: &[i16]) -> usize {
+            samples.len()
+        }
+        fn pending_frames(&self) -> usize {
+            0
+        }
+        fn latency_frames(&self) -> usize {
+            0
+        }
+        fn drops_buffer_on_pause(&self) -> bool {
+            self.drops_buffer
+        }
+        fn pause(&mut self) {}
+        fn resume(&mut self) {}
+        fn flush(&mut self) {
+            *self.flushes.lock().unwrap() += 1;
+        }
+        fn set_volume(&mut self, _: f32) {}
+    }
+
+    #[test]
+    fn pause_seeks_back_only_on_sinks_that_drop_their_buffer() {
+        for drops_buffer in [false, true] {
+            let flushes = Arc::new(Mutex::new(0));
+            let counted = flushes.clone();
+            let (_tx, rx) = channel();
+            let status = Arc::new(Mutex::new(Status::default()));
+            let factory: SinkFactory = Box::new(move |_, _| Ok(Box::new(PausingSink { drops_buffer, flushes: counted.clone() }) as _));
+            let mut e = Engine::with_outputs(rx, status, egui::Context::default(), 0.5, factory);
+            e.library = Some(Arc::new(FakeLibrary::default()));
+            e.handle(Cmd::Play(vec![track(1, 60)], 0));
+            for _ in 0..10 {
+                e.step();
+            }
+            let (at, before) = (e.position(), *flushes.lock().unwrap());
+            e.handle(Cmd::Pause);
+            assert_eq!(*flushes.lock().unwrap() - before, drops_buffer as usize, "drops_buffer={drops_buffer}");
+            assert_eq!(e.position(), at, "paused where it was");
+            e.handle(Cmd::Resume);
+            assert!(e.playing);
         }
     }
 

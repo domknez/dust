@@ -16,6 +16,7 @@
 //! - [`transport`]: the network threads (audio pacing, timing, retransmits)
 //! - [`ap2`]: AirPlay 2 building blocks (pairing, plists, PTP clock)
 //! - [`dacp`]: remote control from the speaker's buttons
+//! - [`volume`]: AirPlay's dB volume scale, both ways
 
 pub mod ap2;
 pub mod dacp;
@@ -25,6 +26,7 @@ mod packets;
 mod rtsp;
 mod sink;
 mod transport;
+pub mod volume;
 
 pub use discovery::{Device, Discovery};
 pub use sink::AirPlaySink;
