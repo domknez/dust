@@ -1,8 +1,8 @@
 //! Sidebar: wordmark, navigation, the playlist list and the account card.
 
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
-use crate::ui::format::playlist_url;
-use crate::ui::state::{Coll, Source, View};
+use crate::ui::state::{Coll, CollSource, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
@@ -15,7 +15,7 @@ const SEARCH_KEYS: &str = if cfg!(target_os = "macos") { "⌘F" } else { "Ctrl+F
 const FADE: f32 = 28.0;
 
 impl App {
-    pub(in crate::ui) fn sidebar(&mut self, ui: &mut Ui) {
+    pub(in crate::ui) fn sidebar(&mut self, ui: &mut Ui, acts: &mut Actions) {
         if cfg!(target_os = "macos") {
             // In the title bar, right of the window buttons.
             let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::TOP_INSET), Sense::hover());
@@ -27,32 +27,25 @@ impl App {
             wordmark(ui, pos2(row.left() + 10.0, row.center().y), Align2::LEFT_CENTER);
             ui.add_space(18.0);
         }
-        self.navigation(ui);
-        self.playlist_list(ui);
-        self.update_button(ui);
-        self.account_card(ui);
+        self.navigation(ui, acts);
+        self.playlist_list(ui, acts);
+        self.update_button(ui, acts);
+        self.account_card(ui, acts);
     }
 
-    fn navigation(&mut self, ui: &mut Ui) {
-        let ctx = ui.ctx().clone();
-        let mut go = None;
+    fn navigation(&self, ui: &mut Ui, acts: &mut Actions) {
         ui.spacing_mut().item_spacing.y = 1.0;
         let home = &NAV_SHORTCUTS[0];
-        if widgets::sidebar_item(ui, home.1, Some(&shortcut(home.0)), self.view == home.2).clicked() {
-            go = Some(View::Home);
+        if widgets::sidebar_item(ui, home.1, Some(&shortcut(home.0)), self.browse.view == home.2).clicked() {
+            acts.push(Action::Open(View::Home));
         }
-        if widgets::sidebar_item(ui, "Search", Some(SEARCH_KEYS), self.view == View::Search).clicked() {
-            // Search opens empty; the query field is in the main area.
-            let current = self.current_visit();
-            self.history.leave(current, &crate::ui::history::Visit { view: View::Search, query: String::new() });
-            self.view = View::Search;
-            self.tracks.clear();
-            self.searched.clear();
+        if widgets::sidebar_item(ui, "Search", Some(SEARCH_KEYS), self.browse.view == View::Search).clicked() {
+            acts.push(Action::OpenSearch);
         }
         let podcasts = self.features().podcasts;
         for (key, label, view) in NAV_SHORTCUTS[1..].iter().filter(|(_, _, v)| podcasts || *v != View::Podcasts) {
-            if widgets::sidebar_item(ui, label, Some(&shortcut(*key)), self.view == *view).clicked() {
-                go = Some(view.clone());
+            if widgets::sidebar_item(ui, label, Some(&shortcut(*key)), self.browse.view == *view).clicked() {
+                acts.push(Action::Open(view.clone()));
             }
         }
         ui.spacing_mut().item_spacing.y = 6.0;
@@ -60,57 +53,56 @@ impl App {
         // empty playlist.
         ui.add_space(18.0);
         let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
-        let caption = format!("PLAYLISTS / {}", self.playlists.len());
+        let caption = format!("PLAYLISTS / {}", self.library.playlists.len());
         let width = ui.painter().layout_no_wrap(caption.clone(), ty::OVERLINE.font(), colors().dim).size().x;
         let fold = Rect::from_min_max(row.min, pos2((row.left() + width + 34.0).min(row.right() - 28.0), row.bottom()));
         let fold = ui.interact(fold, ui.id().with("fold-playlists"), Sense::click());
         let caption_color = if fold.hovered() { colors().text } else { colors().dim };
         text_left(ui.painter(), pos2(row.left() + 10.0, row.center().y), &caption, ty::OVERLINE, caption_color, row.width() - 40.0);
-        let open = ui.ctx().animate_bool(ui.id().with("playlists-open"), self.playlists_open);
+        let open = ui.ctx().animate_bool(ui.id().with("playlists-open"), self.prefs.sidebar_playlists);
         disclosure(ui.painter(), pos2(row.left() + width + 22.0, row.center().y), 8.0, open, caption_color);
-        let hint = if self.playlists_open { "Hide playlists" } else { "Show playlists" };
+        let hint = if self.prefs.sidebar_playlists { "Hide playlists" } else { "Show playlists" };
         if fold.on_hover_text(hint).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-            self.playlists_open = !self.playlists_open;
-            crate::settings::set("sidebar_playlists", if self.playlists_open { "open" } else { "closed" });
+            acts.push(Action::ToggleSidebarPlaylists);
         }
         let plus = Rect::from_center_size(pos2(row.right() - 12.0, row.center().y), Vec2::splat(22.0));
         let resp = ui.interact(plus, ui.id().with("new-playlist"), Sense::click());
         let color = if resp.hovered() { colors().text } else { colors().faint };
         icons::paint(ui.painter(), Rect::from_center_size(plus.center(), Vec2::splat(12.0)), Icon::Plus, color);
         if resp.on_hover_text("New playlist").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-            self.new_playlist(Vec::new());
+            acts.push(Action::NewPlaylist(Vec::new()));
         }
         ui.add_space(4.0);
-        if let Some(view) = go {
-            self.open_view(&ctx, view);
-        }
     }
 
-    fn playlist_list(&mut self, ui: &mut Ui) {
-        let ctx = ui.ctx().clone();
+    fn playlist_list(&mut self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
-        let mut open = None;
-        let mut queue = None;
         let height = (ui.available_height() - FOOTER - self.update_button_height()).max(0.0);
-        if !self.playlists_open {
+        if !self.prefs.sidebar_playlists {
             // Keep the account card at the bottom.
             ui.allocate_space(vec2(ui.available_width(), height));
             return;
         }
         egui::ScrollArea::vertical().max_height(height).auto_shrink([false, false]).show(ui, |ui| {
-            if self.playlists_task.is_some() {
+            if self.library.playlists_load.is_loading() {
                 ui.spinner();
+            } else if let Some(e) = self.library.playlists_load.error() {
+                // Loaded in the background (also after each playlist change): the
+                // last list stays, with a line saying the refresh failed.
+                let line = egui::RichText::new("Couldn't load playlists").font(ty::SECONDARY.font()).color(p.danger);
+                ui.add(egui::Label::new(line).truncate()).on_hover_text(e);
             }
             ui.spacing_mut().item_spacing.y = 1.0;
-            for playlist in &self.playlists {
-                let selected = matches!(&self.view, View::Collection(c) if c.source == Source::Playlist(playlist.id));
+            for playlist in &self.library.playlists {
+                let selected =
+                    matches!(&self.browse.view, View::Collection(c) if matches!(&c.source, CollSource::Playlist(id) if *id == playlist.id));
                 let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::SIDEBAR_PLAYLIST_ROW), Sense::click());
                 if selected || resp.hovered() {
                     ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), if selected { p.raised } else { p.hover });
                 }
                 let art_size = metrics::SIDEBAR_ART;
                 let art = Rect::from_min_size(pos2(rect.left() + 10.0, rect.center().y - art_size / 2.0), Vec2::splat(art_size));
-                widgets::cover(ui, &mut self.covers, playlist_url(playlist, metrics::THUMB_PX).as_deref(), art, 3);
+                widgets::cover(ui, &mut self.covers, playlist.picture.as_ref(), metrics::THUMB_PX, art, 3);
                 let count = playlist.count.to_string();
                 let count_width = ui.painter().layout_no_wrap(count.clone(), ty::META.font(), p.faint).size().x;
                 ui.painter().text(pos2(rect.right() - 10.0, rect.center().y), Align2::RIGHT_CENTER, count, ty::META.font(), p.faint);
@@ -119,19 +111,13 @@ impl App {
                 let title_color = if selected || resp.hovered() { p.text } else { p.dim };
                 text_left(ui.painter(), pos2(x, rect.center().y), &playlist.title, ty::BODY, title_color, width);
                 if let Some(mode) = widgets::queue_menu(&resp) {
-                    queue = Some((Source::Playlist(playlist.id), mode));
+                    acts.push(Action::PlaySource(CollSource::Playlist(playlist.id.clone()), mode));
                 }
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                    open = Some(Coll::from_playlist(playlist));
+                    acts.push(Action::OpenCollection(Coll::from_playlist(playlist)));
                 }
             }
         });
-        if let Some(coll) = open {
-            self.open_collection(&ctx, coll);
-        }
-        if let Some((source, mode)) = queue {
-            self.play_source(&ctx, source, mode);
-        }
         // Soft fade where the list meets the account card.
         let edge = ui.cursor().min.y;
         let fade = Rect::from_min_max(pos2(ui.max_rect().left(), edge - FADE), pos2(ui.max_rect().right(), edge));
@@ -139,7 +125,7 @@ impl App {
     }
 
     /// Account card; opens the account menu.
-    fn account_card(&mut self, ui: &mut Ui) {
+    fn account_card(&self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
         ui.add_space(6.0);
         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::ACCOUNT_CARD), Sense::click());
@@ -154,9 +140,12 @@ impl App {
         avatar(ui, pos2(rect.left() + 24.0, rect.center().y), 14.0, &name, ty::META);
         let width = rect.width() - 80.0;
         text_left(ui.painter(), pos2(rect.left() + 48.0, rect.center().y - 8.0), &name, ty::BODY.strong(), p.text, width);
-        let quality = if self.features().quality { self.quality.label().to_lowercase() } else { self.source_host() };
+        let quality = match &self.client {
+            Some(c) if !c.features().quality => c.detail(),
+            _ => self.prefs.quality.label().to_lowercase(),
+        };
         text_left(ui.painter(), pos2(rect.left() + 48.0, rect.center().y + 9.0), &quality, ty::META, p.faint, width);
-        self.account_menu(&resp, &name);
+        self.account_menu(&resp, &name, acts);
     }
 
     /// The account's display name; `DUST_DISPLAY_NAME` replaces it (for screenshots).
@@ -164,18 +153,18 @@ impl App {
         if let Some(name) = std::env::var("DUST_DISPLAY_NAME").ok().filter(|n| !n.is_empty()) {
             return name;
         }
-        self.client.as_ref().map(|c| c.name()).unwrap_or_default()
+        self.client.as_ref().map(|c| c.account()).unwrap_or_default()
     }
 
     /// ⌘1 … ⌘6 (Ctrl elsewhere) open the pages listed in the sidebar.
-    pub(in crate::ui) fn nav_shortcuts(&mut self, ctx: &egui::Context) {
+    pub(in crate::ui) fn nav_shortcuts(&self, ctx: &egui::Context, acts: &mut Actions) {
         let podcasts = self.features().podcasts;
         let pressed = NAV_SHORTCUTS
             .iter()
             .filter(|(_, _, view)| podcasts || *view != View::Podcasts)
             .find(|(key, ..)| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, *key))));
         if let Some((_, _, view)) = pressed {
-            self.open_view(ctx, view.clone());
+            acts.push(Action::Open(view.clone()));
         }
     }
 }

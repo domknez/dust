@@ -1,6 +1,6 @@
-//! Display formatting and artwork URLs.
+//! Display formatting.
 
-use crate::deezer::{Playlist, Track, image_url};
+use crate::model::Track;
 
 /// 245.3 -> "4:05"
 pub fn mmss(secs: f64) -> String {
@@ -25,17 +25,23 @@ pub fn release_date(iso: &str) -> Option<String> {
     (year.len() == 4 && (1..=12).contains(&month)).then(|| format!("{day} {} {year}", MONTHS[month - 1]))
 }
 
-pub fn cover_url(t: &Track, size: u32) -> Option<String> {
-    (!t.cover.is_empty()).then(|| image_url(if t.is_episode() { "talk" } else { "cover" }, &t.cover, size))
-}
-
-pub fn playlist_url(p: &Playlist, size: u32) -> Option<String> {
-    p.picture.as_ref().map(|(kind, md5)| image_url(kind, md5, size))
+/// 1234567 -> "1,234,567"
+pub fn thousands(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{DeezerSong, Origin};
 
     #[test]
     fn release_dates_read_naturally() {
@@ -46,24 +52,27 @@ mod tests {
     }
 
     #[test]
+    fn counts_have_separators() {
+        assert_eq!(thousands(4702289), "4,702,289");
+        assert_eq!(thousands(999), "999");
+    }
+
+    #[test]
     fn durations() {
         assert_eq!(mmss(245.3), "4:05");
         assert_eq!(mmss(-3.0), "0:00");
         let t = |d| Track {
-            id: 1,
+            id: 1.into(),
             title: String::new(),
             artist: String::new(),
             artists: Vec::new(),
             album: String::new(),
             album_id: String::new(),
             duration: d,
-            token: String::new(),
-            cover: String::new(),
-            fallback: None,
+            art: None,
             available: true,
             available_from: String::new(),
-            episode: None,
-            server: None,
+            origin: Origin::Deezer(DeezerSong::default()),
         };
         assert_eq!(total_clock(&[t(100), t(3012)]), "51:52");
         assert_eq!(total_clock(&[t(3600), t(123)]), "1:02:03");

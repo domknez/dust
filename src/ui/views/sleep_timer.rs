@@ -2,7 +2,8 @@
 //! the time left and the choices), plus the timer's countdown chip next to it.
 
 use super::mini_player::MINI_PLAYER_KEYS;
-use crate::player::{Cmd, SLEEP_FADE, Sleep, Status};
+use crate::player::{SLEEP_FADE, Sleep, Status};
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, radius, typography as ty};
@@ -27,7 +28,7 @@ pub enum SleepChoice {
 
 impl App {
     /// ⋯ button with its menu; in front of it, the sleep timer's chip while one runs.
-    pub(in crate::ui) fn more_button(&mut self, ui: &mut Ui, st: &Status) {
+    pub(in crate::ui) fn more_button(&self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
         let p = colors();
         let sleep = st.sleep.filter(|s| !matches!(s, Sleep::At(at) if *at <= Instant::now()));
         let choice = sleep.and(self.sleep_choice);
@@ -40,7 +41,7 @@ impl App {
             ui.set_width(MENU_WIDTH);
             ui.spacing_mut().item_spacing.y = 2.0;
             if widgets::shortcut_row(ui, Icon::MiniPlayer, "Mini player", MINI_PLAYER_KEYS).clicked() {
-                self.toggle_mini_player(ui.ctx());
+                acts.push(Action::ToggleMiniPlayer);
                 ui.close();
             }
             widgets::divider(ui);
@@ -63,14 +64,7 @@ impl App {
             // Keep the countdown current.
             ui.ctx().request_repaint_after(Duration::from_secs(1));
         }
-        if let Some(choice) = pick {
-            self.sleep_choice = choice;
-            let sleep = choice.map(|c| match c {
-                SleepChoice::Minutes(m) => Sleep::At(Instant::now() + Duration::from_secs(m * 60)),
-                SleepChoice::EndOfTrack => Sleep::EndOfTrack,
-            });
-            self.player.send(Cmd::Sleep(sleep));
-        }
+        acts.extend(pick.map(Action::Sleep));
     }
 }
 

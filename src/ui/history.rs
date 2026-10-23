@@ -1,6 +1,7 @@
 //! Back / forward through visited pages, like a browser: ⌘← / ⌘→ (Alt+← / Alt+→ on
 //! Windows and Linux), the mouse's side buttons, and the arrows by the search field.
 
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::state::View;
 use eframe::egui::{self, Key, KeyboardShortcut, Modifiers, PointerButton};
@@ -60,34 +61,34 @@ const NAV_MODIFIER: Modifiers = if cfg!(target_os = "macos") { Modifiers::COMMAN
 impl App {
     /// The page on screen now, as a history entry.
     pub(in crate::ui) fn current_visit(&self) -> Visit {
-        let query = if self.view == View::Search { self.searched.clone() } else { String::new() };
-        Visit { view: self.view.clone(), query }
+        let query = if self.browse.view == View::Search { self.browse.searched.clone() } else { String::new() };
+        Visit { view: self.browse.view.clone(), query }
     }
 
-    pub(in crate::ui) fn go_back(&mut self, ctx: &egui::Context) {
+    pub(in crate::ui) fn go_back(&mut self) {
         let current = self.current_visit();
-        if let Some(visit) = self.history.back(current) {
-            self.revisit(ctx, visit);
+        if let Some(visit) = self.browse.history.back(current) {
+            self.revisit(visit);
         }
     }
 
-    pub(in crate::ui) fn go_forward(&mut self, ctx: &egui::Context) {
+    pub(in crate::ui) fn go_forward(&mut self) {
         let current = self.current_visit();
-        if let Some(visit) = self.history.forward(current) {
-            self.revisit(ctx, visit);
+        if let Some(visit) = self.browse.history.forward(current) {
+            self.revisit(visit);
         }
     }
 
-    fn revisit(&mut self, ctx: &egui::Context, visit: Visit) {
+    fn revisit(&mut self, visit: Visit) {
         if visit.view == View::Search {
-            self.search = visit.query.clone();
-            self.searched = visit.query;
+            self.browse.search = visit.query.clone();
+            self.browse.searched = visit.query;
         }
-        self.show_view(ctx, visit.view);
+        self.show_view(visit.view);
     }
 
     /// Keyboard shortcuts and mouse side buttons (not while typing in a field).
-    pub(in crate::ui) fn history_input(&mut self, ctx: &egui::Context) {
+    pub(in crate::ui) fn history_input(&self, ctx: &egui::Context, acts: &mut Actions) {
         let (mut back, mut forward) =
             ctx.input(|i| (i.pointer.button_pressed(PointerButton::Extra1), i.pointer.button_pressed(PointerButton::Extra2)));
         if !ctx.egui_wants_keyboard_input() {
@@ -95,9 +96,9 @@ impl App {
             forward |= ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(NAV_MODIFIER, Key::ArrowRight)));
         }
         if back {
-            self.go_back(ctx);
+            acts.push(Action::Back);
         } else if forward {
-            self.go_forward(ctx);
+            acts.push(Action::Forward);
         }
     }
 }

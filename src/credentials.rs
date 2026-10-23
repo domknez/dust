@@ -1,24 +1,29 @@
-//! Stored logins, kept in the OS keychain: the Deezer session (`arl` cookie) and a
-//! Navidrome / Subsonic server (address, user name and password).
+//! Stored logins, kept in the OS keychain: one secret per music source (the Deezer
+//! session's `arl` cookie, a Navidrome / Subsonic server's address, user name and
+//! password), under the source's [`SourceId::login_key`].
 
-use crate::subsonic::Server;
+use crate::source::SourceId;
+use std::collections::BTreeMap;
 use std::sync::{LazyLock, Mutex};
 
 const SERVICE: &str = "dust";
 /// One keychain item holds every login, so macOS asks for access once, not once
 /// per login.
 const ACCOUNT: &str = "logins";
-/// Where 0.18 and earlier kept them, one item each.
-const OLD_ARL: &str = "arl";
-const OLD_SERVER: &str = "navidrome";
+/// Where 0.18 and earlier kept them, one item each: the keychain account and the
+/// source whose login it was.
+const OLD_ITEMS: [(&str, SourceId); 2] = [("arl", crate::deezer::ID), ("navidrome", crate::subsonic::ID)];
 
-/// The platform's secure store, installed as keyring-core's default once.
+/// The platform's secure store, installed as keyring-core's default once. Tests get
+/// an in-memory one: they never touch (or prompt for) the real keychain.
 static STORE: LazyLock<Result<(), keyring_core::Error>> = LazyLock::new(|| {
-    #[cfg(target_os = "macos")]
+    #[cfg(test)]
+    let store = keyring_core::mock::Store::new()?;
+    #[cfg(all(not(test), target_os = "macos"))]
     let store = apple_native_keyring_store::keychain::Store::new()?;
-    #[cfg(windows)]
+    #[cfg(all(not(test), windows))]
     let store = windows_native_keyring_store::Store::new()?;
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(all(not(test), unix, not(target_os = "macos")))]
     let store = dbus_secret_service_keyring_store::Store::new()?;
     keyring_core::set_default_store(store);
     Ok(())
@@ -27,22 +32,22 @@ static STORE: LazyLock<Result<(), keyring_core::Error>> = LazyLock::new(|| {
 /// The stored logins, read from the keychain on first use and kept here after.
 static LOGINS: Mutex<Option<Logins>> = Mutex::new(None);
 
+/// Each source's secret by its login key, kept as one JSON object
+/// (`{"arl": "…", "server": "{…}"}`).
 #[derive(Default, Clone, PartialEq, Debug)]
-struct Logins {
-    arl: Option<String>,
-    /// The server login as JSON ([`Server::to_json`]).
-    server: Option<String>,
-}
+struct Logins(BTreeMap<String, String>);
 
 impl Logins {
     fn to_json(&self) -> String {
-        serde_json::json!({ "arl": self.arl, "server": self.server }).to_string()
+        serde_json::json!(self.0).to_string()
     }
 
+    /// Every login in the item; fields that aren't text (`null` for a login 0.19
+    /// didn't have) are none.
     fn from_json(text: &str) -> Logins {
         let v: serde_json::Value = serde_json::from_str(text).unwrap_or_default();
-        let s = |k: &str| v[k].as_str().map(str::to_string);
-        Logins { arl: s("arl"), server: s("server") }
+        let logins = v.as_object().into_iter().flatten().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())));
+        Logins(logins.collect())
     }
 }
 
@@ -80,7 +85,7 @@ fn migrate() -> Logins {
         let _ = entry.delete_credential();
         Some(value)
     };
-    let logins = Logins { arl: take(OLD_ARL), server: take(OLD_SERVER) };
+    let logins = Logins(OLD_ITEMS.iter().filter_map(|(account, source)| Some((source.login_key.to_string(), take(account)?))).collect());
     if logins != Logins::default() {
         log_info!("moved the stored logins into one keychain item");
         write(&logins);
@@ -109,42 +114,46 @@ fn update(f: impl FnOnce(&mut Logins)) {
     });
 }
 
-/// The Deezer session (`arl`), if any.
-pub fn load() -> Option<String> {
-    with_logins(|l| l.arl.clone())
+/// The stored login of `source`, if any.
+pub fn load(source: SourceId) -> Option<String> {
+    with_logins(|l| l.0.get(source.login_key).cloned())
 }
 
-pub fn save(arl: &str) {
-    update(|l| l.arl = Some(arl.to_string()));
+pub fn save(source: SourceId, secret: &str) {
+    update(|l| {
+        l.0.insert(source.login_key.to_string(), secret.to_string());
+    });
 }
 
-pub fn clear() {
-    update(|l| l.arl = None);
-}
-
-/// The saved music server, if any.
-pub fn load_server() -> Option<Server> {
-    with_logins(|l| l.server.clone()).and_then(|text| Server::from_json(&text))
-}
-
-pub fn save_server(server: &Server) {
-    update(|l| l.server = Some(server.to_json()));
-}
-
-pub fn clear_server() {
-    update(|l| l.server = None);
+pub fn clear(source: SourceId) {
+    update(|l| {
+        l.0.remove(source.login_key);
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn logins(entries: &[(&str, &str)]) -> Logins {
+        Logins(entries.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect())
+    }
+
     #[test]
     fn logins_round_trip() {
-        let both = Logins { arl: Some("abc".into()), server: Some(r#"{"url":"http://nas"}"#.into()) };
+        let both = logins(&[("arl", "abc"), ("server", r#"{"url":"http://nas"}"#)]);
         assert_eq!(Logins::from_json(&both.to_json()), both);
-        let deezer_only = Logins { arl: Some("abc".into()), server: None };
-        assert_eq!(Logins::from_json(&deezer_only.to_json()), deezer_only);
         assert_eq!(Logins::from_json("not json"), Logins::default());
+    }
+
+    #[test]
+    fn reads_the_item_0_19_wrote() {
+        let saved = r#"{"arl":"abc","server":"{\"url\":\"http://nas\",\"user\":\"me\",\"password\":\"pw\"}"}"#;
+        let read = Logins::from_json(saved);
+        assert_eq!(read.0.get(crate::deezer::ID.login_key).map(String::as_str), Some("abc"));
+        let server = read.0.get(crate::subsonic::ID.login_key).and_then(|t| crate::subsonic::Server::from_json(t)).unwrap();
+        assert_eq!((server.url.as_str(), server.user.as_str()), ("http://nas", "me"));
+        assert_eq!(Logins::from_json(r#"{"arl":"abc","server":null}"#), logins(&[("arl", "abc")]), "a login 0.19 didn't have");
+        assert_eq!(Logins::from_json(&read.to_json()), read, "and writes it back the same");
     }
 }

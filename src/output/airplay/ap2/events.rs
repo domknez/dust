@@ -7,6 +7,7 @@
 use super::bplist::{self, Value};
 use super::pairing::{Encryptor, hkdf32};
 use crate::output::airplay::dacp::{self, Remote};
+use crate::output::airplay::volume;
 use chacha20poly1305::aead::{AeadInOut, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce, Tag};
 use std::io::{self, Read, Write};
@@ -128,11 +129,7 @@ fn handle(request: &[u8]) -> String {
 fn remote_command(plist: &Value) -> Option<Remote> {
     if let Some(volume) = find(plist, "volume").and_then(number) {
         // dB (-144 / -30..0) like DACP, or already a 0..1 fraction.
-        return Some(if volume <= 0.0 {
-            Remote::Volume(dacp::volume_from_db(volume as f32))
-        } else {
-            Remote::Volume((volume as f32).min(1.0))
-        });
+        return Some(if volume <= 0.0 { Remote::Volume(volume::from_db(volume as f32)) } else { Remote::Volume((volume as f32).min(1.0)) });
     }
     let command = find(plist, "command").or_else(|| find(plist, "mediaRemoteCommand")).and_then(number)?;
     // MediaRemote command ids: 0 play, 1 pause, 2 toggle, 4 next, 5 previous.

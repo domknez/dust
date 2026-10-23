@@ -1,72 +1,50 @@
 //! The Artists, Albums and Podcasts pages: grids of the artists and podcasts the
 //! account follows and the albums it likes.
 
-use super::home::CardPicks;
-use crate::deezer::Item;
+use crate::model::Item;
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
+use crate::ui::load::Load;
 use crate::ui::state::Coll;
 use crate::ui::style::{colors, metrics, typography as ty};
-use crate::ui::widgets::{self, CardClick, text_left};
-use eframe::egui::{self, RichText, Ui, vec2};
+use crate::ui::widgets::{self, CardClick, Grid, GridColumns, text_left};
+use eframe::egui::{self, Ui, vec2};
 
-const GAP: f32 = 18.0;
+/// Home-sized cards, as many as fit across.
+const CARDS: Grid = Grid { columns: GridColumns::Fit(metrics::HOME_CARD), gap: 18.0, row_gap: 20.0, text: metrics::CARD_TEXT };
 
 impl App {
-    pub(in crate::ui) fn artists_page(&mut self, ui: &mut Ui) {
-        let loading = self.followed_task.is_some();
-        let mut picked = CardPicks::default();
-        card_grid(ui, &mut self.covers, "Artists", &self.followed, loading, "Artists you follow show up here.", &mut picked);
-        let ctx = ui.ctx().clone();
-        self.apply_card_picks(&ctx, picked);
+    pub(in crate::ui) fn artists_page(&mut self, ui: &mut Ui, acts: &mut Actions) {
+        card_grid(ui, &mut self.covers, "Artists", &self.library.followed, "Artists you follow show up here.", acts);
     }
 
-    pub(in crate::ui) fn albums_page(&mut self, ui: &mut Ui) {
-        let loading = self.favorite_albums_task.is_some();
-        let mut picked = CardPicks::default();
-        card_grid(ui, &mut self.covers, "Albums", &self.favorite_albums, loading, "Albums you like show up here.", &mut picked);
-        let ctx = ui.ctx().clone();
-        self.apply_card_picks(&ctx, picked);
+    pub(in crate::ui) fn albums_page(&mut self, ui: &mut Ui, acts: &mut Actions) {
+        card_grid(ui, &mut self.covers, "Albums", &self.library.favorite_albums, "Albums you like show up here.", acts);
     }
 
-    pub(in crate::ui) fn podcasts_page(&mut self, ui: &mut Ui) {
-        let loading = self.favorite_shows_task.is_some();
+    pub(in crate::ui) fn podcasts_page(&mut self, ui: &mut Ui, acts: &mut Actions) {
         let empty = "Podcasts you follow on Deezer show up here. Find more with Search.";
-        let mut picked = CardPicks::default();
-        card_grid(ui, &mut self.covers, "Podcasts", &self.favorite_shows, loading, empty, &mut picked);
-        let ctx = ui.ctx().clone();
-        self.apply_card_picks(&ctx, picked);
+        card_grid(ui, &mut self.covers, "Podcasts", &self.library.favorite_shows, empty, acts);
     }
 }
 
-/// Page title over a wrapping grid of cards (open on click, play button, queue menu).
-fn card_grid(ui: &mut Ui, covers: &mut Covers, title: &str, items: &[Item], loading: bool, empty: &str, picked: &mut CardPicks) {
+/// Page title over a wrapping grid of cards (open on click, play button, queue menu);
+/// `empty` says what would be here when there's nothing.
+fn card_grid(ui: &mut Ui, covers: &mut Covers, title: &str, items: &Load<Vec<Item>>, empty: &str, acts: &mut Actions) {
     let p = colors();
     text_left(ui.painter(), ui.cursor().min + vec2(0.0, 18.0), title, ty::PAGE_TITLE, p.text, 400.0);
     ui.add_space(52.0);
-    if items.is_empty() {
-        if loading {
-            ui.add(egui::Spinner::new().size(22.0));
-        } else {
-            ui.label(RichText::new(empty).color(p.dim));
-        }
+    let Some(items) = items.ready().filter(|items| !items.is_empty()) else {
+        widgets::load_state(ui, items.is_loading(), items.error(), Some(empty));
         return;
-    }
-    let card = metrics::HOME_CARD;
+    };
+    let colls: Vec<Coll> = items.iter().filter_map(Coll::from_item).collect();
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        let per_row = (((ui.available_width() + GAP) / (card + GAP)).floor() as usize).max(1);
-        for row in items.chunks(per_row) {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = GAP;
-                for coll in row.iter().filter_map(Coll::from_item) {
-                    match widgets::card(ui, covers, &coll) {
-                        CardClick::Open => picked.open(coll),
-                        CardClick::Play(mode) => picked.play(coll.source.clone(), mode),
-                        CardClick::None => {}
-                    }
-                }
-            });
-            ui.add_space(14.0);
-        }
+        CARDS.add(ui, colls.len(), |ui, k| match widgets::card(ui, covers, &colls[k]) {
+            CardClick::Open => acts.push(Action::OpenCollection(colls[k].clone())),
+            CardClick::Play(mode) => acts.push(Action::PlaySource(colls[k].source.clone(), mode)),
+            CardClick::None => {}
+        });
     });
 }

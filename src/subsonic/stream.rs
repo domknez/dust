@@ -1,10 +1,9 @@
 //! Song files from the server. Formats dust decodes are streamed as they are;
 //! others (Opus, WMA, ...) are converted to MP3 by the server as they play.
 
-use super::Subsonic;
-use crate::deezer::prefetch::Prefetch;
-use crate::deezer::{Error, Format, Result, ServerSong, Track};
-use crate::player::stream::{Opened, Opener, Stream, StreamInfo};
+use super::{Subsonic, api, http};
+use crate::media::{OpenError, Opened, Opener, Prefetch, Stream, StreamInfo};
+use crate::model::{Error, Format, Origin, Result, Track, TrackId};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -37,20 +36,21 @@ fn delivery(suffix: &str) -> (Delivery, &'static str) {
 
 struct ServerBytes {
     client: Subsonic,
-    song: ServerSong,
+    /// The song's id on the server.
+    id: TrackId,
     delivery: Delivery,
     duration: u32,
 }
 
 impl Opener for ServerBytes {
-    fn open(&self, at: f64) -> std::result::Result<Opened, String> {
-        self.open_at(at).map_err(|e| e.to_string())
+    fn open(&self, at: f64) -> std::result::Result<Opened, OpenError> {
+        Ok(self.open_at(at)?)
     }
 }
 
 impl ServerBytes {
     fn open_at(&self, at: f64) -> Result<Opened> {
-        let id = self.song.id.as_str();
+        let id = self.id.as_str();
         match self.delivery {
             Delivery::Converted => {
                 // Whole seconds: the server starts the conversion there.
@@ -81,7 +81,7 @@ impl ServerBytes {
 
     fn get(&self, url: &str) -> Result<Box<dyn std::io::Read + Send + Sync>> {
         let req = self.client.0.agent.get(url).config().timeout_global(None).timeout_recv_response(Some(STALL)).build();
-        let resp = req.call()?;
+        let resp = req.call().map_err(http)?;
         check_audio(&resp)?;
         Ok(Box::new(Prefetch::new(resp.into_body().into_reader(), STALL)))
     }
@@ -89,7 +89,7 @@ impl ServerBytes {
     /// Bytes from `offset`; whether the server honoured the range.
     fn get_range(&self, url: &str, offset: u64) -> Result<(Box<dyn std::io::Read + Send + Sync>, bool)> {
         let req = self.client.0.agent.get(url).config().timeout_global(None).timeout_recv_response(Some(STALL)).build();
-        let resp = req.header("Range", &format!("bytes={offset}-")).call()?;
+        let resp = req.header("Range", &format!("bytes={offset}-")).call().map_err(http)?;
         check_audio(&resp)?;
         let partial = resp.status() == 206;
         Ok((Box::new(Prefetch::new(resp.into_body().into_reader(), STALL)), partial))
@@ -100,7 +100,7 @@ impl ServerBytes {
 fn check_audio(resp: &ureq::http::Response<ureq::Body>) -> Result<()> {
     let ctype = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or_default();
     if ctype.contains("json") || ctype.contains("xml") {
-        return Err(Error::Api("the server sent no audio for this song".into()));
+        return Err(api("the server sent no audio for this song"));
     }
     Ok(())
 }
@@ -108,29 +108,31 @@ fn check_audio(resp: &ureq::http::Response<ureq::Body>) -> Result<()> {
 impl Subsonic {
     /// Start a song at `at` seconds. A file dust can't decode after all (say, Opus
     /// in an `.ogg`) is asked for again as MP3.
-    pub fn open_track(&self, track: &Track, at: f64) -> Result<Stream> {
-        let song = track.server.clone().ok_or_else(|| Error::Other("not a song from this server".into()))?;
-        self.remember(&song.id);
+    pub fn open_track(&self, track: &Track, at: f64) -> std::result::Result<Stream, OpenError> {
+        let Origin::Server(song) = &track.origin else {
+            return Err(Error::Other("not a song from this server".into()).into());
+        };
         let (delivery, extension) = delivery(&song.suffix);
-        match self.open_as(track, &song, delivery, extension, at) {
-            Err(e) if delivery != Delivery::Converted => {
+        match self.open_as(track, delivery, extension, at) {
+            // Only a file problem: a network one would fail the same way again.
+            Err(OpenError::Unavailable(e)) if delivery != Delivery::Converted => {
                 log_info!("{}: {e}; asking the server for MP3", song.suffix);
-                self.open_as(track, &song, Delivery::Converted, "mp3", at)
+                self.open_as(track, Delivery::Converted, "mp3", at)
             }
             result => result,
         }
     }
 
-    fn open_as(&self, track: &Track, song: &ServerSong, delivery: Delivery, extension: &str, at: f64) -> Result<Stream> {
+    fn open_as(&self, track: &Track, delivery: Delivery, extension: &str, at: f64) -> std::result::Result<Stream, OpenError> {
         let info = StreamInfo {
-            song_id: track.id,
+            song_id: track.id.clone(),
             format: Format::File,
             extension: extension.into(),
             any_rate: true,
             jumps: !matches!(delivery, Delivery::Raw { jumps: false }),
         };
-        let opener = ServerBytes { client: self.clone(), song: song.clone(), delivery, duration: track.duration };
-        Stream::open(Arc::new(opener), info, at).map_err(Error::Other)
+        let opener = ServerBytes { client: self.clone(), id: track.id.clone(), delivery, duration: track.duration };
+        Stream::open(Arc::new(opener), info, at)
     }
 
     /// Size of a file on the server, if it says.

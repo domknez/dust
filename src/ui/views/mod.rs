@@ -18,4 +18,5 @@ mod sidebar;
 mod sleep_timer;
 
 pub use lyrics::LyricsState;
+pub use settings::reveal_log;
 pub use sleep_timer::SleepChoice;

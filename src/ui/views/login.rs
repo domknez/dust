@@ -1,12 +1,13 @@
 //! Login screen: "Log in with Deezer" (webview) or paste an ARL cookie, or connect
 //! a Navidrome server.
 
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::style::{colors, metrics, typography as ty};
 use eframe::egui::{self, Key, Margin, RichText, Sense, Ui, Vec2, vec2};
 
 impl App {
-    pub(in crate::ui) fn login_screen(&mut self, ui: &mut Ui) {
+    pub(in crate::ui) fn login_screen(&mut self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
         egui::CentralPanel::default().frame(egui::Frame::new().fill(p.sidebar)).show(ui, |ui| {
             ui.vertical_centered(|ui| {
@@ -25,18 +26,18 @@ impl App {
                 ui.label(RichText::new("Your music, nothing else.").color(p.dim).font(ty::LEAD.font()));
                 ui.add_space(36.0);
                 // Logging in, or connecting the stored server (not one being typed in).
-                if self.login.is_some() || (self.sources.connecting() && self.sources.form.is_none()) {
+                if self.login.task.is_loading() || (self.sources.connecting() && self.sources.form.is_none()) {
                     ui.spinner();
                     return;
                 }
-                self.login_options(ui);
+                self.login_options(ui, acts);
                 ui.add_space(28.0);
                 ui.label(RichText::new("Have your own music?").color(p.faint).font(ty::SMALL.font()));
                 ui.add_space(4.0);
                 if ui.link(RichText::new("Connect a Navidrome server").font(ty::BODY.font())).clicked() {
-                    self.open_server_form();
+                    acts.push(Action::OpenServerForm);
                 }
-                if let Some(e) = &self.login_error {
+                if let Some(e) = &self.login.error {
                     ui.add_space(12.0);
                     ui.label(RichText::new(e).color(p.danger));
                 }
@@ -44,35 +45,34 @@ impl App {
         });
     }
 
-    fn login_options(&mut self, ui: &mut Ui) {
+    fn login_options(&mut self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
         #[cfg(feature = "login-window")]
         {
             if crate::ui::widgets::pill(ui, "Log in with Deezer", None, true).clicked() {
-                self.log_in_with_browser(ui.ctx());
+                acts.push(Action::LogInWithBrowser);
             }
             ui.add_space(10.0);
             ui.label(RichText::new("Deezer Premium required").color(p.faint).font(ty::SMALL.font()));
             ui.add_space(18.0);
             if ui.link(RichText::new("Paste ARL cookie instead").font(ty::BODY.font())).clicked() {
-                self.show_arl_input = !self.show_arl_input;
+                self.login.show_arl = !self.login.show_arl;
             }
         }
         #[cfg(not(feature = "login-window"))]
         {
-            self.show_arl_input = true;
+            self.login.show_arl = true;
         }
-        if self.show_arl_input {
+        if self.login.show_arl {
             ui.add_space(10.0);
-            let field = egui::TextEdit::singleline(&mut self.arl_input)
+            let field = egui::TextEdit::singleline(&mut self.login.arl)
                 .password(true)
                 .hint_text("arl")
                 .desired_width(340.0)
                 .margin(Margin::symmetric(12, 8));
             let edit = ui.add(field);
-            if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !self.arl_input.trim().is_empty() {
-                let arl = self.arl_input.trim().to_string();
-                self.log_in_with(ui.ctx(), arl);
+            if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !self.login.arl.trim().is_empty() {
+                acts.push(Action::LogIn(self.login.arl.trim().to_string()));
             }
             ui.label(RichText::new("deezer.com → DevTools → Application → Cookies → arl").color(p.faint).font(ty::SMALL.font()));
         }

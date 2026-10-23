@@ -1,15 +1,22 @@
 //! The playback loop: turns commands into queue changes, keeps one track decoding
 //! into the active output, and publishes a [`Status`] snapshot for the UI.
+//!
+//! Near the end of a track the next one is opened on a worker thread
+//! ([`super::preload`]). When the current track has been decoded to its end the
+//! engine switches to it at once, behind what the output still has queued of the
+//! old one (a [`Handoff`]), so track changes don't wait for the network or for the
+//! output to drain.
 
 use super::awake::{self, Awake};
-use super::library::{Decoded, Playback, SharedLibrary};
+use super::library::SharedLibrary;
 use super::listens::ListenTracker;
+use super::preload::{self, Preload, Spawner};
 use super::queue::{Flow, Queue, Removed};
 use super::{Cmd, Output, Repeat, SLEEP_FADE, Sleep, State, Status};
-use crate::deezer::{Quality, Track};
-use crate::output::airplay::AirPlaySink;
-use crate::output::local::LocalSink;
-use crate::output::{RATE, Sink};
+use crate::media::{Decoded, OpenError, Playback};
+use crate::model::{Quality, Track};
+use crate::output::{self, RATE, Sink};
+use crate::source::SourceId;
 use eframe::egui;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
 use std::sync::{Arc, Mutex};
@@ -25,15 +32,27 @@ const RESTART_THRESHOLD: f64 = 3.0;
 const FADE_STEPS_PER_SEC: f32 = 2.0;
 /// Consecutive unplayable tracks skipped before giving up.
 const MAX_OPEN_FAILURES: usize = 3;
+/// Start opening the next track when the current one has this long (s) left to
+/// decode.
+const PRELOAD_BEFORE: f64 = 10.0;
 
-/// Builds the audio output for an [`Output`] at a volume (real devices in the app).
+/// Builds the audio output for an [`Output`] at a volume: [`output::open`] in the
+/// app, fakes in tests.
 pub type SinkFactory = Box<dyn Fn(&Output, f32) -> Result<Box<dyn Sink>, String>>;
 
-fn real_output(output: &Output, volume: f32) -> Result<Box<dyn Sink>, String> {
-    match output {
-        Output::Local => LocalSink::new(volume).map(|s| Box::new(s) as _),
-        Output::AirPlay(d) => AirPlaySink::connect(d, volume).map(|s| Box::new(s) as _),
-    }
+/// A track switched to without draining the output: the previous track is still
+/// in the output's queue, so it's what the status shows, and the listen reports
+/// change over only once the new track is heard.
+struct Handoff {
+    /// The previous track and its queue index.
+    track: Track,
+    index: usize,
+    /// Track time where the previous track's audio ended.
+    ended_at: f64,
+    /// Track time the new track's audio starts at.
+    starts_at: f64,
+    /// The new track, whose listen starts once it's heard.
+    next: Track,
 }
 
 pub struct Engine {
@@ -41,8 +60,8 @@ pub struct Engine {
     status: Arc<Mutex<Status>>,
     ctx: egui::Context,
     library: Option<SharedLibrary>,
-    /// Which source `library` is (see [`crate::provider::Provider::key`]).
-    source: Option<&'static str>,
+    /// Which source `library` is.
+    source: Option<SourceId>,
     quality: Quality,
     queue: Queue,
     listens: ListenTracker,
@@ -55,15 +74,20 @@ pub struct Engine {
     /// Share of the volume the sink plays at while a timed sleep fades out.
     sleep_fade: Option<f32>,
     stream: Option<Box<dyn Playback>>,
+    /// The next track, being opened ahead (see [`Engine::update_preload`]).
+    preload: Option<Preload>,
+    /// Runs preloads off the player thread.
+    spawn: Spawner,
+    /// The previous track still playing out after a drain-free switch.
+    handoff: Option<Handoff>,
     playing: bool,
     /// Decoded samples the sink hasn't accepted yet, and the track time they end at.
     pending: Vec<i16>,
     pending_end: f64,
-    /// Sinks with a remote buffer (AirPlay) lose it on pause, so resume re-seeks.
-    resume_seek: bool,
     last_publish: Instant,
     alive: bool,
-    /// A restored queue waiting for play: the position to start the current track at.
+    /// The current track waiting for play (a restored queue, or one stopped by a
+    /// network error): the position to start it at.
     restored_at: Option<f64>,
     /// Last automatic reconnect of a lost output (rate limit).
     last_recover: Option<Instant>,
@@ -73,7 +97,7 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(rx: Receiver<Cmd>, status: Arc<Mutex<Status>>, ctx: egui::Context, volume: f32) -> Self {
-        Self::with_outputs(rx, status, ctx, volume, Box::new(real_output))
+        Self::with_outputs(rx, status, ctx, volume, Box::new(output::open))
     }
 
     pub fn with_outputs(rx: Receiver<Cmd>, status: Arc<Mutex<Status>>, ctx: egui::Context, volume: f32, make_sink: SinkFactory) -> Self {
@@ -94,10 +118,12 @@ impl Engine {
             sleep: None,
             sleep_fade: None,
             stream: None,
+            preload: None,
+            spawn: Box::new(preload::spawn_thread),
+            handoff: None,
             playing: false,
             pending: Vec::new(),
             pending_end: 0.0,
-            resume_seek: false,
             last_publish: Instant::now(),
             alive: true,
             restored_at: None,
@@ -146,9 +172,18 @@ impl Engine {
     fn handle(&mut self, cmd: Cmd) {
         self.recover_output();
         self.sleep_due();
+        // These move entries around: the previous track's index would go stale.
+        if matches!(cmd, Cmd::Remove(_) | Cmd::Move(..) | Cmd::Shuffle(_)) {
+            self.end_handoff();
+        }
         match cmd {
-            Cmd::Client(client) => self.set_source(client.key(), Arc::new(client)),
-            Cmd::Quality(q) => self.quality = q,
+            Cmd::Client(client) => self.set_source(client.id(), Arc::new(client)),
+            Cmd::Quality(q) => {
+                if q != self.quality {
+                    self.preload = None; // opened in the old quality
+                }
+                self.quality = q;
+            }
             Cmd::ReportListens(on) => self.listens.enabled = on,
             Cmd::Output(o) => self.switch_output(o),
 
@@ -190,7 +225,7 @@ impl Engine {
             Cmd::Restore { tracks, index, position, flow } => {
                 if self.queue.is_empty() && self.stream.is_none() && index < tracks.len() {
                     self.queue.replace(tracks, index);
-                    self.queue.flow = flow.map(|mood| Flow { mood });
+                    self.queue.flow = flow;
                     self.restored_at = Some(position);
                 }
             }
@@ -217,11 +252,11 @@ impl Engine {
             log_debug!("pause");
             self.playing = false;
             let pos = self.position();
-            if let Some(s) = self.sink.as_mut() {
+            let seek_back = self.sink.as_mut().is_some_and(|s| {
                 s.pause();
-                self.resume_seek = s.latency_frames() > 0;
-            }
-            if self.resume_seek {
+                s.drops_buffer_on_pause()
+            });
+            if seek_back {
                 self.reposition(pos);
             }
         } else {
@@ -310,8 +345,13 @@ impl Engine {
     }
 
     /// (Re)start the current queue entry at `at` seconds, skipping unplayable tracks.
+    /// A network problem stops at the track instead (see [`Engine::halt`]).
     fn start_track(&mut self, at: f64) {
         self.restored_at = None;
+        // The new track replaces both: the old one's rest is flushed, and the one
+        // switched to (if any) was never heard.
+        self.handoff = None;
+        self.preload = None;
         self.listens.finish(self.library.as_deref());
         self.stream = None;
         self.pending.clear();
@@ -331,7 +371,12 @@ impl Engine {
                     self.begin(stream, &track);
                     return;
                 }
-                Err(e) => {
+                Err(OpenError::Transient(e)) => {
+                    self.error(format!("{} – {}: {e}", track.artist, track.title));
+                    self.halt(at);
+                    return;
+                }
+                Err(OpenError::Unavailable(e)) => {
                     self.error(format!("{} – {}: {e}", track.artist, track.title));
                     failures += 1;
                     if failures >= MAX_OPEN_FAILURES || !self.queue.advance() {
@@ -343,8 +388,8 @@ impl Engine {
         self.playing = false;
     }
 
-    /// Continue with the next track after the current one ended, without flushing the
-    /// sink so the transition stays tight.
+    /// Continue with the next track after the current one ended and the sink drained
+    /// (no preloaded track to switch to), without flushing the sink.
     fn continue_after_end(&mut self) {
         if self.sleep == Some(Sleep::EndOfTrack) {
             self.sleep_now();
@@ -359,35 +404,143 @@ impl Engine {
             return;
         };
         log_debug!("track ended, continuing on {} without a flush", self.output.name());
+        // A track shorter than the sink's buffer may end before it was heard to start.
+        self.end_handoff();
         self.listens.finish(self.library.as_deref());
         match self.open(&track, 0.0) {
             Ok(stream) => self.begin(stream, &track),
-            Err(e) => {
+            Err(OpenError::Transient(e)) => {
+                self.error(format!("{} – {}: {e}", track.artist, track.title));
+                self.halt(0.0);
+            }
+            Err(OpenError::Unavailable(e)) => {
                 self.error(format!("{} – {}: {e}", track.artist, track.title));
                 self.start_track(0.0);
             }
         }
     }
 
-    fn open(&self, track: &Track, at: f64) -> Result<Box<dyn Playback>, String> {
-        let library = self.library.as_ref().ok_or("Not logged in")?;
+    /// Opening the current track failed for a reason that isn't the track's (no
+    /// network): stop there, with the track waiting at `at` so play tries again,
+    /// rather than skipping tracks that would fail the same way.
+    fn halt(&mut self, at: f64) {
+        self.stop();
+        self.restored_at = Some(at);
+    }
+
+    fn open(&self, track: &Track, at: f64) -> Result<Box<dyn Playback>, OpenError> {
+        let library = self.library.as_ref().ok_or_else(|| OpenError::Transient("Not logged in".into()))?;
         let started = Instant::now();
         let opened = library.open(track, self.quality, at);
-        let ms = started.elapsed().as_millis();
-        match &opened {
-            Ok(p) => log_info!("opened {} {} – {} at {at:.1} s in {ms} ms ({:?})", track.id, track.artist, track.title, p.format()),
-            Err(e) => log_warn!("could not open {} {} – {} after {ms} ms: {e}", track.id, track.artist, track.title),
-        }
+        preload::log_opened(track, at, started, &opened);
         opened
     }
 
     fn begin(&mut self, stream: Box<dyn Playback>, track: &Track) {
+        self.stream = Some(stream);
+        self.start_listen(track);
+    }
+
+    /// Start counting the current stream as a listen of `track`.
+    fn start_listen(&mut self, track: &Track) {
         // Podcast episodes aren't songs: Deezer's listen reports (history, Flow,
         // Last.fm) are for its catalogue only.
-        if !track.is_episode() {
-            self.listens.start(self.library.as_deref(), stream.song_id(), stream.format(), track.duration);
+        let Some(stream) = self.stream.as_ref().filter(|_| !track.is_episode()) else { return };
+        self.listens.start(self.library.as_deref(), stream.song_id(), stream.format(), track.duration);
+    }
+
+    // ------------------------------------------------------------ preloading
+
+    /// The queue entry the current track continues with when it ends, as
+    /// [`Engine::continue_after_end`] would pick it. None at the end of the queue, or
+    /// when endless Flow needs more tracks first.
+    fn upcoming(&self) -> Option<&Track> {
+        if self.repeat == Repeat::One {
+            self.queue.current()
+        } else if self.queue.has_next() {
+            self.queue.get(self.queue.index() + 1)
+        } else if self.repeat != Repeat::Off && self.queue.flow.is_none() {
+            self.queue.get(0)
+        } else {
+            None
         }
-        self.stream = Some(stream);
+    }
+
+    /// In the last [`PRELOAD_BEFORE`] seconds of the current track, have the upcoming
+    /// one opening (or opened) on a worker, or more Flow on its way when the queue
+    /// ran out. A preload that is no longer for the upcoming entry (the queue,
+    /// shuffle or repeat changed) is dropped and the right one started; one outside
+    /// that window (a seek back) is dropped.
+    fn update_preload(&mut self) {
+        let due = self.sleep != Some(Sleep::EndOfTrack)
+            && self.stream.as_ref().is_some_and(|s| {
+                s.finished() || self.queue.current().is_some_and(|t| t.duration > 0 && s.written() >= t.duration as f64 - PRELOAD_BEFORE)
+            });
+        if !due {
+            self.preload = None;
+            return;
+        }
+        if let Some((flow, tracks)) = self.preload.as_mut().and_then(Preload::poll) {
+            // Still the same Flow (not cleared or replaced meanwhile), and new tracks.
+            if self.queue.flow.as_ref() == Some(&flow) && self.queue.extend_unique(tracks) {
+                self.preload = None;
+            }
+        }
+        let Some(library) = self.library.clone() else { return };
+        match (self.upcoming(), &self.preload) {
+            (Some(next), Some(p)) if p.is_for(&next.id) => {}
+            (Some(next), _) => self.preload = Some(Preload::open(&self.spawn, library, next, self.quality)),
+            (None, Some(Preload::Refilling { .. } | Preload::Failed { id: None })) => {}
+            (None, _) => {
+                self.preload = match self.queue.flow.clone() {
+                    Some(flow) if self.repeat != Repeat::One && !self.queue.has_next() => Some(Preload::refill(&self.spawn, library, flow)),
+                    _ => None,
+                }
+            }
+        }
+    }
+
+    /// The current track has been decoded to its end: switch to the preloaded next
+    /// one right away, behind what the sink still has of this one. Returns whether
+    /// it did.
+    fn hand_over(&mut self) -> bool {
+        let (Some(next), Some(preload)) = (self.upcoming(), self.preload.as_ref()) else { return false };
+        if !matches!(preload, Preload::Ready { .. }) || !preload.is_for(&next.id) {
+            return false;
+        }
+        let Some((_, playback)) = self.preload.take().and_then(Preload::take_ready) else { return false };
+        let (Some(previous), Some(ended_at)) = (self.queue.current().cloned(), self.stream.as_ref().map(|s| s.written())) else {
+            return false;
+        };
+        let index = self.queue.index();
+        // No network here: there is a next entry (or repeat goes back to the first).
+        if self.repeat != Repeat::One && !self.forward() {
+            return false;
+        }
+        let Some(next) = self.queue.current().cloned() else { return false };
+        log_debug!("{} – {} ended; switching to the preloaded {} without draining", previous.artist, previous.title, next.id);
+        let starts_at = playback.written();
+        // The new track's listen starts when it's heard (see `settle_handoff`).
+        self.end_handoff();
+        self.stream = Some(playback);
+        self.handoff = Some(Handoff { track: previous, index, ended_at, starts_at, next });
+        true
+    }
+
+    /// Once the sink plays the track switched to, report the previous track's listen
+    /// and start the new one's, and show it.
+    fn settle_handoff(&mut self) {
+        if self.handoff.as_ref().is_some_and(|h| self.heard_position() >= h.starts_at) {
+            self.end_handoff();
+            self.publish(true);
+        }
+    }
+
+    /// Finish a handoff now: the previous track's listen ends, the new one's starts.
+    fn end_handoff(&mut self) {
+        let Some(handoff) = self.handoff.take() else { return };
+        self.listens.finish(self.library.as_deref());
+        self.start_listen(&handoff.next);
     }
 
     /// The sleep timer ran out: pause. Returns whether it did (also when nothing was
@@ -439,6 +592,7 @@ impl Engine {
     fn sleep_now(&mut self) {
         log_info!("sleep timer: stopping at the end of the track");
         self.sleep = None;
+        self.end_handoff();
         self.stop();
         if let Some(s) = self.sink.as_mut() {
             s.pause();
@@ -451,8 +605,8 @@ impl Engine {
 
     /// Play from `library` from now on. Another source than before ends playback and
     /// empties the queue: its tracks belong to the old source.
-    fn set_source(&mut self, key: &'static str, library: SharedLibrary) {
-        if self.source.is_some_and(|k| k != key) {
+    fn set_source(&mut self, id: SourceId, library: SharedLibrary) {
+        if self.source.is_some_and(|s| s != id) {
             log_info!("music source changed: stopping and clearing the queue");
             self.stop();
             if let Some(s) = self.sink.as_mut() {
@@ -462,11 +616,15 @@ impl Engine {
             self.queue.replace(Vec::new(), 0);
             self.restored_at = None;
         }
-        self.source = Some(key);
+        self.source = Some(id);
         self.library = Some(library);
     }
 
     fn stop(&mut self) {
+        // The track switched to (if any) was never heard: only the previous one's
+        // listen is reported.
+        self.handoff = None;
+        self.preload = None;
         self.listens.finish(self.library.as_deref());
         self.stream = None;
         self.playing = false;
@@ -480,6 +638,8 @@ impl Engine {
             *at = t.max(0.0);
             return;
         }
+        // A seek lands in the track switched to, so its listen is the one that counts it.
+        self.end_handoff();
         self.listens.seeked();
         self.reposition(t);
     }
@@ -487,6 +647,8 @@ impl Engine {
     /// Move the stream to `t` without counting it as the listener seeking (pausing a
     /// speaker or reconnecting to it starts it again from where it was).
     fn reposition(&mut self, t: f64) {
+        // The previous track's rest is flushed below: the new one is what plays.
+        self.end_handoff();
         let Some(stream) = self.stream.as_mut() else { return };
         log_debug!("seek to {t:.1} s");
         let t = t.max(0.0);
@@ -494,7 +656,13 @@ impl Engine {
         if stream.needs_reopen_for(t) {
             match stream.reopen(t) {
                 Ok(reopened) => self.stream = Some(reopened),
-                Err(_) => {
+                Err(OpenError::Transient(e)) => {
+                    let track = self.queue.current().map_or_else(String::new, |t| format!("{} – {}: ", t.artist, t.title));
+                    self.error(format!("{track}{e}"));
+                    self.halt(t);
+                    return;
+                }
+                Err(OpenError::Unavailable(_)) => {
                     // The CDN URL may have expired; resolve it again.
                     self.start_track(t);
                     return;
@@ -528,33 +696,57 @@ impl Engine {
 
     /// One unit of work while playing: feed the sink, or decode the next packet.
     fn step(&mut self) {
-        let Some(sink) = self.sink.as_mut() else {
+        self.settle_handoff();
+        if self.sink.is_none() {
             self.playing = false;
             return;
-        };
-        let Some(stream) = self.stream.as_mut() else { return };
-
+        }
         if !self.pending.is_empty() {
-            if sink.write(&self.pending) > 0 {
-                stream.set_written(self.pending_end);
-                self.pending.clear();
-            } else {
-                self.wait(Duration::from_millis(10));
-            }
+            self.feed();
             return;
         }
+        self.update_preload();
+        let Some(stream) = self.stream.as_mut() else { return };
         if stream.finished() {
-            if sink.pending_frames() == 0 {
-                self.continue_after_end();
-                self.publish(true);
-            } else {
-                self.wait(Duration::from_millis(20));
-            }
+            self.end_of_stream();
             return;
         }
         match stream.decode_next(&mut self.pending) {
             Decoded::Audio { ends_at } => self.pending_end = ends_at,
             Decoded::Nothing | Decoded::End => {}
+        }
+    }
+
+    /// Hand the decoded samples to the sink, or wait a moment for room.
+    fn feed(&mut self) {
+        let (Some(sink), Some(stream)) = (self.sink.as_mut(), self.stream.as_mut()) else { return };
+        if sink.write(&self.pending) > 0 {
+            stream.set_written(self.pending_end);
+            self.pending.clear();
+        } else {
+            self.wait(Duration::from_millis(10));
+        }
+    }
+
+    /// The current track is decoded and handed to the sink: switch to the preloaded
+    /// next track, wait for the one being preloaded, or else let the sink drain and
+    /// open the next one here (also how open errors are reported).
+    fn end_of_stream(&mut self) {
+        if self.sleep != Some(Sleep::EndOfTrack) {
+            if self.hand_over() {
+                self.publish(true);
+                return;
+            }
+            if self.preload.as_ref().is_some_and(Preload::is_pending) {
+                self.wait(Duration::from_millis(5));
+                return;
+            }
+        }
+        if self.sink.as_ref().is_none_or(|s| s.pending_frames() == 0) {
+            self.continue_after_end();
+            self.publish(true);
+        } else {
+            self.wait(Duration::from_millis(20));
         }
     }
 
@@ -569,20 +761,37 @@ impl Engine {
 
     // ------------------------------------------------------------ status
 
-    /// Playback position of what is audible now (sink buffering and latency removed).
+    /// Playback position in the current stream of what is audible now.
     fn position(&self) -> f64 {
+        self.heard_position().max(0.0)
+    }
+
+    /// The current stream's time at what is audible now (sink buffering and latency
+    /// removed); before its start while the sink still plays what came before.
+    fn heard_position(&self) -> f64 {
         let Some(s) = &self.stream else { return 0.0 };
         let delay = self.sink.as_ref().map_or(0, |k| k.pending_frames() + k.latency_frames());
-        (s.written() - delay as f64 / RATE as f64).max(0.0)
+        s.written() - delay as f64 / RATE as f64
+    }
+
+    /// The position the status shows: in the previous track while it plays out.
+    fn shown_position(&self) -> f64 {
+        match &self.handoff {
+            Some(h) => (h.ended_at + self.heard_position() - h.starts_at).max(0.0),
+            None => self.position(),
+        }
     }
 
     fn publish(&mut self, repaint: bool) {
         self.last_publish = Instant::now();
-        let position = self.restored_at.unwrap_or_else(|| self.position());
+        let position = self.restored_at.unwrap_or_else(|| self.shown_position());
         let restored = self.restored_at.is_some();
         let mut st = self.status.lock().unwrap();
         st.position = position;
-        st.track = self.queue.current().cloned().filter(|_| self.stream.is_some() || self.playing || restored);
+        st.track = match &self.handoff {
+            Some(h) => Some(h.track.clone()),
+            None => self.queue.current().cloned().filter(|_| self.stream.is_some() || self.playing || restored),
+        };
         st.state = match (&self.stream, self.playing) {
             (None, true) => State::Loading,
             (None, false) if restored => State::Paused,
@@ -595,11 +804,11 @@ impl Engine {
         st.shuffle = self.queue.shuffled();
         st.repeat = self.repeat;
         st.sleep = self.sleep;
-        st.index = self.queue.index();
+        st.index = self.handoff.as_ref().map_or(self.queue.index(), |h| h.index);
         if let Some(snapshot) = self.queue.take_snapshot() {
             st.queue = Arc::new(snapshot);
         }
-        st.flow = self.queue.flow.as_ref().map(Flow::id);
+        st.flow = self.queue.flow.clone();
         drop(st);
         if self.playing != self.awake.is_some() {
             log_debug!("{} keeping the system awake", if self.playing { "start" } else { "stop" });
@@ -620,44 +829,54 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::deezer::{Format, Listen};
+    use crate::model::{DeezerSong, Format, Listen, Origin, TrackId};
     use crate::player::library::Library;
     use std::sync::mpsc::{Sender, channel};
 
+    /// The number a test track was made with.
+    fn n(id: &TrackId) -> u64 {
+        id.as_str().parse().expect("a test track")
+    }
+
     fn track(id: u64, secs: u32) -> Track {
         Track {
-            id,
+            id: TrackId::from(id),
             title: format!("t{id}"),
             artist: String::new(),
             artists: Vec::new(),
             album: String::new(),
             album_id: String::new(),
             duration: secs,
-            token: String::new(),
-            cover: String::new(),
-            fallback: None,
+            art: None,
             available: true,
             available_from: String::new(),
-            episode: None,
-            server: None,
+            origin: Origin::Deezer(DeezerSong::default()),
         }
     }
 
-    /// Tracks yield one "packet" per second; ids in `unplayable` fail to open.
+    /// Tracks yield one "packet" per second; ids in `unplayable` fail to open, and
+    /// every track fails while `offline` is set.
     #[derive(Default)]
     struct FakeLibrary {
         unplayable: Vec<u64>,
+        offline: std::sync::atomic::AtomicBool,
         next_flow_id: Mutex<u64>,
+        /// Every track opened (in the order asked), on the player thread or a preload.
+        opened: Mutex<Vec<u64>>,
         started: Mutex<Vec<u64>>,
         listens: Mutex<Vec<Listen>>,
     }
 
     impl Library for FakeLibrary {
-        fn open(&self, track: &Track, _: Quality, at: f64) -> Result<Box<dyn Playback>, String> {
-            if self.unplayable.contains(&track.id) {
-                return Err("not available".into());
+        fn open(&self, track: &Track, _: Quality, at: f64) -> Result<Box<dyn Playback>, OpenError> {
+            self.opened.lock().unwrap().push(n(&track.id));
+            if self.offline.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err(OpenError::Transient("offline".into()));
             }
-            Ok(Box::new(FakePlayback { id: track.id, secs: track.duration as f64, written: at, done: false }))
+            if self.unplayable.contains(&n(&track.id)) {
+                return Err(OpenError::Unavailable("not available".into()));
+            }
+            Ok(Box::new(FakePlayback { id: track.id.clone(), secs: track.duration as f64, written: at, done: false }))
         }
 
         fn flow(&self, _: Option<&str>) -> Result<Vec<Track>, String> {
@@ -667,8 +886,8 @@ mod tests {
             Ok(batch)
         }
 
-        fn report_listen_start(&self, song_id: u64) {
-            self.started.lock().unwrap().push(song_id);
+        fn report_listen_start(&self, song_id: TrackId) {
+            self.started.lock().unwrap().push(n(&song_id));
         }
 
         fn report_listen(&self, listen: Listen) {
@@ -677,15 +896,15 @@ mod tests {
     }
 
     struct FakePlayback {
-        id: u64,
+        id: TrackId,
         secs: f64,
         written: f64,
         done: bool,
     }
 
     impl Playback for FakePlayback {
-        fn song_id(&self) -> u64 {
-            self.id
+        fn song_id(&self) -> TrackId {
+            self.id.clone()
         }
         fn format(&self) -> Format {
             Format::Mp3(320)
@@ -713,8 +932,8 @@ mod tests {
         fn skip_to(&mut self, t: f64) {
             self.written = t;
         }
-        fn reopen(&self, at: f64) -> Result<Box<dyn Playback>, String> {
-            Ok(Box::new(FakePlayback { id: self.id, secs: self.secs, written: at, done: false }))
+        fn reopen(&self, at: f64) -> Result<Box<dyn Playback>, OpenError> {
+            Ok(Box::new(FakePlayback { id: self.id.clone(), secs: self.secs, written: at, done: false }))
         }
     }
 
@@ -737,10 +956,17 @@ mod tests {
         fn set_volume(&mut self, _: f32) {}
     }
 
+    /// An engine on these outputs whose preloads run inline, as soon as started.
+    fn with_outputs(rx: Receiver<Cmd>, status: Arc<Mutex<Status>>, volume: f32, make_sink: SinkFactory) -> Engine {
+        let mut e = Engine::with_outputs(rx, status, egui::Context::default(), volume, make_sink);
+        e.spawn = Box::new(|job| job());
+        e
+    }
+
     fn engine(library: FakeLibrary) -> (Engine, Arc<FakeLibrary>, Sender<Cmd>) {
         let (tx, rx) = channel();
         let status = Arc::new(Mutex::new(Status::default()));
-        let mut e = Engine::with_outputs(rx, status, egui::Context::default(), 0.5, Box::new(|_, _| Ok(Box::new(FakeSink) as _)));
+        let mut e = with_outputs(rx, status, 0.5, Box::new(|_, _| Ok(Box::new(FakeSink) as _)));
         let library = Arc::new(library);
         e.library = Some(library.clone());
         (e, library, tx)
@@ -758,7 +984,7 @@ mod tests {
     }
 
     fn now_playing(e: &Engine) -> Option<u64> {
-        e.stream.as_ref().map(|s| s.song_id())
+        e.stream.as_ref().map(|s| n(&s.song_id()))
     }
 
     /// A sink that stops working when `broken` is set; counts how many were made.
@@ -796,7 +1022,7 @@ mod tests {
             flag.store(false, Ordering::Relaxed); // a fresh connection works
             Ok(Box::new(FlakySink(flag.clone())) as _)
         });
-        let mut e = Engine::with_outputs(rx, status, egui::Context::default(), 0.5, factory);
+        let mut e = with_outputs(rx, status, 0.5, factory);
         e.library = Some(Arc::new(FakeLibrary::default()));
         e.handle(Cmd::Play(vec![track(1, 60), track(2, 60)], 0));
         for _ in 0..6 {
@@ -825,7 +1051,7 @@ mod tests {
             flag.store(false, std::sync::atomic::Ordering::Relaxed);
             Ok(Box::new(FlakySink(flag.clone())) as _)
         });
-        let mut e = Engine::with_outputs(rx, status, egui::Context::default(), 0.5, factory);
+        let mut e = with_outputs(rx, status, 0.5, factory);
         let library = Arc::new(FakeLibrary::default());
         e.library = Some(library.clone());
         e.handle(Cmd::Play(vec![track(1, 60)], 0));
@@ -846,7 +1072,7 @@ mod tests {
         play_out(&mut e);
         {
             let st = e.status.lock().unwrap();
-            assert_eq!((st.state, st.track.as_ref().map(|t| t.id), st.position), (State::Paused, Some(2), 0.0));
+            assert_eq!((st.state, st.track.as_ref().map(|t| n(&t.id)), st.position), (State::Paused, Some(2), 0.0));
             assert_eq!(st.sleep, None, "used up");
         }
         e.handle(Cmd::Toggle);
@@ -875,6 +1101,56 @@ mod tests {
         }
     }
 
+    /// Counts flushes; may drop its buffer on pause like an AirPlay receiver.
+    struct PausingSink {
+        drops_buffer: bool,
+        flushes: Arc<Mutex<usize>>,
+    }
+
+    impl Sink for PausingSink {
+        fn write(&mut self, samples: &[i16]) -> usize {
+            samples.len()
+        }
+        fn pending_frames(&self) -> usize {
+            0
+        }
+        fn latency_frames(&self) -> usize {
+            0
+        }
+        fn drops_buffer_on_pause(&self) -> bool {
+            self.drops_buffer
+        }
+        fn pause(&mut self) {}
+        fn resume(&mut self) {}
+        fn flush(&mut self) {
+            *self.flushes.lock().unwrap() += 1;
+        }
+        fn set_volume(&mut self, _: f32) {}
+    }
+
+    #[test]
+    fn pause_seeks_back_only_on_sinks_that_drop_their_buffer() {
+        for drops_buffer in [false, true] {
+            let flushes = Arc::new(Mutex::new(0));
+            let counted = flushes.clone();
+            let (_tx, rx) = channel();
+            let status = Arc::new(Mutex::new(Status::default()));
+            let factory: SinkFactory = Box::new(move |_, _| Ok(Box::new(PausingSink { drops_buffer, flushes: counted.clone() }) as _));
+            let mut e = with_outputs(rx, status, 0.5, factory);
+            e.library = Some(Arc::new(FakeLibrary::default()));
+            e.handle(Cmd::Play(vec![track(1, 60)], 0));
+            for _ in 0..10 {
+                e.step();
+            }
+            let (at, before) = (e.position(), *flushes.lock().unwrap());
+            e.handle(Cmd::Pause);
+            assert_eq!(*flushes.lock().unwrap() - before, drops_buffer as usize, "drops_buffer={drops_buffer}");
+            assert_eq!(e.position(), at, "paused where it was");
+            e.handle(Cmd::Resume);
+            assert!(e.playing);
+        }
+    }
+
     #[test]
     fn timed_sleep_fades_out_then_restores_the_volume() {
         let volumes = Arc::new(Mutex::new(Vec::new()));
@@ -882,7 +1158,7 @@ mod tests {
         let (_tx, rx) = channel();
         let status = Arc::new(Mutex::new(Status::default()));
         let factory: SinkFactory = Box::new(move |_, _| Ok(Box::new(VolumeSink(seen.clone())) as _));
-        let mut e = Engine::with_outputs(rx, status, egui::Context::default(), 0.8, factory);
+        let mut e = with_outputs(rx, status, 0.8, factory);
         e.library = Some(Arc::new(FakeLibrary::default()));
         e.handle(Cmd::Play(vec![track(1, 600)], 0));
         let last = || *volumes.lock().unwrap().last().unwrap();
@@ -922,7 +1198,7 @@ mod tests {
         let (_tx, rx) = channel();
         let status = Arc::new(Mutex::new(Status::default()));
         let factory: SinkFactory = Box::new(move |_, _| Ok(Box::new(VolumeSink(seen.clone())) as _));
-        let mut e = Engine::with_outputs(rx, status, egui::Context::default(), 0.6, factory);
+        let mut e = with_outputs(rx, status, 0.6, factory);
         e.library = Some(Arc::new(FakeLibrary::default()));
         e.handle(Cmd::Play(vec![track(1, 600)], 0));
         e.sleep = Some(Sleep::At(Instant::now() + Duration::from_secs(5)));
@@ -948,26 +1224,26 @@ mod tests {
     #[test]
     fn episodes_are_not_reported_as_listens() {
         let (mut e, library, _tx) = engine(FakeLibrary::default());
-        let episode = crate::deezer::Episode { url: "https://example.com/ep.mp3".into(), show_id: "1".into(), published: String::new() };
-        e.handle(Cmd::Play(vec![Track { episode: Some(episode), ..track(1, 5) }, track(2, 5)], 0));
+        let episode = crate::model::Episode { url: "https://example.com/ep.mp3".into(), show_id: "1".into(), published: String::new() };
+        e.handle(Cmd::Play(vec![Track { origin: Origin::Episode(episode), ..track(1, 5) }, track(2, 5)], 0));
         e.listens.heard(Duration::from_secs(5));
         e.handle(Cmd::Next);
         e.listens.heard(Duration::from_secs(5));
         play_out(&mut e);
         assert_eq!(*library.started.lock().unwrap(), vec![2]);
-        assert_eq!(library.listens.lock().unwrap().iter().map(|l| l.song_id).collect::<Vec<_>>(), vec![2]);
+        assert_eq!(library.listens.lock().unwrap().iter().map(|l| n(&l.song_id)).collect::<Vec<_>>(), vec![2]);
     }
 
     #[test]
     fn switching_source_clears_the_queue() {
         let (mut e, library, _tx) = engine(FakeLibrary::default());
-        e.set_source("", library.clone());
+        e.set_source(crate::deezer::ID, library.clone());
         e.handle(Cmd::Play(vec![track(1, 60), track(2, 60)], 0));
         assert_eq!(now_playing(&e), Some(1));
         // Logging in again to the same source keeps playing.
-        e.set_source("", library.clone());
+        e.set_source(crate::deezer::ID, library.clone());
         assert_eq!(now_playing(&e), Some(1));
-        e.set_source("navidrome", library);
+        e.set_source(crate::subsonic::ID, library);
         e.publish(true);
         assert_eq!(now_playing(&e), None);
         assert!(!e.playing && e.queue.is_empty());
@@ -978,11 +1254,11 @@ mod tests {
     fn restored_queue_waits_paused_then_resumes_at_its_position() {
         let (mut e, _library, _tx) = engine(FakeLibrary::default());
         let tracks = vec![track(1, 200), track(2, 200)];
-        e.handle(Cmd::Restore { tracks, index: 1, position: 80.0, flow: Some(Some("chill".into())) });
+        e.handle(Cmd::Restore { tracks, index: 1, position: 80.0, flow: Some(Flow { mood: Some("chill".into()) }) });
         {
             let st = e.status.lock().unwrap();
-            assert_eq!((st.state, st.track.as_ref().map(|t| t.id), st.position), (State::Paused, Some(2), 80.0));
-            assert_eq!(st.flow.as_deref(), Some("chill"));
+            assert_eq!((st.state, st.track.as_ref().map(|t| n(&t.id)), st.position), (State::Paused, Some(2), 80.0));
+            assert_eq!(st.flow, Some(Flow { mood: Some("chill".into()) }));
         }
         assert_eq!(now_playing(&e), None, "nothing streams before play");
         e.handle(Cmd::Seek(95.0));
@@ -1055,6 +1331,32 @@ mod tests {
     }
 
     #[test]
+    fn network_errors_stop_at_the_track_instead_of_skipping() {
+        let offline = FakeLibrary { offline: true.into(), ..Default::default() };
+        let (mut e, library, _tx) = engine(offline);
+        e.handle(Cmd::Play(vec![track(1, 2), track(2, 2)], 0));
+        assert_eq!((now_playing(&e), e.queue.index()), (None, 0), "stayed on the first track");
+        assert!(!e.playing);
+        assert!(e.status.lock().unwrap().error.as_deref().is_some_and(|m| m.contains("offline")));
+        assert_eq!(e.status.lock().unwrap().state, State::Paused, "waits for play");
+
+        // Back online: play tries the same track again.
+        library.offline.store(false, std::sync::atomic::Ordering::Relaxed);
+        e.handle(Cmd::Toggle);
+        assert_eq!(now_playing(&e), Some(1));
+        assert!(e.status.lock().unwrap().error.is_none());
+    }
+
+    #[test]
+    fn network_error_on_the_next_track_keeps_the_queue_there() {
+        let (mut e, library, _tx) = engine(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 2), track(2, 2), track(3, 2)], 0));
+        library.offline.store(true, std::sync::atomic::Ordering::Relaxed);
+        play_out(&mut e);
+        assert_eq!((now_playing(&e), e.queue.index()), (None, 1), "stopped at the second track, not past it");
+    }
+
+    #[test]
     fn previous_restarts_late_in_a_track_else_goes_back() {
         let (mut e, _library, _tx) = engine(FakeLibrary::default());
         e.handle(Cmd::Play(vec![track(1, 30), track(2, 30)], 1));
@@ -1077,7 +1379,7 @@ mod tests {
         }
         assert!(e.playing, "Flow keeps going");
         assert!(e.queue.index() >= 3, "moved past the first batch");
-        assert_eq!(e.status.lock().unwrap().flow.as_deref(), Some("chill"));
+        assert_eq!(e.status.lock().unwrap().flow, Some(Flow { mood: Some("chill".into()) }));
     }
 
     #[test]
@@ -1088,7 +1390,7 @@ mod tests {
         e.handle(Cmd::Next);
         let listens = library.listens.lock().unwrap();
         assert_eq!(listens.len(), 1);
-        assert_eq!((listens[0].song_id, listens[0].listened_secs, listens[0].skipped), (1, 10, true));
+        assert_eq!((n(&listens[0].song_id), listens[0].listened_secs, listens[0].skipped), (1, 10, true));
     }
 
     #[test]
@@ -1111,5 +1413,305 @@ mod tests {
         play_out(&mut e);
         assert!(library.started.lock().unwrap().is_empty());
         assert!(library.listens.lock().unwrap().is_empty());
+    }
+
+    // ------------------------------------------------------------ preloading
+
+    /// A sink with a buffer the test plays out by hand. A fake track's one frame per
+    /// second counts as a second of audio here.
+    #[derive(Default)]
+    struct Buffer {
+        /// Seconds of audio queued.
+        queued: f64,
+        flushes: usize,
+    }
+
+    struct BufferSink(Arc<Mutex<Buffer>>);
+
+    impl Sink for BufferSink {
+        fn write(&mut self, samples: &[i16]) -> usize {
+            self.0.lock().unwrap().queued += (samples.len() / 2) as f64;
+            samples.len()
+        }
+        fn pending_frames(&self) -> usize {
+            (self.0.lock().unwrap().queued * RATE as f64) as usize
+        }
+        fn latency_frames(&self) -> usize {
+            0
+        }
+        fn pause(&mut self) {}
+        fn resume(&mut self) {}
+        fn flush(&mut self) {
+            let mut b = self.0.lock().unwrap();
+            b.queued = 0.0;
+            b.flushes += 1;
+        }
+        fn set_volume(&mut self, _: f32) {}
+    }
+
+    /// Preload jobs started but not run yet.
+    type Jobs = std::rc::Rc<std::cell::RefCell<Vec<preload::Job>>>;
+
+    /// An engine on a [`BufferSink`] whose preloads wait for [`run_jobs`].
+    fn buffered(library: FakeLibrary) -> (Engine, Arc<FakeLibrary>, Arc<Mutex<Buffer>>, Jobs) {
+        let buffer = Arc::new(Mutex::new(Buffer::default()));
+        let shared = buffer.clone();
+        let (_tx, rx) = channel();
+        let status = Arc::new(Mutex::new(Status::default()));
+        let factory: SinkFactory = Box::new(move |_, _| Ok(Box::new(BufferSink(shared.clone())) as _));
+        let mut e = Engine::with_outputs(rx, status, egui::Context::default(), 0.5, factory);
+        let jobs = Jobs::default();
+        let queued = jobs.clone();
+        e.spawn = Box::new(move |job| queued.borrow_mut().push(job));
+        let library = Arc::new(library);
+        e.library = Some(library.clone());
+        (e, library, buffer, jobs)
+    }
+
+    fn run_jobs(jobs: &Jobs) -> usize {
+        let started: Vec<_> = jobs.borrow_mut().drain(..).collect();
+        let n = started.len();
+        started.into_iter().for_each(|job| job());
+        n
+    }
+
+    /// Step until the current stream is decoded to its end (bounded).
+    fn decode_to_end(e: &mut Engine) {
+        for _ in 0..10_000 {
+            if e.stream.as_ref().is_none_or(|s| s.finished()) && e.pending.is_empty() {
+                return;
+            }
+            e.step();
+        }
+        panic!("never reached the end");
+    }
+
+    fn opened(library: &FakeLibrary) -> Vec<u64> {
+        library.opened.lock().unwrap().clone()
+    }
+
+    fn shown(e: &Engine) -> (Option<u64>, usize, f64) {
+        let st = e.status.lock().unwrap();
+        (st.track.as_ref().map(|t| n(&t.id)), st.index, st.position)
+    }
+
+    #[test]
+    fn switches_to_the_preloaded_track_without_draining() {
+        let (mut e, library, buffer, jobs) = buffered(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 20), track(2, 20)], 0));
+        for _ in 0..12 {
+            e.step(); // ~6 s decoded: not near the end yet
+        }
+        assert_eq!(jobs.borrow().len(), 0, "too early to preload");
+        decode_to_end(&mut e);
+        assert_eq!(run_jobs(&jobs), 1, "the next track was preloaded once");
+        assert_eq!(opened(&library), [1, 2]);
+
+        e.listens.heard(Duration::from_secs(20));
+        e.step();
+        assert_eq!(now_playing(&e), Some(2), "switched at once");
+        assert_eq!(buffer.lock().unwrap().queued, 20.0, "the sink still has all of the first track");
+        assert_eq!(buffer.lock().unwrap().flushes, 1, "only the flush of the first start");
+        e.publish(false);
+        assert_eq!(shown(&e), (Some(1), 0, 0.0), "the first track shows while it plays out");
+        buffer.lock().unwrap().queued = 5.0;
+        e.publish(false);
+        assert_eq!(shown(&e), (Some(1), 0, 15.0));
+        assert_eq!(*library.started.lock().unwrap(), [1], "not heard yet");
+        assert!(library.listens.lock().unwrap().is_empty());
+
+        buffer.lock().unwrap().queued = 0.0; // the first track has played out
+        e.step();
+        assert_eq!(*library.started.lock().unwrap(), [1, 2]);
+        let listens = library.listens.lock().unwrap();
+        assert_eq!(listens.iter().map(|l| (n(&l.song_id), l.skipped)).collect::<Vec<_>>(), [(1, false)]);
+        drop(listens);
+        let (track, index, _) = shown(&e);
+        assert_eq!((track, index), (Some(2), 1));
+        assert_eq!(opened(&library), [1, 2], "nothing opened on the player thread");
+    }
+
+    #[test]
+    fn waits_for_a_preload_still_opening() {
+        let (mut e, library, _buffer, jobs) = buffered(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 3), track(2, 3)], 0));
+        decode_to_end(&mut e);
+        for _ in 0..3 {
+            e.step();
+        }
+        assert_eq!(now_playing(&e), Some(1), "waits for the preload");
+        assert_eq!(opened(&library), [1], "doesn't open it a second time");
+        run_jobs(&jobs);
+        e.step();
+        assert_eq!(now_playing(&e), Some(2));
+        assert_eq!(opened(&library), [1, 2]);
+    }
+
+    #[test]
+    fn a_queue_change_during_a_preload_opens_the_new_next() {
+        let (mut e, library, _buffer, jobs) = buffered(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 5), track(2, 5), track(3, 5)], 0));
+        e.step();
+        assert_eq!(jobs.borrow().len(), 1, "preloading 2");
+        e.handle(Cmd::Remove(1));
+        e.step(); // feeds the sink
+        e.step();
+        assert_eq!(run_jobs(&jobs), 2, "the stale one is dropped, 3 started");
+        decode_to_end(&mut e);
+        e.step();
+        assert_eq!(now_playing(&e), Some(3));
+        assert_eq!(e.queue.index(), 1);
+        // Inserted after the preload was ready: the new next is opened instead.
+        e.handle(Cmd::PlayNext(vec![track(4, 5)]));
+        decode_to_end(&mut e);
+        run_jobs(&jobs);
+        e.step();
+        assert_eq!(now_playing(&e), Some(4));
+        assert_eq!(opened(&library), [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn shuffle_and_repeat_changes_are_followed() {
+        let (mut e, _library, _buffer, jobs) = buffered(FakeLibrary::default());
+        e.handle(Cmd::Play((1..=8).map(|i| track(i, 5)).collect(), 0));
+        e.step();
+        e.handle(Cmd::Shuffle(true));
+        decode_to_end(&mut e);
+        run_jobs(&jobs);
+        e.step();
+        assert_eq!(e.queue.index(), 1);
+        assert_eq!(now_playing(&e), e.queue.current().map(|t| n(&t.id)), "the shuffled next track");
+
+        e.handle(Cmd::Repeat(Repeat::One));
+        let current = now_playing(&e);
+        decode_to_end(&mut e);
+        run_jobs(&jobs);
+        e.step();
+        assert_eq!((now_playing(&e), e.queue.index()), (current, 1), "repeat one plays it again");
+        assert_eq!(e.stream.as_ref().map(|s| s.written()), Some(0.0), "from the start");
+    }
+
+    #[test]
+    fn flow_is_refilled_ahead_off_the_player_thread() {
+        let (mut e, library, _buffer, jobs) = buffered(FakeLibrary::default());
+        e.handle(Cmd::PlayFlow(None));
+        assert_eq!(e.queue.get(2).map(|t| n(&t.id)), Some(102));
+        e.handle(Cmd::JumpTo(2));
+        e.step();
+        assert_eq!(*library.next_flow_id.lock().unwrap(), 3, "not fetched on the player thread");
+        assert_eq!(run_jobs(&jobs), 1, "more Flow fetched ahead");
+        assert_eq!(*library.next_flow_id.lock().unwrap(), 6);
+        e.step(); // feeds the sink
+        e.step();
+        assert_eq!(e.queue.get(3).map(|t| n(&t.id)), Some(103));
+        assert_eq!(run_jobs(&jobs), 1, "then the next track preloaded");
+        decode_to_end(&mut e);
+        e.step();
+        assert_eq!(now_playing(&e), Some(103));
+        assert_eq!(*library.next_flow_id.lock().unwrap(), 6, "fetched once");
+    }
+
+    #[test]
+    fn flow_fetched_after_it_was_cleared_is_dropped() {
+        let (mut e, _library, buffer, jobs) = buffered(FakeLibrary::default());
+        e.handle(Cmd::PlayFlow(None));
+        e.handle(Cmd::JumpTo(2));
+        e.step();
+        e.handle(Cmd::ClearUpcoming);
+        run_jobs(&jobs);
+        e.step();
+        assert!(e.queue.get(3).is_none(), "nothing added");
+        decode_to_end(&mut e);
+        buffer.lock().unwrap().queued = 0.0;
+        e.step();
+        assert!(!e.playing && now_playing(&e).is_none(), "the queue ended");
+    }
+
+    #[test]
+    fn skipping_seeking_back_and_switching_source_drop_the_preload() {
+        let (mut e, library, _buffer, jobs) = buffered(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 30), track(2, 30), track(3, 30)], 0));
+        decode_to_end(&mut e);
+        run_jobs(&jobs);
+        assert!(e.preload.is_some());
+        e.handle(Cmd::Seek(0.0));
+        e.step();
+        assert!(e.preload.is_none(), "far from the end again");
+
+        decode_to_end(&mut e);
+        run_jobs(&jobs);
+        e.handle(Cmd::Next);
+        assert!(e.preload.is_none());
+        assert_eq!(now_playing(&e), Some(2), "opened as usual");
+
+        decode_to_end(&mut e);
+        e.set_source(crate::subsonic::ID, library.clone());
+        e.set_source(crate::deezer::ID, library.clone());
+        assert!(e.preload.is_none() && e.handoff.is_none());
+        run_jobs(&jobs);
+        assert!(e.preload.is_none(), "a late result goes nowhere");
+    }
+
+    #[test]
+    fn skipping_while_the_previous_track_plays_out_never_starts_the_one_skipped() {
+        let (mut e, library, _buffer, jobs) = buffered(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 5), track(2, 5), track(3, 5)], 0));
+        decode_to_end(&mut e);
+        run_jobs(&jobs);
+        e.listens.heard(Duration::from_secs(5));
+        e.step();
+        assert!(e.handoff.is_some());
+        e.handle(Cmd::Next);
+        assert_eq!(now_playing(&e), Some(3));
+        assert_eq!(*library.started.lock().unwrap(), [1, 3], "2 was never heard");
+        assert_eq!(library.listens.lock().unwrap().iter().map(|l| n(&l.song_id)).collect::<Vec<_>>(), [1]);
+    }
+
+    #[test]
+    fn seeking_while_the_previous_track_plays_out_seeks_the_new_one() {
+        let (mut e, library, _buffer, jobs) = buffered(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 5), track(2, 30)], 0));
+        decode_to_end(&mut e);
+        run_jobs(&jobs);
+        e.listens.heard(Duration::from_secs(5));
+        e.step();
+        e.handle(Cmd::Seek(10.0));
+        assert!(e.handoff.is_none());
+        assert_eq!(e.stream.as_ref().map(|s| (n(&s.song_id()), s.written())), Some((2, 10.0)));
+        assert_eq!(*library.started.lock().unwrap(), [1, 2]);
+        let listens = library.listens.lock().unwrap();
+        assert_eq!(listens.iter().map(|l| (n(&l.song_id), l.skipped)).collect::<Vec<_>>(), [(1, false)], "the seek isn't 1's");
+    }
+
+    #[test]
+    fn a_failed_preload_is_opened_again_at_the_end() {
+        // Unplayable: skipped, as without preloading.
+        let (mut e, library, _tx) = engine(FakeLibrary { unplayable: vec![2], ..Default::default() });
+        e.handle(Cmd::Play(vec![track(1, 3), track(2, 3), track(3, 3)], 0));
+        play_out(&mut e);
+        assert_eq!(*library.started.lock().unwrap(), [1, 3]);
+        assert!(e.status.lock().unwrap().error.as_deref().is_some_and(|m| m.contains("not available")));
+
+        // Offline while preloading but back by the end: plays on.
+        let (mut e, library, buffer, jobs) = buffered(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 3), track(2, 3)], 0));
+        library.offline.store(true, std::sync::atomic::Ordering::Relaxed);
+        decode_to_end(&mut e);
+        run_jobs(&jobs);
+        e.step();
+        library.offline.store(false, std::sync::atomic::Ordering::Relaxed);
+        buffer.lock().unwrap().queued = 0.0;
+        e.step();
+        assert_eq!(now_playing(&e), Some(2));
+        assert!(e.status.lock().unwrap().error.is_none());
+    }
+
+    #[test]
+    fn sleep_at_the_end_of_the_track_preloads_nothing() {
+        let (mut e, _library, _buffer, jobs) = buffered(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 3), track(2, 3)], 0));
+        e.handle(Cmd::Sleep(Some(Sleep::EndOfTrack)));
+        decode_to_end(&mut e);
+        assert_eq!(jobs.borrow().len(), 0);
     }
 }

@@ -51,6 +51,11 @@ impl Rtsp {
         self.reader.get_mut().enable(&hkdf32(session_key, "Control-Salt", "Control-Read-Encryption-Key"));
     }
 
+    /// Another handle to the connection (e.g. to shut it down from another thread).
+    pub fn socket(&self) -> std::io::Result<TcpStream> {
+        self.writer.try_clone()
+    }
+
     /// How long to wait for each reply (the connection's read timeout).
     pub fn set_reply_timeout(&self, timeout: std::time::Duration) {
         let _ = self.writer.set_read_timeout(Some(timeout));

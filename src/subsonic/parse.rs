@@ -1,18 +1,20 @@
 //! Models from the Subsonic API's JSON (`f=json`). Servers differ in which optional
 //! fields they fill, so everything falls back to the classic Subsonic fields.
 
-use super::{COVER_PREFIX, local_id};
-use crate::deezer::{ArtistRef, Error, Item, LyricLine, Lyrics, Playlist, Result, Section, ServerSong, Track};
+use super::api;
+use crate::model::{
+    Art, ArtistRef, Item, ItemKind, LyricLine, Lyrics, Origin, Playlist, PlaylistId, Result, Section, ServerSong, Track, TrackId,
+};
 use serde_json::Value;
 
 /// The `subsonic-response` object of a reply, or the server's error.
 pub fn response(mut body: Value) -> Result<Value> {
-    let r = body.get_mut("subsonic-response").map(Value::take).ok_or_else(|| Error::Api("not a Subsonic server".into()))?;
+    let r = body.get_mut("subsonic-response").map(Value::take).ok_or_else(|| api("not a Subsonic server"))?;
     if r["status"] == "ok" {
         return Ok(r);
     }
     let message = text(&r["error"]["message"]);
-    Err(Error::Api(if message.is_empty() { format!("server error {}", r["error"]["code"]) } else { message }))
+    Err(api(if message.is_empty() { format!("server error {}", r["error"]["code"]) } else { message }))
 }
 
 pub fn text(v: &Value) -> String {
@@ -37,9 +39,9 @@ pub fn list<'a>(v: &'a Value, key: &str) -> Vec<&'a Value> {
     }
 }
 
-/// `sub:<id>` for a cover art id, the way pictures are recorded (see [`COVER_PREFIX`]).
-fn cover(v: &Value) -> Option<String> {
-    Some(text(&v["coverArt"])).filter(|c| !c.is_empty()).map(|c| format!("{COVER_PREFIX}{c}"))
+/// The picture of a song, album, artist or playlist: its cover art id.
+pub fn cover(v: &Value) -> Option<Art> {
+    Art::new(text(&v["coverArt"]))
 }
 
 /// The artists credited on a song or album: OpenSubsonic's list, else the single
@@ -67,20 +69,17 @@ pub fn song(v: &Value) -> Option<Track> {
         .or_else(|| Some(text(&v["artist"])).filter(|a| !a.is_empty()))
         .unwrap_or_else(|| artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "));
     Some(Track {
-        id: local_id(&id),
+        id: TrackId::new(id),
         title: text(&v["title"]),
         artist,
         artists,
         album: text(&v["album"]),
         album_id: text(&v["albumId"]),
         duration: number(&v["duration"]) as u32,
-        token: String::new(),
-        cover: cover(v).unwrap_or_default(),
-        fallback: None,
+        art: cover(v),
         available: true,
         available_from: String::new(),
-        episode: None,
-        server: Some(ServerSong { id, suffix: text(&v["suffix"]).to_lowercase() }),
+        origin: Origin::Server(ServerSong { suffix: text(&v["suffix"]).to_lowercase() }),
     })
 }
 
@@ -93,11 +92,11 @@ pub fn songs(values: Vec<&Value>) -> Vec<Track> {
 pub fn album_item(v: &Value, subtitle: String) -> Option<Item> {
     let id = text(&v["id"]);
     (!id.is_empty()).then(|| Item {
-        kind: "album".into(),
+        kind: ItemKind::Album,
         id,
         title: Some(text(&v["name"])).filter(|n| !n.is_empty()).unwrap_or_else(|| text(&v["title"])),
         subtitle,
-        picture: cover(v).map(|c| ("cover".into(), c)),
+        picture: cover(v),
     })
 }
 
@@ -114,7 +113,7 @@ pub fn artist_item(v: &Value) -> Option<Item> {
     let id = text(&v["id"]);
     let albums = number(&v["albumCount"]);
     (!id.is_empty()).then(|| Item {
-        kind: "artist".into(),
+        kind: ItemKind::Artist,
         id,
         title: text(&v["name"]),
         subtitle: match albums {
@@ -122,7 +121,7 @@ pub fn artist_item(v: &Value) -> Option<Item> {
             1 => "1 album".into(),
             n => format!("{n} albums"),
         },
-        picture: cover(v).map(|c| ("artist".into(), c)),
+        picture: cover(v),
     })
 }
 
@@ -130,26 +129,25 @@ pub fn artists_items(values: Vec<&Value>) -> Vec<Item> {
     values.into_iter().filter_map(artist_item).collect()
 }
 
-/// The playlists of `getPlaylists`, with their server ids.
-pub fn playlists(v: &Value, user: &str) -> Vec<(String, Playlist)> {
+/// The playlists of `getPlaylists`.
+pub fn playlists(v: &Value, user: &str) -> Vec<Playlist> {
     list(&v["playlists"], "playlist").into_iter().filter_map(|p| playlist(p, user)).collect()
 }
 
-pub fn playlist(v: &Value, user: &str) -> Option<(String, Playlist)> {
+pub fn playlist(v: &Value, user: &str) -> Option<Playlist> {
     let id = text(&v["id"]);
     if id.is_empty() {
         return None;
     }
     let owner = text(&v["owner"]);
-    let playlist = Playlist {
-        id: local_id(&id),
+    Some(Playlist {
+        id: PlaylistId::new(id),
         title: text(&v["name"]),
         count: number(&v["songCount"]) as u32,
         owned: owner.is_empty() || owner == user,
         private: v["public"] != true,
-        picture: cover(v).map(|c| ("playlist".into(), c)),
-    };
-    Some((id, playlist))
+        picture: cover(v),
+    })
 }
 
 /// What kind of release an album is: OpenSubsonic's release types, else whether
@@ -190,7 +188,7 @@ pub fn discography(artist: &Value) -> Vec<Section> {
         .filter(|(items, _)| !items.is_empty())
         .map(|(mut dated, title)| {
             dated.sort_by_key(|d| std::cmp::Reverse(d.0));
-            Section { title: title.into(), layout: "artist".into(), items: dated.into_iter().map(|(_, item)| item).collect() }
+            Section { title: title.into(), items: dated.into_iter().map(|(_, item)| item).collect() }
         })
         .collect()
 }
@@ -227,6 +225,7 @@ fn lyrics_from(synced: Vec<LyricLine>, plain: Vec<String>) -> Option<Lyrics> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Error;
     use serde_json::json;
 
     /// A recorded reply from a test Navidrome 0.58 (see the fixtures folder).
@@ -251,10 +250,10 @@ mod tests {
     fn errors_carry_the_servers_message() {
         let body: Value = serde_json::from_str(include_str!("fixtures/error_auth.json")).unwrap();
         match response(body) {
-            Err(Error::Api(m)) => assert_eq!(m, "Wrong username or password"),
+            Err(Error::Api { message: m, .. }) => assert_eq!(m, "Wrong username or password"),
             other => panic!("{other:?}"),
         }
-        assert!(matches!(response(json!({"hello": 1})), Err(Error::Api(_))));
+        assert!(matches!(response(json!({"hello": 1})), Err(Error::Api { .. })));
     }
 
     #[test]
@@ -266,10 +265,10 @@ mod tests {
         assert_eq!((t.title.as_str(), t.artist.as_str(), t.album.as_str(), t.duration), ("Pulse", "Square Wave Trio", "Single Pulse", 20));
         assert_eq!(t.album_id, "5F81DCwcfjVByziJAH9maf");
         assert_eq!(t.artists, vec![ArtistRef { id: "1cX14wrZBmbXZQpEQ79FiO".into(), name: "Square Wave Trio".into() }]);
-        assert_eq!(t.cover, "sub:al-5F81DCwcfjVByziJAH9maf_0");
-        assert_eq!(t.server, Some(ServerSong { id: "qPyR7XLJOiu93qWw1n06xy".into(), suffix: "wav".into() }));
-        assert_eq!(t.id, local_id("qPyR7XLJOiu93qWw1n06xy"));
-        assert!(t.available && t.episode.is_none());
+        assert_eq!(t.art, Art::new("al-5F81DCwcfjVByziJAH9maf_0"));
+        assert_eq!(t.origin, Origin::Server(ServerSong { suffix: "wav".into() }));
+        assert_eq!(t.id, TrackId::new("qPyR7XLJOiu93qWw1n06xy"), "the server's own id");
+        assert!(t.available);
     }
 
     #[test]
@@ -277,9 +276,7 @@ mod tests {
         let r = fixture("album_list");
         let cards = albums(list(&r["albumList2"], "album"));
         assert_eq!(cards.len(), 4);
-        assert!(
-            cards.iter().all(|c| c.kind == "album" && c.picture.as_ref().is_some_and(|(k, p)| k == "cover" && p.starts_with("sub:al-")))
-        );
+        assert!(cards.iter().all(|c| c.kind == ItemKind::Album && c.picture.as_ref().is_some_and(|p| p.as_str().starts_with("al-"))));
         let pulse = cards.iter().find(|c| c.title == "Single Pulse").unwrap();
         assert_eq!(pulse.subtitle, "Square Wave Trio");
     }
@@ -295,7 +292,7 @@ mod tests {
         let all: Vec<Item> = list(&r["artists"], "index").into_iter().flat_map(|i| artists_items(list(i, "artist"))).collect();
         assert_eq!(all.iter().map(|a| a.title.as_str()).collect::<Vec<_>>(), ["Sine Collective", "Square Wave Trio"]);
         assert_eq!(all[0].subtitle, "3 albums");
-        assert_eq!(all[1].picture, Some(("artist".into(), "sub:ar-1cX14wrZBmbXZQpEQ79FiO_0".into())));
+        assert_eq!(all[1].picture, Art::new("ar-1cX14wrZBmbXZQpEQ79FiO_0"));
     }
 
     #[test]
@@ -317,10 +314,9 @@ mod tests {
     fn playlists_with_owner() {
         let found = playlists(&fixture("playlists"), "dust");
         assert_eq!(found.len(), 1);
-        let (id, p) = &found[0];
-        assert_eq!((id.as_str(), p.title.as_str(), p.count, p.owned, p.private), ("J78Lrnn5aCX1IyCU5feMey", "Testlist", 2, true, true));
-        assert_eq!(p.id, local_id(id));
-        assert!(!playlists(&fixture("playlists"), "someone else")[0].1.owned);
+        let p = &found[0];
+        assert_eq!((p.id.as_str(), p.title.as_str(), p.count, p.owned, p.private), ("J78Lrnn5aCX1IyCU5feMey", "Testlist", 2, true, true));
+        assert!(!playlists(&fixture("playlists"), "someone else")[0].owned);
         let r = fixture("playlist");
         assert_eq!(songs(list(&r["playlist"], "entry")).len(), 2);
     }
@@ -345,7 +341,7 @@ mod tests {
         let v = json!({"song": {"id": "x", "title": "Solo", "suffix": "MP3"}});
         let tracks = songs(list(&v, "song"));
         assert_eq!(tracks.len(), 1);
-        assert_eq!(tracks[0].server.as_ref().unwrap().suffix, "mp3");
+        assert!(matches!(&tracks[0].origin, Origin::Server(s) if s.suffix == "mp3"));
     }
 
     #[test]

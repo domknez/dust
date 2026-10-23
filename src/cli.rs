@@ -10,12 +10,13 @@
 //! - `--debug-artist <id>`         an artist page: top tracks and card sections
 //! - `--debug-link <url>`          what a pasted Deezer link resolves to
 //! - `--debug-likes`               how many tracks, albums and artists the account likes
-//! - `--debug-tracks <kind> <id>`  what a home item plays (flow|mix|album|artist|playlist|trackmix)
+//! - `--debug-tracks <kind> <id>`  what a home item plays (mix|album|artist|playlist|trackmix, or flow [mood])
 //! - `--debug-stream <playlist> [n]`  stream resolution per track, incl. fallbacks
 //! - `--debug-decode <playlist> [quality] [start s]`  decrypt and decode 10 s of the first track (no sound)
 
 use crate::credentials;
-use crate::deezer::{Deezer, Quality};
+use crate::deezer::Deezer;
+use crate::model::{Origin, PlaylistId, Quality};
 use crate::output::airplay::{AirPlaySink, Device, Discovery};
 use crate::output::local::LocalSink;
 use crate::output::{RATE, Sink};
@@ -110,7 +111,7 @@ impl Command {
 }
 
 fn logged_in() -> Deezer {
-    let arl = credentials::load().expect("no stored session; log in with the app first");
+    let arl = credentials::load(crate::deezer::ID).expect("no stored session; log in with the app first");
     Deezer::login(&arl).expect("login")
 }
 
@@ -214,9 +215,9 @@ fn find_speaker(target: &str) -> Device {
 
 fn debug_home(client: &Deezer) {
     for sec in client.home().expect("home") {
-        println!("\n## {} [{}] ({} items)", sec.title, sec.layout, sec.items.len());
+        println!("\n## {} ({} items)", sec.title, sec.items.len());
         for it in sec.items.iter().take(8) {
-            println!("  - {}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
+            println!("  - {:?}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
         }
     }
 }
@@ -228,7 +229,7 @@ fn debug_search(client: &Deezer, query: &str) {
     for sec in results.sections {
         println!("\n## {} ({} items)", sec.title, sec.items.len());
         for it in sec.items.iter().take(4) {
-            println!("  - {}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
+            println!("  - {:?}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
         }
     }
 }
@@ -244,7 +245,7 @@ fn debug_artist(client: &Deezer, id: &str) {
     for sec in page.sections {
         println!("\n## {} ({} items)", sec.title, sec.items.len());
         for it in sec.items.iter().take(4) {
-            println!("  - {}:{} | {} | {}", it.kind, it.id, it.title, it.subtitle);
+            println!("  - {:?}:{} | {} | {}", it.kind, it.id, it.title, it.subtitle);
         }
     }
 }
@@ -259,12 +260,12 @@ fn debug_api(client: &Deezer, method: &str, body: &str) {
 
 fn debug_tracks(client: &Deezer, kind: &str, id: &str) {
     let tracks = match kind {
-        "flow" => client.flow(Some(id).filter(|i| !i.is_empty() && *i != "default")),
+        "flow" => client.flow(Some(id).filter(|mood| !mood.is_empty())),
         "mix" => client.mix(id),
         "album" => client.album(id),
         "artist" => client.artist_top(id),
         "trackmix" => client.track_mix(id),
-        _ => client.playlist(id.parse().unwrap_or(0)),
+        _ => client.playlist(&PlaylistId::new(id)),
     };
     match tracks {
         Ok(t) => {
@@ -279,11 +280,17 @@ fn debug_tracks(client: &Deezer, kind: &str, id: &str) {
 }
 
 fn debug_stream(client: &Deezer, playlist: u64, count: usize) {
-    for t in client.playlist(playlist).expect("playlist").iter().take(count) {
+    for t in client.playlist(&PlaylistId::from(playlist)).expect("playlist").iter().take(count) {
         let how = match client.stream_source(t, Quality::Mp3_320) {
             Ok(s) if s.song_id != t.id => format!("OK via fallback {} ({:?})", s.song_id, s.format),
             Ok(s) => format!("OK ({:?})", s.format),
-            Err(e) => format!("FAIL {e} (fallback: {:?})", t.fallback.as_ref().map(|f| f.0)),
+            Err(e) => {
+                let fallback = match &t.origin {
+                    Origin::Deezer(song) => song.fallback.as_ref().map(|f| f.0),
+                    _ => None,
+                };
+                format!("FAIL {e} (fallback: {fallback:?})")
+            }
         };
         println!("{:<50} {how}", format!("{} – {}", t.artist, t.title));
     }
@@ -292,10 +299,10 @@ fn debug_stream(client: &Deezer, playlist: u64, count: usize) {
 /// End-to-end check of the playback pipeline: resolve, download, decrypt and decode
 /// ~10 s of the first playable track, without an audio device.
 fn debug_decode(client: &Deezer, playlist: u64, quality: Quality, start: f64) {
-    use crate::player::library::{Decoded, Library};
-    for track in client.playlist(playlist).expect("playlist").iter().take(5) {
+    use crate::media::{Decoded, Playback};
+    for track in client.playlist(&PlaylistId::from(playlist)).expect("playlist").iter().take(5) {
         log_info!("opening {} – {}", track.artist, track.title);
-        let mut playback = match Library::open(client, track, quality, start) {
+        let mut playback = match client.open_track(track, quality, start) {
             Ok(p) => p,
             Err(e) => {
                 println!("{} – {}: {e}", track.artist, track.title);

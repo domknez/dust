@@ -7,37 +7,43 @@
 //! - [`playlists`]: creating and editing the account's own playlists
 //! - [`lyrics`]: synced and plain song lyrics
 //! - [`listens`]: listen reports (history, Flow, Last.fm scrobbling)
-//! - [`models`] / [`parse`]: data types and their construction from API JSON
+//! - [`parse`]: the model types ([`crate::model`]) from API JSON
+//! - [`images`]: pictures on the image CDN
 //! - [`crypto`]: the `BF_CBC_STRIPE` stream cipher
-//! - [`prefetch`]: stall-proof network reads for streams
+//! - [`playback`]: opening songs and episodes for the player
 //! - [`links`]: Deezer links pasted into search
 //! - [`session`]: cookies, CSRF token and the raw gw-light transport
+//! - [`source`]: Deezer as a [`crate::source::Source`]
 
 mod catalog;
 mod client;
 mod crypto;
-mod error;
+mod images;
 mod links;
 mod listens;
 mod lyrics;
-mod models;
 mod parse;
+mod playback;
 mod playlists;
-pub(crate) mod prefetch;
 pub(crate) mod session;
+mod source;
 mod streaming;
 
-pub use catalog::{Likeable, Likes};
 pub use client::Deezer;
-pub use links::{Link, is_link};
-pub use lyrics::{LyricLine, Lyrics};
-pub use models::{
-    AlbumInfo, ArtistPage, ArtistRef, Episode, Format, Item, Listen, Playlist, Quality, SearchResults, Section, ServerSong, Track,
-    image_url,
-};
-pub use parse::thousands;
-pub use streaming::StreamSource;
+pub use source::ID;
 
-pub use error::Error;
+// Child modules use these as `super::{Error, Result}`.
+use crate::model::{Error, Result, Service};
 
-pub type Result<T> = std::result::Result<T, Error>;
+/// Deezer, as its errors name it.
+pub const SERVICE: Service = Service::new("Deezer", "Deezer");
+
+/// A failed request to Deezer, as an error naming Deezer.
+fn http(e: ureq::Error) -> Error {
+    SERVICE.http(e)
+}
+
+/// Deezer answered with an error.
+fn api(message: impl Into<String>) -> Error {
+    SERVICE.api(message)
+}

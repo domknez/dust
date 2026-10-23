@@ -1,10 +1,9 @@
 //! Browsing the catalogue: search, the user's library, the home page and what its
 //! items open (albums, artists, mixes, Flow).
 
-use super::models::{AlbumInfo, ArtistPage, Item, Playlist, SearchResults, Section, Track};
 use super::{Deezer, Error, Result, parse};
+use crate::model::{AlbumInfo, ArtistPage, Item, Likeable, Likes, Playlist, PlaylistId, SearchResults, Section, Track, TrackId};
 use serde_json::json;
-use std::collections::HashSet;
 
 impl Deezer {
     pub fn search(&self, query: &str) -> Result<SearchResults> {
@@ -27,13 +26,13 @@ impl Deezer {
 
     /// The account's "Loved tracks".
     pub fn loved(&self) -> Result<Vec<Track>> {
-        self.playlist(self.0.loved_id)
+        self.playlist(&PlaylistId::from(self.0.loved_id))
     }
 
-    pub fn playlist(&self, id: u64) -> Result<Vec<Track>> {
+    pub fn playlist(&self, id: &PlaylistId) -> Result<Vec<Track>> {
         let r = self.call(
             "deezer.pagePlaylist",
-            json!({"playlist_id": id, "lang": "en", "nb": 2000, "start": 0, "tab": 0, "tags": true, "header": true}),
+            json!({"playlist_id": parse::id_value(id.as_str()), "lang": "en", "nb": 2000, "start": 0, "tab": 0, "tags": true, "header": true}),
         )?;
         Ok(parse::tracks(&r["SONGS"]["data"]))
     }
@@ -42,7 +41,8 @@ impl Deezer {
     pub fn playlists(&self) -> Result<Vec<Playlist>> {
         let r = self.call("deezer.pageProfile", json!({"user_id": self.0.user_id, "tab": "playlists", "nb": 500}))?;
         let list = r["TAB"]["playlists"]["data"].as_array().cloned().unwrap_or_default();
-        Ok(list.iter().map(|v| parse::playlist(v, self.0.user_id)).filter(|p| p.id != 0 && p.id != self.0.loved_id).collect())
+        let (none, loved) = (PlaylistId::from(0), PlaylistId::from(self.0.loved_id));
+        Ok(list.iter().map(|v| parse::playlist(v, self.0.user_id)).filter(|p| p.id != none && p.id != loved).collect())
     }
 
     /// Personalised home page, as sections of items (what the web app shows).
@@ -130,53 +130,18 @@ impl Deezer {
     }
 }
 
-/// Something the listener can like (Deezer: favourite tracks, albums, followed artists).
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Likeable {
-    Track(u64),
-    Album(String),
-    Artist(String),
-}
-
-/// Everything the account likes, by id.
-#[derive(Clone, Debug, Default)]
-pub struct Likes {
-    pub tracks: HashSet<u64>,
-    pub albums: HashSet<String>,
-    pub artists: HashSet<String>,
-}
-
-impl Likes {
-    pub fn contains(&self, what: &Likeable) -> bool {
-        match what {
-            Likeable::Track(id) => self.tracks.contains(id),
-            Likeable::Album(id) => self.albums.contains(id),
-            Likeable::Artist(id) => self.artists.contains(id),
-        }
-    }
-
-    /// Record a like or unlike locally.
-    pub fn set(&mut self, what: &Likeable, liked: bool) {
-        fn apply<T: Eq + std::hash::Hash + Clone>(set: &mut HashSet<T>, id: &T, liked: bool) {
-            if liked {
-                set.insert(id.clone());
-            } else {
-                set.remove(id);
-            }
-        }
-        match what {
-            Likeable::Track(id) => apply(&mut self.tracks, id, liked),
-            Likeable::Album(id) => apply(&mut self.albums, id, liked),
-            Likeable::Artist(id) => apply(&mut self.artists, id, liked),
-        }
-    }
-}
-
 impl Deezer {
     /// Ids of liked tracks, albums and followed artists.
     pub fn likes(&self) -> Result<Likes> {
         let songs = self.call("song.getFavoriteIds", json!({"nb": 10000, "start": 0}))?;
-        let tracks = songs["data"].as_array().into_iter().flatten().map(|s| parse::number(&s["SNG_ID"])).filter(|&id| id != 0).collect();
+        let tracks = songs["data"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|s| parse::number(&s["SNG_ID"]))
+            .filter(|&id| id != 0)
+            .map(TrackId::from)
+            .collect();
         let ids = |items: Vec<Item>| items.into_iter().map(|i| i.id).collect();
         Ok(Likes { tracks, albums: ids(self.favorite_albums()?), artists: ids(self.favorite_artists()?) })
     }
@@ -193,8 +158,8 @@ impl Deezer {
     /// Like or unlike on Deezer.
     pub fn set_liked(&self, what: &Likeable, liked: bool) -> Result<()> {
         let (method, body) = match (what, liked) {
-            (Likeable::Track(id), true) => ("favorite_song.add", json!({"SNG_ID": id.to_string()})),
-            (Likeable::Track(id), false) => ("favorite_song.remove", json!({"SNG_ID": id.to_string()})),
+            (Likeable::Track(id), true) => ("favorite_song.add", json!({"SNG_ID": id.as_str()})),
+            (Likeable::Track(id), false) => ("favorite_song.remove", json!({"SNG_ID": id.as_str()})),
             (Likeable::Album(id), true) => ("album.addFavorite", json!({"ALB_ID": id})),
             (Likeable::Album(id), false) => ("album.deleteFavorite", json!({"ALB_ID": id})),
             (Likeable::Artist(id), true) => ("artist.addFavorite", json!({"ART_ID": id})),
@@ -202,26 +167,8 @@ impl Deezer {
         };
         match self.call(method, body) {
             // Already liked: the outcome we wanted.
-            Err(Error::Api(e)) if liked && e.contains("ERROR_DATA_EXISTS") => Ok(()),
+            Err(Error::Api { message: e, .. }) if liked && e.contains("ERROR_DATA_EXISTS") => Ok(()),
             other => other.map(|_| ()),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn likes_track_toggles() {
-        let mut likes = Likes::default();
-        let (song, album, artist) = (Likeable::Track(7), Likeable::Album("302127".into()), Likeable::Artist("27".into()));
-        assert!(!likes.contains(&song));
-        likes.set(&song, true);
-        likes.set(&album, true);
-        likes.set(&artist, true);
-        assert!(likes.contains(&song) && likes.contains(&album) && likes.contains(&artist));
-        likes.set(&album, false);
-        assert!(!likes.contains(&album) && likes.contains(&song));
     }
 }

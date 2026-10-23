@@ -1,6 +1,6 @@
 //! Painting single lines of text, truncated with "…", and artist-name links.
 
-use crate::deezer::ArtistRef;
+use crate::model::ArtistRef;
 use crate::ui::style::typography::Text;
 use eframe::egui::text::{LayoutJob, TextWrapping};
 use eframe::egui::{Color32, CursorIcon, Galley, Painter, Pos2, Rect, Sense, Stroke, Ui, pos2};

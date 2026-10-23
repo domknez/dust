@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- Songs follow each other without a pause: dust opens the next track about ten seconds
+  before the current one ends and plays it straight after, instead of loading it once
+  the last one has finished. Endless Flow and Radio fetch their next batch ahead too
+- The player bar and the Now Playing widget change to the next track when you hear it
+  start; on an AirPlay speaker they used to change a few seconds early
+- AirPlay speakers respond more smoothly: pausing, seeking, skipping and volume changes
+  no longer hold up the player while the speaker answers (up to a couple of seconds on a
+  slow network), and a dragged volume slider or the sleep timer's fade sends the
+  speaker only the latest level
+- Fixed: errors from a Navidrome server said "Deezer" ("Couldn't reach Deezer: ..."); they
+  now name the server
+- Fixed: when the network dropped, dust skipped through the queue as if the tracks
+  couldn't be played. It now stops at the track with the error shown; press play to
+  try again. Tracks that really can't be played are still skipped
+- Fixed: if playback broke down, the controls silently did nothing; dust now says so.
+  Crashes are written to the log file too (what failed, where, on which thread)
+- Fixed: on this computer's speakers, the start of a track (or of the audio after a
+  seek) could be cut off
+- Fixed: a like that didn't go through, or your playlists failing to refresh, put the
+  error in place of the track list on screen until you went to another page. Errors
+  now show with what failed: a like, a playlist change or a card's play button
+  briefly beside the search field, the playlists in the sidebar. Artists, Albums and
+  Podcasts say when they couldn't load
+- Fixed: logging out or switching source while something was still loading (your
+  playlists, likes, a playlist change) could let it land afterwards, on the login
+  screen or the other source; what the old source was loading is now dropped
+
 ## 0.19.1 (2026-10-23)
 
 - Fixed: the Dark choice in Settings showed a circle instead of a moon

@@ -6,17 +6,15 @@
 //! ```
 
 use super::{Server, Subsonic};
-use crate::deezer::{Likeable, Track};
-use crate::player::library::{Decoded, Playback};
+use crate::media::{Decoded, Playback};
+use crate::model::{Likeable, Origin, Track};
 
 fn server() -> Subsonic {
     let spec = std::env::var("DUST_TEST_SUBSONIC").expect("DUST_TEST_SUBSONIC=url|user|password");
     let mut parts = spec.splitn(3, '|');
     let mut next = || parts.next().expect("url|user|password").to_string();
     let server = Server { url: next(), user: next(), password: next() };
-    let client = Subsonic::connect(&server).expect("connect");
-    client.activate();
-    client
+    Subsonic::connect(&server).expect("connect")
 }
 
 /// Every song in the library, through its albums.
@@ -79,24 +77,24 @@ fn live_browse() {
 fn live_likes_and_playlists() {
     let client = server();
     let song = &all_songs(&client)[0];
-    client.set_liked(&Likeable::Track(song.id), true).unwrap();
+    client.set_liked(&Likeable::Track(song.id.clone()), true).unwrap();
     assert!(client.likes().unwrap().tracks.contains(&song.id));
-    client.set_liked(&Likeable::Track(song.id), false).unwrap();
+    client.set_liked(&Likeable::Track(song.id.clone()), false).unwrap();
     assert!(!client.likes().unwrap().tracks.contains(&song.id));
 
-    let id = client.create_playlist("dust live test", &[song.id]).unwrap();
-    assert_eq!(client.add_to_playlist(id, &[song.id]).unwrap(), 0, "already there");
+    let id = client.create_playlist("dust live test", std::slice::from_ref(&song.id)).unwrap().expect("the new playlist's id");
+    assert_eq!(client.add_to_playlist(&id, std::slice::from_ref(&song.id)).unwrap(), 0, "already there");
     let other = &all_songs(&client)[1];
-    assert_eq!(client.add_to_playlist(id, &[other.id]).unwrap(), 1);
-    client.remove_from_playlist(id, &[song.id]).unwrap();
-    assert_eq!(client.playlist(id).unwrap().iter().map(|t| t.id).collect::<Vec<_>>(), [other.id]);
+    assert_eq!(client.add_to_playlist(&id, std::slice::from_ref(&other.id)).unwrap(), 1);
+    client.remove_from_playlist(&id, std::slice::from_ref(&song.id)).unwrap();
+    assert_eq!(client.playlist(&id).unwrap().iter().map(|t| &t.id).collect::<Vec<_>>(), [&other.id]);
     let playlist = client.playlists().unwrap().into_iter().find(|p| p.id == id).unwrap();
     client.rename_playlist(&playlist, "dust live test 2").unwrap();
-    client.delete_playlist(id).unwrap();
+    client.delete_playlist(&id).unwrap();
     assert!(client.playlists().unwrap().iter().all(|p| p.id != id));
     // Nothing to read, but the calls must work.
-    client.lyrics(song.id).unwrap();
-    client.scrobble(song.id, false, 0).unwrap();
+    client.lyrics(&song.id).unwrap();
+    client.scrobble(&song.id, false, 0).unwrap();
 }
 
 #[test]
@@ -106,7 +104,8 @@ fn live_every_format_plays_and_seeks() {
     let songs = all_songs(&client);
     assert!(songs.len() >= 5);
     for track in &songs {
-        let suffix = &track.server.as_ref().unwrap().suffix;
+        let Origin::Server(song) = &track.origin else { panic!("not a server song") };
+        let suffix = &song.suffix;
         let mut stream = client.open_track(track, 0.0).unwrap_or_else(|e| panic!("{suffix}: {e}"));
         assert!(play_a_second(&mut stream) > 0.5, "{suffix}");
         // Jump into the middle: either reopened there or skipped to it.

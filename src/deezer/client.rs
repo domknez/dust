@@ -48,6 +48,20 @@ impl Deezer {
         })))
     }
 
+    /// An account that never logged in, for tests that don't call Deezer.
+    #[cfg(test)]
+    pub fn offline(name: &str) -> Deezer {
+        Deezer(Arc::new(Inner {
+            agent: session::http_agent(),
+            arl: String::new(),
+            session: Mutex::new(Session::new()),
+            license_token: String::new(),
+            user_id: 1,
+            loved_id: 0,
+            name: name.into(),
+        }))
+    }
+
     /// The session cookie, for storing in the keychain.
     pub fn arl(&self) -> &str {
         &self.0.arl

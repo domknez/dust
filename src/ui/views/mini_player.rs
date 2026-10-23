@@ -3,10 +3,11 @@
 //! bottom. Drag anywhere to move it; narrow, it keeps only the cover, title, times
 //! and play (previous / next come back on hover).
 
-use super::player_bar::TICK;
+use super::player_bar::{TICK, transport_buttons};
 use crate::player::{Cmd, Output, State, Status};
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
-use crate::ui::format::{cover_url, mmss};
+use crate::ui::format::mmss;
 use crate::ui::state::Coll;
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, radius, typography as ty};
@@ -56,13 +57,13 @@ impl App {
     }
 
     /// ⌘⇧M / Ctrl+Shift+M switches modes.
-    pub(in crate::ui) fn mini_player_shortcut(&mut self, ctx: &egui::Context) {
+    pub(in crate::ui) fn mini_player_shortcut(&self, ctx: &egui::Context, acts: &mut Actions) {
         if ctx.input_mut(|i| i.consume_shortcut(&TOGGLE_SHORTCUT)) {
-            self.toggle_mini_player(ctx);
+            acts.push(Action::ToggleMiniPlayer);
         }
     }
 
-    pub(in crate::ui) fn mini_player(&mut self, ui: &mut Ui, st: &Status) {
+    pub(in crate::ui) fn mini_player(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
         let full = ui.max_rect();
         let p = colors();
         // Registered first so every control drawn on top of it wins the pointer.
@@ -81,7 +82,7 @@ impl App {
             let expand = Rect::from_center_size(pos2(right - 14.0, cy), Vec2::splat(28.0));
             ui.scope_builder(UiBuilder::new().max_rect(expand), |ui| {
                 if widgets::icon_button(ui, Icon::Expand, 14.0, p.dim).on_hover_text(FULL_WINDOW_HINT).clicked() {
-                    self.toggle_mini_player(ui.ctx());
+                    acts.push(Action::ToggleMiniPlayer);
                 }
             });
             right = expand.left() - 8.0;
@@ -90,11 +91,11 @@ impl App {
         let skip = !compact || hovered;
         let controls = Rect::from_min_max(pos2(right - if skip { TRANSPORT } else { PLAY }, cy - 20.0), pos2(right, cy + 20.0));
         if skip {
-            self.transport_buttons(ui, controls, st, false);
+            transport_buttons(ui, controls, st, false, acts);
         } else {
             ui.scope_builder(UiBuilder::new().max_rect(controls), |ui| {
                 if widgets::play_button(ui, st.state == State::Playing, PLAY).clicked() {
-                    self.player.send(Cmd::Toggle);
+                    acts.push(Action::Player(Cmd::Toggle));
                 }
             });
         }
@@ -103,13 +104,13 @@ impl App {
         let width = controls.left() - 12.0 - x;
         match &st.track {
             Some(track) => {
-                widgets::cover(ui, &mut self.covers, cover_url(track, metrics::NOW_PLAYING_PX).as_deref(), art, radius::ROW);
+                widgets::cover(ui, &mut self.covers, track.art.as_ref(), metrics::NOW_PLAYING_PX, art, radius::ROW);
                 let title_pos = pos2(x, cy - 9.0);
                 match Coll::origin_of(track) {
                     // The title opens the album (or podcast) in the full window.
                     Some(album) => {
                         if widgets::text_link(ui, "mini-title", title_pos, &track.title, ty::TITLE.strong(), p.text, p.text, width).0 {
-                            self.pending_album = Some(album);
+                            acts.push(Action::OpenCollection(album));
                         }
                     }
                     None => {
@@ -123,9 +124,7 @@ impl App {
                 } else {
                     // "Artist · on Office" while a speaker plays.
                     let (artist, end) = widgets::artist_links(ui, line, &track.artists, &track.artist, ty::SECONDARY, p.dim, p.text, width);
-                    if let Some(artist) = artist {
-                        self.pending_artist = Some(artist);
-                    }
+                    acts.extend(artist.map(Action::OpenArtist));
                     if st.output != Output::Local.name() {
                         let on = format!(" · on {}", st.output);
                         text_left(ui.painter(), pos2(end, line.y), &on, ty::SECONDARY, p.dim, x + width - end);
@@ -142,9 +141,9 @@ impl App {
         }
         let art_click = ui.interact(art, ui.id().with("mini-art"), Sense::click()).on_hover_text("Double-click for the full window");
         if art_click.double_clicked() {
-            self.toggle_mini_player(ui.ctx());
+            acts.push(Action::ToggleMiniPlayer);
         }
-        self.progress_line(ui, full, st);
+        self.progress_line(ui, full, st, acts);
 
         if st.state == State::Playing {
             ui.ctx().request_repaint_after(TICK);
@@ -152,7 +151,7 @@ impl App {
     }
 
     /// Lime line along the bottom edge; click or drag along it to seek.
-    fn progress_line(&mut self, ui: &mut Ui, full: Rect, st: &Status) {
+    fn progress_line(&mut self, ui: &mut Ui, full: Rect, st: &Status, acts: &mut Actions) {
         let p = colors();
         let duration = st.track.as_ref().map_or(0.0, |t| t.duration as f64);
         let strip = Rect::from_min_max(pos2(full.left(), full.bottom() - 8.0), full.max);
@@ -168,7 +167,7 @@ impl App {
             && (resp.drag_stopped() || resp.clicked())
             && let Some(f) = pointer.or(self.seek_drag)
         {
-            self.player.send(Cmd::Seek(f as f64 * duration));
+            acts.push(Action::Player(Cmd::Seek(f as f64 * duration)));
             self.seek_drag = None;
         }
         let shown = match self.seek_drag {

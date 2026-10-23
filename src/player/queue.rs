@@ -1,20 +1,14 @@
 //! Queue bookkeeping: the tracks, which one is current, shuffle and endless Flow.
 //! Pure data manipulation — no audio, no network — so it is fully unit-testable.
 
-use crate::deezer::Track;
+use crate::model::{Track, TrackId};
 
-/// Endless Flow: the queue refills itself from Deezer as it runs out.
-#[derive(Clone, Debug, PartialEq)]
+/// Endless Flow (a music server's Radio): the queue refills itself from the source
+/// as it runs out.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Flow {
     /// Mood/genre config ("chill", ...); None for plain Flow.
     pub mood: Option<String>,
-}
-
-impl Flow {
-    /// Identifier the UI uses to highlight the active Flow tile.
-    pub fn id(&self) -> String {
-        self.mood.clone().unwrap_or_else(|| "default".into())
-    }
 }
 
 /// What removing an entry did to the current track.
@@ -35,7 +29,7 @@ pub struct Queue {
     index: usize,
     pub flow: Option<Flow>,
     /// Shuffled: the track ids in the order before shuffling, to put it back.
-    unshuffled: Option<Vec<u64>>,
+    unshuffled: Option<Vec<TrackId>>,
     /// Changed since the UI last took a copy.
     dirty: bool,
 }
@@ -43,6 +37,11 @@ pub struct Queue {
 impl Queue {
     pub fn current(&self) -> Option<&Track> {
         self.tracks.get(self.index)
+    }
+
+    /// The entry at `i`.
+    pub fn get(&self, i: usize) -> Option<&Track> {
+        self.tracks.get(i)
     }
 
     pub fn index(&self) -> usize {
@@ -82,7 +81,7 @@ impl Queue {
     pub fn play(&mut self, tracks: Vec<Track>, index: usize) {
         self.replace(tracks, index);
         if self.shuffled() {
-            self.unshuffled = Some(self.tracks.iter().map(|t| t.id).collect());
+            self.unshuffled = Some(self.tracks.iter().map(|t| t.id.clone()).collect());
             if index < self.tracks.len() {
                 let first = self.tracks.remove(index);
                 self.tracks.insert(0, first);
@@ -100,14 +99,14 @@ impl Queue {
             return;
         }
         if on {
-            self.unshuffled = Some(self.tracks.iter().map(|t| t.id).collect());
+            self.unshuffled = Some(self.tracks.iter().map(|t| t.id.clone()).collect());
             self.shuffle_upcoming();
             return;
         }
         let order = self.unshuffled.take().unwrap_or_default();
-        let rank = |id: u64| order.iter().position(|&o| o == id).unwrap_or(usize::MAX);
+        let rank = |id: &TrackId| order.iter().position(|o| o == id).unwrap_or(usize::MAX);
         let mut entries: Vec<usize> = (0..self.tracks.len()).collect();
-        entries.sort_by_key(|&i| rank(self.tracks[i].id));
+        entries.sort_by_key(|&i| rank(&self.tracks[i].id));
         self.index = entries.iter().position(|&i| i == self.index).unwrap_or(0);
         self.tracks = entries.into_iter().map(|i| self.tracks[i].clone()).collect();
         self.dirty = true;
@@ -238,28 +237,31 @@ fn index_after_move(current: usize, from: usize, to: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{DeezerSong, Origin};
 
     fn t(id: u64) -> Track {
         Track {
-            id,
+            id: TrackId::from(id),
             title: id.to_string(),
             artist: String::new(),
             artists: Vec::new(),
             album: String::new(),
             album_id: String::new(),
             duration: 1,
-            token: String::new(),
-            cover: String::new(),
-            fallback: None,
+            art: None,
             available: true,
             available_from: String::new(),
-            episode: None,
-            server: None,
+            origin: Origin::Deezer(DeezerSong::default()),
         }
     }
 
+    /// The number a test track was made with.
+    fn number(t: &Track) -> u64 {
+        t.id.as_str().parse().unwrap()
+    }
+
     fn ids(q: &Queue) -> Vec<u64> {
-        q.tracks.iter().map(|t| t.id).collect()
+        q.tracks.iter().map(number).collect()
     }
 
     /// Simulate on a real Vec and compare with the bookkeeping.
@@ -287,7 +289,7 @@ mod tests {
         q.play_next(vec![t(2)]);
         q.enqueue(vec![t(3)]);
         assert_eq!(ids(&q), [1, 2, 3]);
-        assert_eq!(q.current().map(|t| t.id), Some(1));
+        assert_eq!(q.current().map(number), Some(1));
     }
 
     #[test]
@@ -295,9 +297,9 @@ mod tests {
         let mut q = Queue::default();
         q.replace((1..=4).map(t).collect(), 2);
         assert_eq!(q.remove(0), Removed::Other);
-        assert_eq!(q.current().map(|t| t.id), Some(3));
+        assert_eq!(q.current().map(number), Some(3));
         assert_eq!(q.remove(1), Removed::Current { replaced: true });
-        assert_eq!(q.current().map(|t| t.id), Some(4));
+        assert_eq!(q.current().map(number), Some(4));
         assert_eq!(q.remove(1), Removed::Current { replaced: false });
         assert_eq!(q.remove(9), Removed::Nothing);
     }
@@ -319,17 +321,17 @@ mod tests {
         let mut q = Queue::default();
         q.replace((1..=20).map(t).collect(), 4);
         q.set_shuffle(true);
-        assert_eq!(q.current().map(|t| t.id), Some(5));
+        assert_eq!(q.current().map(number), Some(5));
         assert_eq!(ids(&q)[..5], [1, 2, 3, 4, 5]);
         let mut sorted = ids(&q);
         sorted.sort();
         assert_eq!(sorted, (1..=20).collect::<Vec<_>>());
         q.advance();
-        let now = q.current().unwrap().id;
+        let now = number(q.current().unwrap());
         q.enqueue(vec![t(30), t(31)]);
         q.set_shuffle(false);
         assert_eq!(ids(&q), (1..=20).chain([30, 31]).collect::<Vec<_>>());
-        assert_eq!(q.current().map(|t| t.id), Some(now));
+        assert_eq!(q.current().map(number), Some(now));
     }
 
     #[test]
@@ -337,10 +339,10 @@ mod tests {
         let mut q = Queue::default();
         q.set_shuffle(true);
         q.play((1..=10).map(t).collect(), 6);
-        assert_eq!((q.index(), q.current().map(|t| t.id)), (0, Some(7)));
+        assert_eq!((q.index(), q.current().map(number)), (0, Some(7)));
         q.set_shuffle(false);
         assert_eq!(ids(&q), (1..=10).collect::<Vec<_>>());
-        assert_eq!(q.current().map(|t| t.id), Some(7));
+        assert_eq!(q.current().map(number), Some(7));
         q.play((1..=3).map(t).collect(), 1);
         assert_eq!(ids(&q), [1, 2, 3]);
     }

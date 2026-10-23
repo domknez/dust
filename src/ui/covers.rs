@@ -1,6 +1,8 @@
 //! Cover art cache: fetched and decoded off the UI thread, uploaded as textures,
-//! evicted least-recently-used once a byte budget is exceeded.
+//! evicted least-recently-used once a byte budget is exceeded. Pictures are
+//! asked for as [`Art`]; the source in use says where they are.
 
+use crate::model::{Art, ArtResolver};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureId, TextureOptions};
 use std::collections::{HashMap, VecDeque};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -33,23 +35,49 @@ pub struct Covers {
     slots: HashMap<String, Slot>,
     queue: Queue,
     done: Receiver<Done>,
+    /// For the workers, until they start (with the first cover asked for).
+    done_tx: Option<Sender<Done>>,
     frame: u64,
     bytes: usize,
+    /// Turns pictures into URLs: the source in use.
+    resolver: Option<Arc<dyn ArtResolver>>,
 }
 
 impl Covers {
     pub fn new(ctx: &egui::Context) -> Self {
         let queue: Queue = Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
-        let (tx, done) = mpsc::channel();
+        let (done_tx, done) = mpsc::channel();
+        Self { ctx: ctx.clone(), slots: HashMap::new(), queue, done, done_tx: Some(done_tx), frame: 0, bytes: 0, resolver: None }
+    }
+
+    /// Where pictures come from from now on (the source switched).
+    pub fn set_resolver(&mut self, resolver: Arc<dyn ArtResolver>) {
+        self.resolver = Some(resolver);
+    }
+
+    /// The URL of `art`, about `size` px square; None before a source is in use.
+    pub fn url(&self, art: &Art, size: u32) -> Option<String> {
+        self.resolver.as_ref().map(|r| r.art_url(art, size))
+    }
+
+    /// Texture for `art` at about `size` px if loaded; otherwise starts loading it
+    /// and returns None.
+    pub fn art(&mut self, art: &Art, size: u32) -> Option<TextureId> {
+        let url = self.url(art, size)?;
+        self.get(&url)
+    }
+
+    /// Start the fetching threads, once.
+    fn start_workers(&mut self) {
+        let Some(tx) = self.done_tx.take() else { return };
         let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(15))).build().into();
         for i in 0..WORKERS {
-            let (queue, tx, agent, ctx) = (queue.clone(), tx.clone(), agent.clone(), ctx.clone());
+            let (queue, tx, agent, ctx) = (self.queue.clone(), tx.clone(), agent.clone(), self.ctx.clone());
             std::thread::Builder::new()
                 .name(format!("covers-{i}"))
                 .spawn(move || worker(queue, tx, agent, ctx))
                 .expect("spawn cover worker");
         }
-        Self { ctx: ctx.clone(), slots: HashMap::new(), queue, done, frame: 0, bytes: 0 }
     }
 
     /// Call once per frame before drawing.
@@ -93,7 +121,7 @@ impl Covers {
     }
 
     /// Texture for `url` if loaded; otherwise starts loading it and returns None.
-    pub fn get(&mut self, url: &str) -> Option<TextureId> {
+    fn get(&mut self, url: &str) -> Option<TextureId> {
         match self.slots.get_mut(url) {
             Some(Slot::Ready { tex, last_used, .. }) => {
                 *last_used = self.frame;
@@ -101,6 +129,7 @@ impl Covers {
             }
             Some(_) => None,
             None => {
+                self.start_workers();
                 self.slots.insert(url.to_string(), Slot::Loading);
                 let (lock, cvar) = &*self.queue;
                 let mut q = lock.lock().unwrap();

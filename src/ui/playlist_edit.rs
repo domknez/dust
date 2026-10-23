@@ -1,25 +1,22 @@
 //! Editing the account's own playlists from the UI: add tracks, create (from a track,
 //! a list or the queue), remove tracks, rename, delete. Dialogs ask for names and
-//! confirm deletes; a short notice reports what happened.
+//! confirm deletes; a short [notice](crate::ui::notice) reports what happened.
 
-use crate::deezer::{Error, Playlist, Track};
-use crate::provider::Provider;
+use crate::model::{Error, Playlist, PlaylistId, Track, TrackId};
+use crate::source::Source;
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
-use crate::ui::state::{Source, View};
+use crate::ui::load::Load;
+use crate::ui::state::{CollSource, View, for_playlist};
 use crate::ui::style::{colors, typography as ty};
-use crate::ui::tasks::{self, Task};
 use crate::ui::widgets;
 use eframe::egui::{self, Key, RichText};
-use std::time::{Duration, Instant};
-
-/// How long a notice stays up.
-const NOTICE_FOR: Duration = Duration::from_secs(4);
 
 /// A change to make on the music source (Deezer or a server).
 pub enum Edit {
     Add { playlist: Playlist, tracks: Vec<Track> },
     Create { title: String, private: bool, tracks: Vec<Track> },
-    Remove { playlist: u64, tracks: Vec<u64> },
+    Remove { playlist: PlaylistId, tracks: Vec<TrackId> },
     Rename { playlist: Playlist, title: String },
     Delete { playlist: Playlist },
 }
@@ -44,25 +41,19 @@ pub enum Dialog {
 /// What finished: the notice to show, and the playlist it changed (to reload it).
 pub struct Done {
     message: String,
-    playlist: Option<u64>,
+    playlist: Option<PlaylistId>,
     deleted: bool,
 }
 
 #[derive(Default)]
 pub struct PlaylistEditing {
     pub dialog: Option<Dialog>,
-    task: Task<Done>,
-    notice: Option<(String, Instant)>,
+    task: Load<Done>,
 }
 
 impl PlaylistEditing {
     pub fn busy(&self) -> bool {
-        self.task.is_some()
-    }
-
-    /// The current notice, if it's still fresh.
-    pub fn notice(&self) -> Option<&str> {
-        self.notice.as_ref().filter(|(_, at)| at.elapsed() < NOTICE_FOR).map(|(m, _)| m.as_str())
+        self.task.is_loading()
     }
 }
 
@@ -70,11 +61,11 @@ fn plural(n: usize) -> String {
     if n == 1 { "1 track".into() } else { format!("{n} tracks") }
 }
 
-fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
-    let ids = |tracks: &[Track]| tracks.iter().filter(|t| t.available && !t.is_episode()).map(|t| t.id).collect::<Vec<_>>();
+fn run(client: &dyn Source, edit: Edit) -> Result<Done, Error> {
+    let ids = |tracks: Vec<Track>| for_playlist(tracks).into_iter().map(|t| t.id).collect::<Vec<_>>();
     Ok(match edit {
         Edit::Add { playlist, tracks } => {
-            let added = client.add_to_playlist(playlist.id, &ids(&tracks))?;
+            let added = client.add_to_playlist(&playlist.id, &ids(tracks))?;
             let message = match added {
                 0 => format!("Already in {}", playlist.title),
                 n => format!("Added {} to {}", plural(n), playlist.title),
@@ -82,11 +73,11 @@ fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
             Done { message, playlist: Some(playlist.id), deleted: false }
         }
         Edit::Create { title, private, tracks } => {
-            let id = client.create_playlist(&title, private, &ids(&tracks))?;
-            Done { message: format!("Created {title}"), playlist: Some(id), deleted: false }
+            let id = client.create_playlist(&title, private, &ids(tracks))?;
+            Done { message: format!("Created {title}"), playlist: id, deleted: false }
         }
         Edit::Remove { playlist, tracks } => {
-            client.remove_from_playlist(playlist, &tracks)?;
+            client.remove_from_playlist(&playlist, &tracks)?;
             Done { message: format!("Removed {}", plural(tracks.len())), playlist: Some(playlist), deleted: false }
         }
         Edit::Rename { playlist, title } => {
@@ -94,57 +85,51 @@ fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
             Done { message: format!("Renamed to {title}"), playlist: Some(playlist.id), deleted: false }
         }
         Edit::Delete { playlist } => {
-            client.delete_playlist(playlist.id)?;
+            client.delete_playlist(&playlist.id)?;
             Done { message: format!("Deleted {}", playlist.title), playlist: Some(playlist.id), deleted: true }
         }
     })
 }
 
 impl App {
-    /// The account's playlists that can be changed.
-    pub(in crate::ui) fn own_playlists(&self) -> Vec<Playlist> {
-        self.playlists.iter().filter(|p| p.owned).cloned().collect()
-    }
-
-    pub(in crate::ui) fn edit_playlist(&mut self, ctx: &egui::Context, edit: Edit) {
+    pub(in crate::ui) fn edit_playlist(&mut self, edit: Edit) {
         let Some(client) = self.client.clone() else { return };
-        self.editing.task = tasks::spawn(ctx, move || run(&client, edit));
+        self.library.editing.task.start(&self.jobs, move || run(&*client, edit));
     }
 
     /// Ask for a name, then create a playlist with `tracks`.
     pub(in crate::ui) fn new_playlist(&mut self, tracks: Vec<Track>) {
-        self.editing.dialog = Some(Dialog::Create { title: String::new(), private: false, tracks });
+        self.library.editing.dialog = Some(Dialog::Create { title: String::new(), private: false, tracks });
     }
 
     /// Collect a finished edit: notice, refreshed sidebar, reloaded page.
     pub(in crate::ui) fn poll_playlist_edits(&mut self, ctx: &egui::Context) {
-        let Some(result) = tasks::poll(&mut self.editing.task) else { return };
+        let Some(result) = self.library.editing.task.poll_take() else { return };
         let done = match result {
             Ok(done) => done,
             Err(e) => {
-                self.editing.notice = Some((format!("Couldn't change the playlist: {e}"), Instant::now()));
+                self.notice.error(ctx, format!("Couldn't change the playlist: {e}"));
                 return;
             }
         };
-        self.editing.notice = Some((done.message, Instant::now()));
+        self.notice.info(ctx, done.message);
         if let Some(client) = self.client.clone() {
-            self.playlists_task = tasks::spawn(ctx, move || client.playlists());
+            self.library.playlists_load.start(&self.jobs, move || client.playlists());
         }
-        let showing = matches!(&self.view, View::Collection(c) if done.playlist.is_some_and(|id| c.source == Source::Playlist(id)));
+        let showing = matches!(&self.browse.view, View::Collection(c) if done.playlist.as_ref().is_some_and(|id| matches!(&c.source, CollSource::Playlist(p) if p == id)));
         if showing && done.deleted {
-            self.open_view(ctx, View::Playlists);
+            self.open_view(View::Playlists);
         } else if showing {
-            self.show_view(ctx, self.view.clone());
+            self.show_view(self.browse.view.clone());
         }
-        ctx.request_repaint_after(NOTICE_FOR);
     }
 
     /// The open dialog, if any (call once per frame).
-    pub(in crate::ui) fn playlist_dialog(&mut self, ctx: &egui::Context) {
-        let Some(mut dialog) = self.editing.dialog.take() else { return };
+    pub(in crate::ui) fn playlist_dialog(&mut self, ctx: &egui::Context, acts: &mut Actions) {
+        let Some(mut dialog) = self.library.editing.dialog.take() else { return };
         let p = colors();
         let private_playlists = self.features().private_playlists;
-        let service = self.client.as_ref().map_or("Deezer", Provider::service);
+        let service = self.client.as_ref().map_or("", |c| c.id().name);
         let mut submit = None;
         let mut close = false;
         let modal = egui::Modal::new(egui::Id::new("playlist-dialog")).frame(widgets::popover_frame(ctx)).show(ctx, |ui| {
@@ -199,8 +184,8 @@ impl App {
         });
         close |= modal.should_close();
         match submit {
-            Some(edit) => self.edit_playlist(ctx, edit),
-            None if !close => self.editing.dialog = Some(dialog),
+            Some(edit) => acts.push(Action::EditPlaylist(edit)),
+            None if !close => self.library.editing.dialog = Some(dialog),
             None => {}
         }
     }

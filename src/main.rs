@@ -13,15 +13,18 @@ mod deezer;
 mod icon;
 #[cfg(feature = "login-window")]
 mod login;
+mod media;
+mod model;
 mod output;
 mod player;
-mod provider;
 mod settings;
+mod source;
 mod subsonic;
 mod ui;
 mod update;
 
 fn main() -> eframe::Result {
+    log::install_panic_hook();
     match cli::Command::parse(std::env::args().skip(1)) {
         Some(command) => {
             command.run();

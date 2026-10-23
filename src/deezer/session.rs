@@ -1,6 +1,6 @@
 //! gw-light transport: cookie jar, CSRF (`api_token`) handling and the raw call.
 
-use super::{Error, Result};
+use super::{Error, Result, api, http};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -65,20 +65,21 @@ pub fn call(agent: &ureq::Agent, arl: &str, session: &mut Session, method: &str,
         .query("api_token", &session.api_token)
         .query_pairs(extra.iter().copied())
         .header("Cookie", &session.cookie_header(arl))
-        .send_json(body)?;
+        .send_json(body)
+        .map_err(http)?;
     for c in resp.headers().get_all("set-cookie") {
         if let Ok(c) = c.to_str() {
             session.store(c);
         }
     }
-    results(method, resp.into_body().read_json()?)
+    results(method, resp.into_body().read_json().map_err(http)?)
 }
 
 /// The `results` of a gw-light reply, or its `error` object as an [`Error`].
 fn results(method: &str, reply: Value) -> Result<Value> {
     match &reply["error"] {
         Value::Object(o) if o.contains_key("VALID_TOKEN_REQUIRED") => Err(Error::InvalidToken),
-        Value::Object(o) if !o.is_empty() => Err(Error::Api(format!("{method}: {}", Value::Object(o.clone())))),
+        Value::Object(o) if !o.is_empty() => Err(api(format!("{method}: {}", Value::Object(o.clone())))),
         _ => Ok(reply["results"].clone()),
     }
 }
@@ -103,7 +104,7 @@ mod tests {
     #[test]
     fn error_replies() {
         assert!(matches!(results("m", json!({"error": {"VALID_TOKEN_REQUIRED": "Invalid CSRF token"}})), Err(Error::InvalidToken)));
-        assert!(matches!(results("m", json!({"error": {"DATA_ERROR": "x"}})), Err(Error::Api(_))));
+        assert!(matches!(results("m", json!({"error": {"DATA_ERROR": "x"}})), Err(Error::Api { .. })));
         assert_eq!(results("m", json!({"error": [], "results": {"a": 1}})).unwrap(), json!({"a": 1}));
     }
 

@@ -2,19 +2,13 @@
 //! and short share links (`link.deezer.com/…`, `deezer.page.link/…`), which redirect
 //! to one of those.
 
-use super::parse::text;
+use super::images::art;
+use super::parse::{picture, text};
 use super::{Deezer, Error, Result};
+use crate::model::{Link, PlaylistId};
 use serde_json::{Value, json};
 use std::time::Duration;
 use ureq::ResponseExt;
-
-/// What a link points at, with enough to show its page header right away.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Link {
-    Album { id: String, title: String, artist: String, picture: Option<String> },
-    Artist { id: String },
-    Playlist { id: u64, title: String, picture: Option<(String, String)> },
-}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Kind {
@@ -70,9 +64,8 @@ impl Deezer {
                 let page = self
                     .call("deezer.pagePlaylist", json!({"playlist_id": id, "lang": "en", "nb": 0, "start": 0, "tab": 0, "header": true}))?;
                 let data = &page["DATA"];
-                let picture =
-                    Some((text(&data["PICTURE_TYPE"]), text(&data["PLAYLIST_PICTURE"]))).filter(|(k, m)| !k.is_empty() && !m.is_empty());
-                Ok(Link::Playlist { id, title: text(&data["TITLE"]), picture })
+                let picture = picture(&data["PICTURE_TYPE"], &data["PLAYLIST_PICTURE"]);
+                Ok(Link::Playlist { id: PlaylistId::from(id), title: text(&data["TITLE"]), picture })
             }
         }
     }
@@ -84,7 +77,7 @@ impl Deezer {
             id: id.to_string(),
             title: text(&data["ALB_TITLE"]),
             artist: text(&data["ART_NAME"]),
-            picture: Some(text(&data["ALB_PICTURE"])).filter(|p| !p.is_empty()),
+            picture: art("cover", &text(&data["ALB_PICTURE"])),
         })
     }
 }

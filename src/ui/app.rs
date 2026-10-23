@@ -1,23 +1,27 @@
 //! The [`App`]: UI state, its lifecycle (login, background loads, settings) and the
 //! top-level panel layout. Screens are drawn by the modules in `views/`.
 
+use super::action::{Action, Actions};
+use super::browse::Browse;
 use super::covers::Covers;
-use super::history::{History, Visit};
-use super::likes::LikeState;
+use super::history::Visit;
+use super::library::Library;
+use super::load::Jobs;
+use super::notice::Notice;
 use super::now_playing::NowPlaying;
-use super::playlist_edit::PlaylistEditing;
-use super::sources::Sources;
-use super::state::{ArtistView, Coll, PlayMode, Source, View};
+use super::sources::{Login, Sources};
+use super::state::{ArtistView, Coll, CollSource, PlayMode, View, playable, playable_from};
 use super::style::{self, Appearance, colors, metrics};
-use super::tasks::{self, Task};
 use super::updates::Updates;
 use crate::credentials;
-use crate::deezer::{self, AlbumInfo, ArtistPage, Deezer, Error, Item, Likes, Link, Playlist, Quality, SearchResults, Section, Track};
+use crate::deezer::{self, Deezer};
+use crate::model::{Error, Link, Quality, Track};
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
-use crate::player::{Cmd, Output, PlayerHandle, Repeat, Status, saved};
-use crate::provider::Provider;
-use crate::settings;
+use crate::player::saved::QueueFiles;
+use crate::player::{Cmd, Flow, Output, PlayerHandle, Repeat, Status};
+use crate::settings::Prefs;
+use crate::source::{Shared, SourceId};
 use eframe::egui::{self, Key, Margin, Ui};
 
 /// What the panel on the right shows.
@@ -35,64 +39,31 @@ impl App {
     }
 }
 
-/// Field visibility is `pub(super)`: the views in `ui::views` read and update state
-/// directly; nothing outside `ui` does.
+/// Field visibility is `pub(super)`: the views in `ui::views` read the state and
+/// report what the listener did as [actions](super::action); nothing outside `ui`
+/// sees it.
 pub struct App {
     pub(super) player: PlayerHandle,
-    /// The music source in use (Deezer or a Navidrome server).
-    pub(super) client: Option<Provider>,
-    /// Both sources' logins.
+    /// Where background loads run.
+    pub(super) jobs: Jobs,
+    /// Where each source's queue is saved between runs.
+    pub(super) queues: QueueFiles,
+    /// The music source in use.
+    pub(super) client: Option<Shared>,
+    /// The logged-in sources.
     pub(super) sources: Sources,
-
-    // Login
-    pub(super) arl_input: String,
-    pub(super) login: Task<Deezer>,
-    /// Store the session in the keychain once the pending login succeeds.
-    pub(super) remember_login: bool,
-    pub(super) show_arl_input: bool,
-    pub(super) login_error: Option<String>,
+    /// The login screen's state and a Deezer login on its way.
+    pub(super) login: Login,
 
     // Content
-    pub(super) view: View,
-    pub(super) search: String,
-    pub(super) searched: String,
-    pub(super) tracks: Vec<Track>,
-    /// The list's tracks, and for an album its year, label and the artist's other
-    /// releases.
-    pub(super) tracks_task: Task<(Vec<Track>, Option<AlbumInfo>)>,
-    pub(super) album_info: Option<AlbumInfo>,
-    /// Discography tab on artist pages (albums, singles, live).
-    pub(super) discography_tab: usize,
-    /// What the sleep timer was last set to (for its ring and lit choice).
-    pub(super) sleep_choice: Option<super::views::SleepChoice>,
-    /// Artist, album and playlist cards of the current search.
-    pub(super) search_sections: Vec<Section>,
-    pub(super) search_task: Task<SearchResults>,
-    /// A Deezer link pasted into search, being resolved.
-    pub(super) link_task: Task<Link>,
-    pub(super) list_error: Option<String>,
-    pub(super) playlists: Vec<Playlist>,
-    pub(super) playlists_task: Task<Vec<Playlist>>,
-    pub(super) home: Vec<Section>,
-    /// The artist page being shown (for `View::Artist`), once loaded.
-    pub(super) artist_page: Option<ArtistPage>,
-    pub(super) artist_task: Task<ArtistPage>,
-    /// Followed artists, as cards (for `View::Artists`).
-    pub(super) followed: Vec<Item>,
-    pub(super) followed_task: Task<Vec<Item>>,
-    /// Liked albums, as cards (for `View::Albums`).
-    pub(super) favorite_albums: Vec<Item>,
-    pub(super) favorite_albums_task: Task<Vec<Item>>,
-    /// Followed podcasts, as cards (for `View::Podcasts`).
-    pub(super) favorite_shows: Vec<Item>,
-    pub(super) favorite_shows_task: Task<Vec<Item>>,
-    pub(super) likes: LikeState,
-    pub(super) likes_task: Task<Likes>,
-    pub(super) home_task: Task<Vec<Section>>,
-    /// Tracks fetched to play straight from a home card.
-    pub(super) quick_play: Task<(Vec<Track>, PlayMode)>,
+    /// The source's playlists, likes and other lists.
+    pub(super) library: Library,
+    /// The page on screen and its content.
+    pub(super) browse: Browse,
 
     // Interaction
+    /// What the sleep timer was last set to (for its ring and lit choice).
+    pub(super) sleep_choice: Option<super::views::SleepChoice>,
     /// The panel open on the right, if any.
     pub(super) side_panel: Option<SidePanel>,
     /// The Settings window is open.
@@ -105,324 +76,280 @@ pub struct App {
     pub(super) unmuted_volume: f32,
     /// In mini player mode: the full window's size, restored on the way back.
     pub(super) mini_player: Option<egui::Vec2>,
-    /// An artist name was clicked somewhere this frame; opened after drawing.
-    pub(super) pending_artist: Option<crate::deezer::ArtistRef>,
-    /// Same for an album (player bar or mini player title / cover).
-    pub(super) pending_album: Option<Coll>,
-    /// A heart outside the content area (player bar) was clicked.
-    pub(super) pending_like: Option<deezer::Likeable>,
 
     // Settings
-    pub(super) quality: Quality,
-    pub(super) appearance: Appearance,
-    pub(super) report_listens: bool,
-    /// The sidebar's playlist list is shown (its caption folds it away).
-    pub(super) playlists_open: bool,
-    /// Last volume written to settings.
-    saved_volume: f32,
+    /// Saved preferences (quality, theme, the sidebar's playlist list, the last
+    /// volume written...); change them with [`Prefs::update`].
+    pub(super) prefs: Prefs,
     /// Speaker (by name) to reselect once discovery finds it.
     pub(super) restore_output: Option<String>,
 
-    // Services
+    // Services (the optional ones may be unavailable, and tests go without)
     pub(super) discovery: Option<Discovery>,
     pub(super) covers: Covers,
     pub(super) logo: egui::TextureHandle,
-    _remote_control: Option<dacp::Server>,
+    remote_control: Option<dacp::Server>,
     now_playing: Option<NowPlaying>,
     pub(super) updates: Updates,
-    pub(super) history: History,
-    /// Playlist changes in flight, their dialog and notice.
-    pub(super) editing: PlaylistEditing,
+    /// What just happened away from the page on screen (a playlist changed, a like
+    /// that didn't go through).
+    pub(super) notice: Notice,
     /// When a whole list was last added to the queue (for the button's confirmation).
     pub(super) queued_flash: Option<std::time::Instant>,
     /// What the saved queue file last reflected (queue snapshot, index, Flow);
     /// None until the saved queue was offered to the player after login, so the
     /// empty startup queue never overwrites it.
-    pub(super) queue_saved: Option<(usize, usize, Option<String>)>,
+    pub(super) queue_saved: Option<(usize, usize, Option<Flow>)>,
     /// A restore was sent and the player hasn't shown the queue yet.
     pub(super) restore_pending: bool,
 }
 
 impl App {
+    /// The app as it starts: the player, background threads, speaker discovery,
+    /// remote control, media keys, and the stored logins.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let ctx = &cc.egui_ctx;
-        let saved = settings::load();
-        let appearance = saved.get("theme").and_then(|k| Appearance::from_key(k)).unwrap_or(Appearance::System);
-        let quality = saved.get("quality").and_then(|k| Quality::from_key(k)).unwrap_or(Quality::Mp3_320);
-        let report_listens = saved.get("report_listens").is_none_or(|v| v != "false");
-        let playlists_open = saved.get("sidebar_playlists").is_none_or(|v| v != "closed");
-        let volume = saved.get("volume").and_then(|v| v.parse::<f32>().ok()).map_or(0.5, |v| v.clamp(0.0, 1.0));
-        let restore_output = saved.get("output").filter(|o| !o.is_empty()).cloned();
-        let auto_update = saved.get("auto_update").is_none_or(|v| v != "false");
+        let prefs = Prefs::load();
         style::install_fonts(ctx);
-        style::apply(ctx, appearance.is_dark(ctx));
+        style::apply(ctx, prefs.theme.is_dark(ctx));
+        crate::update::clean_up();
 
-        let player = PlayerHandle::spawn(ctx.clone(), volume);
-        player.send(Cmd::Shuffle(saved.get("shuffle").is_some_and(|v| v == "true")));
-        player.send(Cmd::Repeat(saved.get("repeat").map_or(Repeat::Off, |k| Repeat::from_key(k))));
+        let player = PlayerHandle::spawn(ctx.clone(), prefs.volume);
+        let mut app = Self::with(ctx, prefs, player, Jobs::threads(ctx), QueueFiles::in_settings_dir());
         let repaint = ctx.clone();
-        let discovery =
+        app.discovery =
             Discovery::start(move || repaint.request_repaint()).inspect_err(|e| log_warn!("AirPlay discovery unavailable: {e}")).ok();
-        let mut app = Self {
-            _remote_control: start_remote_control(player.clone()),
-            now_playing: NowPlaying::start(cc, player.clone()),
-            updates: Updates::new(auto_update),
-            history: History::default(),
-            editing: PlaylistEditing::default(),
-            queued_flash: None,
-            queue_saved: None,
-            restore_pending: false,
+        app.remote_control = start_remote_control(app.player.clone());
+        app.now_playing = NowPlaying::start(cc, app.player.clone());
+        app.start_sources();
+        app
+    }
+
+    /// The app's state around `player`, with nothing started: background work goes
+    /// to `jobs` and queues are saved to `queues`. Tests build the app this way.
+    pub(super) fn with(ctx: &egui::Context, prefs: Prefs, player: PlayerHandle, jobs: Jobs, queues: QueueFiles) -> Self {
+        player.send(Cmd::Shuffle(prefs.shuffle));
+        player.send(Cmd::Repeat(prefs.repeat));
+        Self {
             player,
+            jobs,
+            queues,
             client: None,
             sources: Sources::new(),
-            arl_input: String::new(),
-            login: None,
-            remember_login: false,
-            show_arl_input: false,
-            login_error: None,
-            view: View::Home,
-            search: String::new(),
-            searched: String::new(),
-            tracks: Vec::new(),
-            tracks_task: None,
-            album_info: None,
-            discography_tab: 0,
+            login: Login::default(),
+            library: Library::default(),
+            browse: Browse::default(),
             sleep_choice: None,
-            search_sections: Vec::new(),
-            search_task: None,
-            link_task: None,
-            list_error: None,
-            playlists: Vec::new(),
-            playlists_task: None,
-            home: Vec::new(),
-            artist_page: None,
-            artist_task: None,
-            followed: Vec::new(),
-            followed_task: None,
-            favorite_albums: Vec::new(),
-            favorite_albums_task: None,
-            favorite_shows: Vec::new(),
-            favorite_shows_task: None,
-            likes: LikeState::default(),
-            likes_task: None,
-            home_task: None,
-            quick_play: None,
             side_panel: None,
             show_settings: false,
             lyrics: Default::default(),
             queue_drag: None,
             seek_drag: None,
             volume_drag: None,
-            unmuted_volume: volume,
+            unmuted_volume: prefs.volume,
             mini_player: None,
-            pending_artist: None,
-            pending_album: None,
-            pending_like: None,
-            quality,
-            appearance,
-            report_listens,
-            playlists_open,
-            saved_volume: volume,
-            restore_output,
-            discovery,
+            restore_output: prefs.output.clone(),
+            updates: Updates::new(prefs.auto_update),
+            prefs,
+            discovery: None,
             covers: Covers::new(ctx),
             logo: crate::icon::logo_texture(ctx),
-        };
-        if let Some(arl) = credentials::load() {
-            app.login = tasks::spawn(ctx, move || Deezer::login(&arl));
+            remote_control: None,
+            now_playing: None,
+            notice: Notice::default(),
+            queued_flash: None,
+            queue_saved: None,
+            restore_pending: false,
         }
-        app.start_sources(ctx);
-        app
     }
 
     // ------------------------------------------------------------ session
 
-    pub(super) fn log_in_with(&mut self, ctx: &egui::Context, arl: String) {
-        self.login_error = None;
-        self.remember_login = true;
-        self.login = tasks::spawn(ctx, move || Deezer::login(&arl));
+    pub(super) fn log_in_with(&mut self, arl: String) {
+        self.login.error = None;
+        self.login.remember = true;
+        self.login.task.start(&self.jobs, move || Deezer::login(&arl));
     }
 
     #[cfg(feature = "login-window")]
-    pub(super) fn log_in_with_browser(&mut self, ctx: &egui::Context) {
-        self.login_error = None;
-        self.remember_login = true;
-        self.login = tasks::spawn(ctx, || Deezer::login(&crate::login::obtain_arl().map_err(crate::deezer::Error::Other)?));
+    pub(super) fn log_in_with_browser(&mut self) {
+        self.login.error = None;
+        self.login.remember = true;
+        self.login.task.start(&self.jobs, || Deezer::login(&crate::login::obtain_arl().map_err(Error::Other)?));
     }
 
-    fn on_logged_in(&mut self, ctx: &egui::Context, client: Deezer) {
-        if std::mem::take(&mut self.remember_login) {
-            credentials::save(client.arl());
+    fn on_logged_in(&mut self, client: Deezer) {
+        if std::mem::take(&mut self.login.remember) {
+            credentials::save(deezer::ID, client.arl());
         }
-        self.arl_input.clear();
-        self.deezer_ready(ctx, client);
+        self.login.arl.clear();
+        self.source_ready(std::sync::Arc::new(client));
     }
 
     // ------------------------------------------------------------ navigation
 
-    /// Go to `view`, remembering the current page for Back.
-    pub(super) fn open_view(&mut self, ctx: &egui::Context, view: View) {
-        let query = if view == View::Search { self.search.trim().to_string() } else { String::new() };
+    /// The Search page as the sidebar opens it: empty, with nothing from the page
+    /// before (its list, a load or error); the query field is in the main area.
+    pub(super) fn open_search(&mut self) {
         let current = self.current_visit();
-        self.history.leave(current, &Visit { view: view.clone(), query });
-        self.show_view(ctx, view);
+        self.browse.history.leave(current, &Visit { view: View::Search, query: String::new() });
+        self.browse.view = View::Search;
+        self.browse.clear_list();
+        self.browse.searched.clear();
+    }
+
+    /// Go to `view`, remembering the current page for Back.
+    pub(super) fn open_view(&mut self, view: View) {
+        let query = if view == View::Search { self.browse.search.trim().to_string() } else { String::new() };
+        let current = self.current_visit();
+        self.browse.history.leave(current, &Visit { view: view.clone(), query });
+        self.show_view(view);
     }
 
     /// Switch the main area to `view`, loading its content in the background.
-    pub(super) fn show_view(&mut self, ctx: &egui::Context, view: View) {
+    pub(super) fn show_view(&mut self, view: View) {
         let Some(client) = self.client.clone() else { return };
-        self.view = view.clone();
-        self.list_error = None;
-        if view == View::Home {
-            // Cached; the refresh button clears it to force a reload.
-            if self.home.is_empty() && self.home_task.is_none() {
-                self.home_task = tasks::spawn(ctx, move || client.home());
+        self.browse.view = view.clone();
+        let library = &mut self.library;
+        match &view {
+            // Cached lists: loaded the first time they're shown (or after a reset).
+            View::Home if library.home.wants_load() => library.home.start(&self.jobs, move || client.home()),
+            View::Albums if library.favorite_albums.wants_load() => {
+                library.favorite_albums.start(&self.jobs, move || client.favorite_albums())
             }
-            return;
-        }
-        if view == View::Albums {
-            if self.favorite_albums.is_empty() && self.favorite_albums_task.is_none() {
-                self.favorite_albums_task = tasks::spawn(ctx, move || client.favorite_albums());
+            View::Podcasts if library.favorite_shows.wants_load() => {
+                library.favorite_shows.start(&self.jobs, move || client.favorite_shows())
             }
-            return;
-        }
-        if view == View::Podcasts {
-            if self.favorite_shows.is_empty() && self.favorite_shows_task.is_none() {
-                self.favorite_shows_task = tasks::spawn(ctx, move || client.favorite_shows());
+            View::Artists if library.followed.wants_load() => library.followed.start(&self.jobs, move || client.favorite_artists()),
+            View::Home | View::Albums | View::Podcasts | View::Artists => {}
+            View::Artist(artist) => {
+                let id = artist.id.clone();
+                self.browse.artist_page.start(&self.jobs, move || client.artist(&id));
             }
-            return;
+            View::Playlists | View::Search | View::Loved | View::Collection(_) => self.load_list(client, view),
         }
-        if view == View::Artists {
-            if self.followed.is_empty() && self.followed_task.is_none() {
-                self.followed_task = tasks::spawn(ctx, move || client.favorite_artists());
-            }
-            return;
-        }
-        if let View::Artist(artist) = &view {
-            let id = artist.id.clone();
-            self.artist_page = None;
-            self.artist_task = tasks::spawn(ctx, move || client.artist(&id));
-            return;
-        }
-        self.tracks.clear();
-        self.album_info = None;
-        self.search_sections.clear();
-        // Replacing a task drops its receiver, so a stale result never lands.
-        self.tracks_task = None;
-        self.search_task = None;
-        self.link_task = None;
+    }
+
+    /// A page with a track list: empty it and load the new one.
+    fn load_list(&mut self, client: Shared, view: View) {
+        let browse = &mut self.browse;
+        browse.clear_list();
         match view {
             View::Home | View::Playlists | View::Artists | View::Albums | View::Podcasts | View::Artist(_) => {}
-            View::Search if self.search.trim().is_empty() => {}
-            // A pasted Deezer link opens what it points at instead of searching.
-            View::Search if client.features().links && deezer::is_link(&self.search) => {
-                let link = self.search.trim().to_string();
-                self.searched.clear();
-                self.link_task = tasks::spawn(ctx, move || client.resolve_link(&link));
+            View::Search if browse.search.trim().is_empty() => {}
+            // A pasted link to the source opens what it points at instead of searching.
+            View::Search if client.is_link(&browse.search) => {
+                let link = browse.search.trim().to_string();
+                browse.searched.clear();
+                browse.link_load.start(&self.jobs, move || client.resolve_link(&link));
             }
             View::Search => {
-                let query = self.search.trim().to_string();
-                self.searched = query.clone();
-                self.search_task = tasks::spawn(ctx, move || client.search(&query));
+                let query = browse.search.trim().to_string();
+                browse.searched = query.clone();
+                browse.search_load.start(&self.jobs, move || client.search(&query));
             }
-            View::Loved => self.tracks_task = tasks::spawn(ctx, move || client.loved().map(|t| (t, None))),
+            View::Loved => browse.tracks_load.start(&self.jobs, move || client.loved().map(|t| (t, None))),
             View::Collection(coll) => {
-                self.tracks_task = tasks::spawn(ctx, move || match &coll.source {
-                    Source::Album(id) => client.album_page(id).map(|(t, info)| (t, Some(info))),
-                    source => source.fetch(&client).map(|t| (t, None)),
+                browse.tracks_load.start(&self.jobs, move || match &coll.source {
+                    CollSource::Album(id) => client.album_page(id).map(|(t, info)| (t, Some(info))),
+                    source => source.fetch(&*client).map(|t| (t, None)),
                 });
             }
         }
     }
 
-    /// A track list is on its way.
-    pub(super) fn loading_tracks(&self) -> bool {
-        self.tracks_task.is_some() || self.search_task.is_some() || self.link_task.is_some()
-    }
-
-    fn open_link(&mut self, ctx: &egui::Context, link: Link) {
-        self.search.clear();
+    fn open_link(&mut self, link: Link) {
+        self.browse.search.clear();
         match link {
             Link::Album { id, title, artist, picture } => {
-                let picture = picture.map(|md5| ("cover".to_string(), md5));
-                self.open_collection(ctx, Coll { source: Source::Album(id), kind: "ALBUM", title, subtitle: artist, picture });
+                self.open_collection(Coll { source: CollSource::Album(id), kind: "ALBUM", title, subtitle: artist, picture });
             }
-            Link::Artist { id } => self.open_artist(ctx, ArtistView { id, name: String::new(), picture: None }),
+            Link::Artist { id } => self.open_artist(ArtistView { id, name: String::new(), picture: None }),
             Link::Playlist { id, title, picture } => {
-                self.open_collection(ctx, Coll { source: Source::Playlist(id), kind: "PLAYLIST", title, subtitle: String::new(), picture });
+                self.open_collection(Coll { source: CollSource::Playlist(id), kind: "PLAYLIST", title, subtitle: String::new(), picture });
             }
         }
     }
 
     /// Open a collection; artists get their full page instead of a track list.
-    pub(super) fn open_collection(&mut self, ctx: &egui::Context, coll: Coll) {
-        if let Source::Artist(id) = &coll.source {
-            let picture = coll.picture.as_ref().map(|(_, md5)| md5.clone());
-            return self.open_artist(ctx, ArtistView { id: id.clone(), name: coll.title.clone(), picture });
+    pub(super) fn open_collection(&mut self, coll: Coll) {
+        if let CollSource::Artist(id) = &coll.source {
+            return self.open_artist(ArtistView { id: id.clone(), name: coll.title.clone(), picture: coll.picture.clone() });
         }
-        self.open_view(ctx, View::Collection(Box::new(coll)));
+        self.open_view(View::Collection(Box::new(coll)));
     }
 
-    pub(super) fn open_artist(&mut self, ctx: &egui::Context, artist: ArtistView) {
-        self.discography_tab = 0;
-        self.open_view(ctx, View::Artist(Box::new(artist)));
+    pub(super) fn open_artist(&mut self, artist: ArtistView) {
+        self.browse.discography_tab = 0;
+        self.open_view(View::Artist(Box::new(artist)));
+    }
+
+    /// Play `tracks` from `start`: the playable ones, from where `start` lands among
+    /// them; with `shuffle`, shuffle goes on and a random one starts.
+    pub(super) fn play_from(&mut self, tracks: Vec<Track>, start: usize, shuffle: bool) {
+        let Some((queue, index)) = playable_from(tracks, start) else { return };
+        let index = if shuffle {
+            self.set_shuffle(true);
+            fastrand::usize(..queue.len())
+        } else {
+            index
+        };
+        self.player.send(Cmd::Play(queue, index));
     }
 
     /// Fetch a collection and play/queue it without opening it.
-    pub(super) fn play_source(&mut self, ctx: &egui::Context, source: Source, mode: PlayMode) {
+    pub(super) fn play_source(&mut self, source: CollSource, mode: PlayMode) {
         let Some(client) = self.client.clone() else { return };
-        self.quick_play = tasks::spawn(ctx, move || source.fetch(&client).map(|t| (t, mode)));
+        self.browse.quick_play.start(&self.jobs, move || source.fetch(&*client).map(|t| (t, mode)));
     }
 
     // ------------------------------------------------------------ settings
 
     pub(super) fn set_quality(&mut self, quality: Quality) {
-        self.quality = quality;
         self.player.send(Cmd::Quality(quality));
-        settings::set("quality", quality.key());
+        self.prefs.update(|p| p.quality = quality);
     }
 
     pub(super) fn set_appearance(&mut self, appearance: Appearance) {
-        self.appearance = appearance;
-        settings::set("theme", appearance.key());
+        self.prefs.update(|p| p.theme = appearance);
     }
 
     pub(super) fn toggle_report_listens(&mut self) {
-        self.report_listens = !self.report_listens;
-        self.player.send(Cmd::ReportListens(self.report_listens));
-        settings::set("report_listens", if self.report_listens { "true" } else { "false" });
+        self.prefs.update(|p| p.report_listens = !p.report_listens);
+        self.player.send(Cmd::ReportListens(self.prefs.report_listens));
     }
 
     pub(super) fn set_shuffle(&mut self, on: bool) {
         self.player.send(Cmd::Shuffle(on));
-        settings::set("shuffle", if on { "true" } else { "false" });
+        self.prefs.update(|p| p.shuffle = on);
     }
 
     pub(super) fn set_repeat(&mut self, repeat: Repeat) {
         self.player.send(Cmd::Repeat(repeat));
-        settings::set("repeat", repeat.key());
+        self.prefs.update(|p| p.repeat = repeat);
     }
 
     pub(super) fn select_output(&mut self, output: Output) {
         let remembered = match &output {
-            Output::Local => String::new(),
-            Output::AirPlay(d) => d.name.clone(),
+            Output::Local => None,
+            Output::AirPlay(d) => Some(d.name.clone()),
         };
-        settings::set("output", &remembered);
+        self.prefs.update(|p| p.output = remembered);
         self.restore_output = None;
         self.player.send(Cmd::Output(output));
     }
 
-    /// Save the queue of source `key` as it is now (unless its restore is still on
-    /// its way, which would save an empty queue over it).
-    pub(super) fn save_queue_now(&mut self, key: &str) {
+    /// Save the queue of `source` as it is now (unless its restore is still on its
+    /// way, which would save an empty queue over it).
+    pub(super) fn save_queue_now(&mut self, source: SourceId) {
         if self.queue_saved.is_some() && !self.restore_pending {
-            saved::save(&self.player.status(), key);
+            self.queues.save(&self.player.status(), source);
         }
     }
 
-    /// Keep `queue.json` in step with the queue (after the restore was offered).
-    fn save_queue_if_changed(&mut self, st: &Status) {
+    /// Keep the source's saved queue in step with the queue (after the restore was
+    /// offered).
+    pub(super) fn save_queue_if_changed(&mut self, st: &Status) {
         // Until the player shows the restored queue, its (empty) queue isn't news.
         if self.restore_pending {
             if st.queue.is_empty() {
@@ -434,7 +361,7 @@ impl App {
         let key = (std::sync::Arc::as_ptr(&st.queue) as usize, st.index, st.flow.clone());
         if *last != key {
             if let Some(client) = &self.client {
-                saved::save(st, client.key());
+                self.queues.save(st, client.id());
             }
             self.queue_saved = Some(key);
         }
@@ -443,9 +370,8 @@ impl App {
     /// Save volume once it settles (not on every slider step) and reselect the
     /// remembered speaker as soon as it shows up on the network.
     fn persist_playback(&mut self, st: &Status) {
-        if self.volume_drag.is_none() && (st.volume - self.saved_volume).abs() > 0.001 {
-            self.saved_volume = st.volume;
-            settings::set("volume", &format!("{:.3}", st.volume));
+        if self.volume_drag.is_none() && (st.volume - self.prefs.volume).abs() > 0.001 {
+            self.prefs.update(|p| p.volume = st.volume);
         }
         if let Some(name) = &self.restore_output
             && let Some(device) = self.discovery.as_ref().and_then(|d| d.devices().into_iter().find(|d| &d.name == name))
@@ -459,127 +385,82 @@ impl App {
 
     // ------------------------------------------------------------ frame
 
-    fn poll_tasks(&mut self, ctx: &egui::Context) {
-        match tasks::poll(&mut self.login) {
-            Some(Ok(client)) => self.on_logged_in(ctx, client),
-            Some(Err(e)) => {
-                self.remember_login = false;
-                self.login_error = Some(e.to_string());
-            }
-            None => {}
-        }
-        self.poll_sources(ctx);
-        match tasks::poll(&mut self.tracks_task) {
-            Some(Ok((tracks, info))) => {
-                self.tracks = tracks;
-                self.album_info = info;
-            }
-            Some(Err(e)) => self.on_load_error(ctx, e),
-            None => {}
-        }
-        match tasks::poll(&mut self.link_task) {
-            Some(Ok(link)) => self.open_link(ctx, link),
-            Some(Err(e)) => self.on_load_error(ctx, e),
-            None => {}
-        }
-        match tasks::poll(&mut self.search_task) {
-            Some(Ok(results)) => {
-                self.tracks = results.tracks;
-                self.search_sections = results.sections;
-                // The listener's own playlists first.
-                if let Some(own) = own_playlists(&self.playlists, &self.searched) {
-                    self.search_sections.insert(0, own);
-                }
-            }
-            Some(Err(e)) => self.on_load_error(ctx, e),
-            None => {}
-        }
-        match tasks::poll(&mut self.artist_task) {
-            Some(Ok(page)) => self.artist_page = Some(page),
-            Some(Err(e)) => self.on_load_error(ctx, e),
-            None => {}
-        }
-        match tasks::poll(&mut self.likes_task) {
-            Some(Ok(likes)) => self.likes.likes = likes,
-            Some(Err(e)) => log_warn!("loading likes: {e}"),
-            None => {}
-        }
-        match tasks::poll(&mut self.favorite_albums_task) {
-            Some(Ok(albums)) => self.favorite_albums = albums,
-            Some(Err(e)) => self.on_load_error(ctx, e),
-            None => {}
-        }
-        self.poll_likes();
+    /// Collect what background loads finished since the last frame.
+    fn poll_loads(&mut self, ctx: &egui::Context) {
+        self.poll_login();
+        self.poll_sources();
+        self.poll_likes(ctx);
         self.poll_playlist_edits(ctx);
-        match tasks::poll(&mut self.favorite_shows_task) {
-            Some(Ok(shows)) => self.favorite_shows = shows,
-            Some(Err(e)) => self.on_load_error(ctx, e),
+        let mut failed = self.library.poll();
+        let link = self.browse.poll(&self.library.playlists, &mut failed);
+        self.poll_quick_play(ctx, &mut failed);
+        // Each error is shown with what failed to load; an expired session also
+        // ends it, and then what else arrived belongs to the old one.
+        for error in &failed {
+            log_warn!("{error}");
+        }
+        if let Some(expired) = failed.into_iter().find(Error::is_session_expired) {
+            self.log_out();
+            self.login.error = Some(expired.to_string());
+            return;
+        }
+        if let Some(link) = link {
+            self.open_link(link);
+        }
+    }
+
+    fn poll_login(&mut self) {
+        match self.login.task.poll_take() {
+            Some(Ok(client)) => self.on_logged_in(client),
+            Some(Err(e)) => {
+                self.login.remember = false;
+                self.login.error = Some(e.to_string());
+            }
             None => {}
         }
-        match tasks::poll(&mut self.followed_task) {
-            Some(Ok(artists)) => self.followed = artists,
-            Some(Err(e)) => self.on_load_error(ctx, e),
-            None => {}
-        }
-        match tasks::poll(&mut self.playlists_task) {
-            Some(Ok(p)) => self.playlists = p,
-            Some(Err(e)) => self.on_load_error(ctx, e),
-            None => {}
-        }
-        match tasks::poll(&mut self.home_task) {
-            Some(Ok(h)) => self.home = h,
-            Some(Err(e)) => self.on_load_error(ctx, e),
-            None => {}
-        }
-        match tasks::poll(&mut self.quick_play) {
-            Some(Ok((mut tracks, mode))) => {
-                tracks.retain(|t| t.available);
+    }
+
+    /// Tracks fetched from a card: play or queue them. They aren't shown anywhere,
+    /// so a failure is a notice.
+    fn poll_quick_play(&mut self, ctx: &egui::Context, failed: &mut Vec<Error>) {
+        match self.browse.quick_play.poll_take() {
+            Some(Ok((tracks, mode))) => {
+                let tracks = playable(tracks);
                 if !tracks.is_empty() {
                     self.player.send(mode.command(tracks));
                 }
             }
-            Some(Err(e)) => self.on_load_error(ctx, e),
-            _ => {}
+            Some(Err(e)) => {
+                // An expired session says so on the login screen instead.
+                if !e.is_session_expired() {
+                    self.notice.error(ctx, format!("Couldn't load the tracks: {e}"));
+                }
+                failed.push(e);
+            }
+            None => {}
         }
     }
 
-    /// A background load failed: an expired session sends the listener back to the
-    /// login screen with the reason; anything else is shown in place.
-    fn on_load_error(&mut self, ctx: &egui::Context, error: Error) {
-        log_warn!("{error}");
-        if error.is_session_expired() {
-            self.log_out(ctx);
-            self.login_error = Some(error.to_string());
-        } else {
-            self.list_error = Some(error.to_string());
+    /// Keyboard shortcuts that work anywhere (some only in the full window).
+    fn shortcuts(&self, ctx: &egui::Context, acts: &mut Actions) {
+        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(Key::Space)) {
+            acts.push(Action::Player(Cmd::Toggle));
+        }
+        self.mini_player_shortcut(ctx, acts);
+        if self.mini_player.is_none() {
+            self.history_input(ctx, acts);
+            self.settings_shortcut(ctx, acts);
+            self.nav_shortcuts(ctx, acts);
         }
     }
 
     /// Follow the chosen appearance (and the OS setting live when on System).
     fn sync_appearance(&self, ctx: &egui::Context) {
-        let dark = self.appearance.is_dark(ctx);
+        let dark = self.prefs.theme.is_dark(ctx);
         if dark != style::palette::is_dark() {
             style::apply(ctx, dark);
         }
     }
-}
-
-/// The account's playlists whose title contains `query` (case-insensitive), as a
-/// search section; `None` when nothing matches.
-fn own_playlists(playlists: &[Playlist], query: &str) -> Option<Section> {
-    let query = query.trim().to_lowercase();
-    let items: Vec<Item> = playlists
-        .iter()
-        .filter(|p| !query.is_empty() && p.title.to_lowercase().contains(&query))
-        .map(|p| Item {
-            kind: "playlist".into(),
-            id: p.id.to_string(),
-            title: p.title.clone(),
-            subtitle: format!("{} tracks", p.count),
-            picture: p.picture.clone(),
-        })
-        .collect();
-    (!items.is_empty()).then(|| Section { title: "Your playlists".into(), layout: "search".into(), items })
 }
 
 /// Speaker buttons (volume, play/pause, skip) come back to us over DACP.
@@ -608,7 +489,7 @@ impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         // Once more with the exact position, to resume right there next time.
         if let Some(client) = &self.client {
-            self.save_queue_now(client.key());
+            self.save_queue_now(client.id());
         }
         self.updates.apply_on_exit();
     }
@@ -618,40 +499,26 @@ impl eframe::App for App {
         log_repaint_causes(&ctx);
         self.sync_appearance(&ctx);
         self.covers.begin_frame();
-        self.poll_tasks(&ctx);
+        self.poll_loads(&ctx);
         self.updates.poll(&ctx);
+        let mut acts = Actions::default();
         if self.client.is_none() {
-            self.login_screen(ui);
-            self.server_dialog(&ctx);
+            self.login_screen(ui, &mut acts);
+            self.server_dialog(&ctx, &mut acts);
+            self.apply(&ctx, acts);
             return;
         }
-        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(Key::Space)) {
-            self.player.send(Cmd::Toggle);
-        }
-        self.mini_player_shortcut(&ctx);
-        if self.mini_player.is_none() {
-            self.history_input(&ctx);
-            self.settings_shortcut(&ctx);
-            self.nav_shortcuts(&ctx);
-        }
+        self.shortcuts(&ctx, &mut acts);
         let st = self.player.status();
         self.persist_playback(&st);
         self.save_queue_if_changed(&st);
         if let Some(np) = &mut self.now_playing {
-            np.update(&st);
+            np.update(&self.covers, &st);
         }
         let p = colors();
         if self.mini_player.is_some() {
-            egui::CentralPanel::default().frame(panel_frame(p.bar, Margin::ZERO)).show(ui, |ui| self.mini_player(ui, &st));
-            // An artist link in the mini player opens the full window on their page.
-            if let Some(artist) = self.pending_artist.take() {
-                self.toggle_mini_player(&ctx);
-                self.open_artist(&ctx, ArtistView::from_ref(&artist));
-            }
-            if let Some(album) = self.pending_album.take() {
-                self.toggle_mini_player(&ctx);
-                self.open_collection(&ctx, album);
-            }
+            egui::CentralPanel::default().frame(panel_frame(p.bar, Margin::ZERO)).show(ui, |ui| self.mini_player(ui, &st, &mut acts));
+            self.apply(&ctx, acts);
             return;
         }
         egui::Panel::bottom("player")
@@ -659,13 +526,13 @@ impl eframe::App for App {
             .resizable(false)
             .show_separator_line(false)
             .frame(panel_frame(p.bar, Margin::symmetric(20, 0)))
-            .show(ui, |ui| self.player_bar(ui, &st));
+            .show(ui, |ui| self.player_bar(ui, &st, &mut acts));
         egui::Panel::left("nav")
             .exact_size(metrics::SIDEBAR_WIDTH)
             .resizable(false)
             .show_separator_line(false)
             .frame(panel_frame(p.sidebar, Margin { left: 12, right: 12, top: 0, bottom: 10 }))
-            .show(ui, |ui| self.sidebar(ui));
+            .show(ui, |ui| self.sidebar(ui, &mut acts));
         if let Some(panel) = self.side_panel {
             egui::Panel::right("side-panel")
                 .exact_size(metrics::QUEUE_WIDTH)
@@ -673,26 +540,18 @@ impl eframe::App for App {
                 .show_separator_line(false)
                 .frame(panel_frame(p.sidebar, Margin { left: 14, right: 14, top: 0, bottom: 10 }))
                 .show(ui, |ui| match panel {
-                    SidePanel::Queue => self.queue_panel(ui, &st),
-                    SidePanel::Lyrics => self.lyrics_panel(ui, &st),
+                    SidePanel::Queue => self.queue_panel(ui, &st, &mut acts),
+                    SidePanel::Lyrics => self.lyrics_panel(ui, &st, &mut acts),
                 });
         }
         let margin = metrics::CONTENT_MARGIN;
         egui::CentralPanel::default()
             .frame(panel_frame(p.bg, Margin { left: margin, right: margin, top: 0, bottom: 0 }))
-            .show(ui, |ui| self.content(ui, &st));
-        if let Some(artist) = self.pending_artist.take() {
-            self.open_artist(&ctx, ArtistView::from_ref(&artist));
-        }
-        if let Some(album) = self.pending_album.take() {
-            self.open_collection(&ctx, album);
-        }
-        self.playlist_dialog(&ctx);
-        self.settings_window(&ctx);
-        self.server_dialog(&ctx);
-        if let Some(what) = self.pending_like.take() {
-            self.toggle_like(&ctx, what);
-        }
+            .show(ui, |ui| self.content(ui, &st, &mut acts));
+        self.playlist_dialog(&ctx, &mut acts);
+        self.settings_window(&ctx, &mut acts);
+        self.server_dialog(&ctx, &mut acts);
+        self.apply(&ctx, acts);
     }
 }
 
@@ -701,19 +560,182 @@ fn log_repaint_causes(ctx: &egui::Context) {
     log_trace!("frame {}: {:?}", ctx.cumulative_pass_nr(), ctx.repaint_causes());
 }
 
+/// An [`App`] for tests, built with [`App::with`]: no window, no player thread, no
+/// network. What it sends the player waits to be looked at, its background jobs
+/// are held (never run) and its queues are saved to a folder of its own.
+#[cfg(test)]
+pub(super) mod testing {
+    use super::*;
+    use crate::model::{DeezerSong, Origin};
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::mpsc::Receiver;
+
+    pub struct TestApp {
+        pub app: App,
+        pub ctx: egui::Context,
+        pub jobs: Jobs,
+        commands: Receiver<Cmd>,
+        /// Where the queues are saved; removed with the TestApp.
+        dir: PathBuf,
+    }
+
+    impl TestApp {
+        /// An app with these preferences (`key=value` lines, as in the settings file).
+        pub fn new(settings: &str) -> Self {
+            static COUNT: AtomicUsize = AtomicUsize::new(0);
+            let dir = std::env::temp_dir().join(format!("dust-test-{}-{}", std::process::id(), COUNT.fetch_add(1, Ordering::Relaxed)));
+            let ctx = egui::Context::default();
+            let (player, commands) = PlayerHandle::detached();
+            let jobs = Jobs::held();
+            let app = App::with(&ctx, Prefs::parse(settings), player, jobs.clone(), QueueFiles::at(dir.clone()));
+            TestApp { app, ctx, jobs, commands, dir }
+        }
+
+        /// The listener does something.
+        pub fn update(&mut self, action: Action) {
+            self.app.update(&self.ctx, action);
+        }
+
+        /// What was sent to the player since the last look.
+        pub fn sent(&self) -> Vec<Cmd> {
+            self.commands.try_iter().collect()
+        }
+
+        /// The app's saved queues.
+        pub fn queues(&self) -> QueueFiles {
+            QueueFiles::at(self.dir.clone())
+        }
+    }
+
+    impl Drop for TestApp {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// A Deezer account that never logged in.
+    pub fn deezer() -> Shared {
+        std::sync::Arc::new(Deezer::offline("Dee Zer"))
+    }
+
+    /// A music server that was never reached.
+    pub fn navidrome() -> Shared {
+        std::sync::Arc::new(crate::subsonic::Subsonic::offline("nas:4533", "me"))
+    }
+
+    pub fn track(id: u64, available: bool) -> Track {
+        Track {
+            id: id.into(),
+            title: format!("Song {id}"),
+            artist: String::new(),
+            artists: Vec::new(),
+            album: String::new(),
+            album_id: String::new(),
+            duration: 180,
+            art: None,
+            available,
+            available_from: String::new(),
+            origin: Origin::Deezer(DeezerSong::default()),
+        }
+    }
+
+    /// The numbers of tracks made by [`track`].
+    pub fn ids(tracks: &[Track]) -> Vec<u64> {
+        tracks.iter().map(|t| t.id.as_str().parse().expect("a test track")).collect()
+    }
+
+    /// The player showing a queue of these tracks.
+    pub fn queue(ids: &[u64], index: usize) -> Status {
+        Status { queue: std::sync::Arc::new(ids.iter().map(|&id| track(id, true)).collect()), index, ..Default::default() }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::testing::{TestApp, deezer, track};
     use super::*;
+    use crate::model::Section;
+    use crate::ui::load::Load;
+
+    /// Logged in to Deezer, on the home page.
+    fn logged_in() -> TestApp {
+        let mut t = TestApp::new("");
+        t.app.source_ready(deezer());
+        t
+    }
+
+    fn page(t: &TestApp) -> (View, &str) {
+        (t.app.browse.view.clone(), t.app.browse.search.as_str())
+    }
 
     #[test]
-    fn own_playlists_match_case_insensitively() {
-        let p = |id, title: &str| Playlist { id, title: title.into(), count: 3, owned: true, private: false, picture: None };
-        let mine = [p(1, "Rock Essentials"), p(2, "Rock & Chill"), p(3, "trip-hop mix")];
-        let found = own_playlists(&mine, "  rock ").unwrap();
-        assert_eq!(found.title, "Your playlists");
-        assert_eq!(found.items.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(), ["1", "2"]);
-        assert_eq!(found.items[0].subtitle, "3 tracks");
-        assert!(own_playlists(&mine, "jazz").is_none());
-        assert!(own_playlists(&mine, "").is_none());
+    fn back_and_forward_bring_back_the_page_and_its_search() {
+        let mut t = logged_in();
+        t.update(Action::Open(View::Loved));
+        t.app.browse.search = "daft punk".into();
+        t.update(Action::Open(View::Search));
+        assert_eq!(t.app.browse.searched, "daft punk");
+        // Typed, but not searched for.
+        t.app.browse.search = "justice".into();
+        t.update(Action::Open(View::Playlists));
+        t.update(Action::Back);
+        assert_eq!(page(&t), (View::Search, "daft punk"));
+        assert!(t.app.browse.search_load.is_loading(), "the search runs again");
+        t.update(Action::Back);
+        assert_eq!(page(&t).0, View::Loved);
+        t.update(Action::Forward);
+        assert_eq!(page(&t), (View::Search, "daft punk"));
+        t.update(Action::Forward);
+        assert_eq!(page(&t).0, View::Playlists);
+        assert!(!t.app.browse.history.can_go_forward());
+    }
+
+    #[test]
+    fn cached_pages_load_once_and_track_lists_each_time() {
+        let mut t = logged_in();
+        assert!(t.app.library.home.is_loading(), "home loads with the source");
+        t.app.library.home = Load::Ready(vec![Section { title: "Mixes".into(), items: Vec::new() }]);
+        let jobs = t.jobs.waiting();
+        t.update(Action::Open(View::Loved));
+        assert!(t.app.browse.tracks_load.is_loading());
+        t.update(Action::Open(View::Home));
+        assert_eq!(t.jobs.waiting(), jobs + 1, "home was there already");
+        t.update(Action::Back);
+        assert_eq!(t.jobs.waiting(), jobs + 2, "a track list loads each time it's shown");
+        t.update(Action::ReloadHome);
+        assert!(t.app.library.home.is_loading(), "refresh loads home again");
+    }
+
+    #[test]
+    fn the_sidebar_search_opens_empty() {
+        let mut t = logged_in();
+        t.app.browse.search = "daft".into();
+        t.update(Action::Open(View::Search));
+        t.app.browse.tracks = vec![track(1, true)];
+        t.update(Action::OpenSearch);
+        let browse = &t.app.browse;
+        assert!(browse.tracks.is_empty() && browse.searched.is_empty() && !browse.loading_tracks());
+        t.update(Action::Back);
+        assert_eq!(t.app.browse.searched, "daft", "the search before is a page of its own");
+    }
+
+    #[test]
+    fn the_app_starts_with_nothing_running() {
+        let t = TestApp::new("shuffle=true\nrepeat=all\n");
+        assert!(matches!(t.sent()[..], [Cmd::Shuffle(true), Cmd::Repeat(Repeat::All)]), "the player gets the saved modes");
+        assert_eq!(t.jobs.waiting(), 0);
+        assert!(t.app.client.is_none() && t.app.discovery.is_none() && t.app.now_playing.is_none());
+        assert!(t.queues().load(deezer::ID).is_none());
+    }
+
+    #[test]
+    fn player_actions_go_to_the_player() {
+        let mut t = TestApp::new("");
+        t.sent();
+        t.update(Action::Player(Cmd::Next));
+        t.update(Action::Repeat(Repeat::One));
+        assert!(matches!(t.sent()[..], [Cmd::Next, Cmd::Repeat(Repeat::One)]));
+        assert_eq!(t.app.prefs.repeat, Repeat::One, "remembered (in memory: the test's settings aren't a file)");
     }
 }

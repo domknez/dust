@@ -1,39 +1,16 @@
-//! Song lyrics: time-synced lines when Deezer has them, plain text otherwise.
+//! Song lyrics from Deezer: time-synced lines when it has them, plain text otherwise.
 
 use super::{Deezer, Error, Result, parse};
+use crate::model::{LyricLine, Lyrics, TrackId};
 use serde_json::{Value, json};
-
-/// One synced line, shown from `at_ms` into the track.
-#[derive(Clone, Debug, PartialEq)]
-pub struct LyricLine {
-    pub at_ms: u32,
-    pub text: String,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Lyrics {
-    /// Time-synced lines, in order; empty when only plain text exists.
-    pub synced: Vec<LyricLine>,
-    /// The lyrics as plain lines (blank lines separate verses).
-    pub plain: Vec<String>,
-    pub writers: String,
-    pub copyright: String,
-}
-
-impl Lyrics {
-    /// Index of the synced line being sung at `ms`, if one has started.
-    pub fn line_at(&self, ms: u32) -> Option<usize> {
-        self.synced.partition_point(|l| l.at_ms <= ms).checked_sub(1)
-    }
-}
 
 impl Deezer {
     /// The lyrics of a track, or None if Deezer has none.
-    pub fn lyrics(&self, song_id: u64) -> Result<Option<Lyrics>> {
-        match self.call("song.getLyrics", json!({"sng_id": song_id.to_string()})) {
+    pub fn lyrics(&self, song_id: &TrackId) -> Result<Option<Lyrics>> {
+        match self.call("song.getLyrics", json!({"sng_id": song_id.as_str()})) {
             Ok(r) => Ok(lyrics(&r)),
             // Deezer answers "no lyrics" with a DATA_ERROR.
-            Err(Error::Api(e)) if e.contains("DATA_ERROR") => Ok(None),
+            Err(Error::Api { message: e, .. }) if e.contains("DATA_ERROR") => Ok(None),
             Err(e) => Err(e),
         }
     }

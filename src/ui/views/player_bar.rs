@@ -1,10 +1,11 @@
 //! Player bar, one row: now playing on the left; transport, times and progress in
 //! the middle; lyrics, queue, the ⋯ menu, output and volume on the right.
 
-use crate::deezer::Likeable;
+use crate::model::{Likeable, TrackId};
 use crate::player::{Cmd, Repeat, State, Status};
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::{App, SidePanel};
-use crate::ui::format::{cover_url, mmss};
+use crate::ui::format::mmss;
 use crate::ui::state::Coll;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
@@ -26,25 +27,25 @@ const TIME_WIDTH: f32 = 40.0;
 pub(in crate::ui) const TICK: Duration = Duration::from_millis(500);
 
 impl App {
-    pub(in crate::ui) fn player_bar(&mut self, ui: &mut Ui, st: &Status) {
+    pub(in crate::ui) fn player_bar(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
         let full = ui.max_rect();
         ui.painter().hline(full.x_range(), full.top(), egui::Stroke::new(1.0, colors().line));
         let left = Rect::from_min_max(full.min, pos2(full.left() + (full.width() * LEFT_SHARE).min(LEFT_MAX), full.bottom()));
         let right = Rect::from_min_max(pos2(full.right() - (full.width() * RIGHT_SHARE).min(RIGHT_MAX), full.top()), full.max);
         let center = Rect::from_min_max(pos2(left.right() + 20.0, full.top()), pos2(right.left() - 20.0, full.bottom()));
 
-        self.now_playing(ui, left, st);
-        ui.scope_builder(UiBuilder::new().max_rect(center), |ui| self.transport_row(ui, center, st));
+        self.now_playing(ui, left, st, acts);
+        ui.scope_builder(UiBuilder::new().max_rect(center), |ui| self.transport_row(ui, center, st, acts));
         ui.scope_builder(UiBuilder::new().max_rect(right).layout(egui::Layout::right_to_left(egui::Align::Center)), |ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-            self.volume(ui, st);
+            self.volume(ui, st, acts);
             ui.add_space(6.0);
-            self.output_button(ui, st);
+            self.output_button(ui, st, acts);
             // ⋯ (sleep timer, mini player), with the timer's countdown in front of it.
-            self.more_button(ui, st);
+            self.more_button(ui, st, acts);
             for (panel, icon, hint) in [(SidePanel::Queue, Icon::Queue, "Queue"), (SidePanel::Lyrics, Icon::Lyrics, "Lyrics")] {
                 if toggle_button(ui, icon, self.side_panel == Some(panel)).on_hover_text(hint).clicked() {
-                    self.toggle_side_panel(panel);
+                    acts.push(Action::TogglePanel(panel));
                 }
             }
         });
@@ -53,11 +54,11 @@ impl App {
         }
     }
 
-    fn now_playing(&mut self, ui: &mut Ui, area: Rect, st: &Status) {
+    fn now_playing(&mut self, ui: &mut Ui, area: Rect, st: &Status, acts: &mut Actions) {
         let art_size = metrics::NOW_PLAYING_ART;
         if let Some(track) = &st.track {
             let art = Rect::from_min_size(pos2(area.left(), area.center().y - art_size / 2.0), Vec2::splat(art_size));
-            widgets::cover(ui, &mut self.covers, cover_url(track, metrics::NOW_PLAYING_PX).as_deref(), art, radius::ROW);
+            widgets::cover(ui, &mut self.covers, track.art.as_ref(), metrics::NOW_PLAYING_PX, art, radius::ROW);
             let x = art.right() + 14.0;
             // Room for the text, leaving space for the heart.
             let width = area.right() - 36.0 - x;
@@ -67,10 +68,10 @@ impl App {
             let used = text_width(&track.title, ty::TITLE.strong()).max(text_width(&track.artist, ty::SECONDARY)).min(width);
             let heart = pos2(x + used + 22.0, area.center().y);
             // Episodes can't be liked.
-            let what = Likeable::Track(track.id);
-            let liked = self.likes.likes.contains(&what);
+            let what = Likeable::Track(track.id.clone());
+            let liked = self.library.likes.likes.contains(&what);
             if !track.is_episode() && widgets::heart_at(ui, heart, "now-playing", liked, 16.0).clicked() {
-                self.pending_like = Some(what);
+                acts.push(Action::ToggleLike(what));
             }
             // Cover and title open the album (an episode's podcast).
             let album = Coll::origin_of(track);
@@ -95,14 +96,16 @@ impl App {
                     false
                 }
             };
-            if album.is_some() && (title_clicked || cover.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()) {
-                self.pending_album = album;
+            if let Some(album) = album
+                && (title_clicked || cover.on_hover_cursor(egui::CursorIcon::PointingHand).clicked())
+            {
+                acts.push(Action::OpenCollection(album));
             }
             let pos = pos2(x, area.center().y + 11.0);
             if let (Some(artist), _) =
                 widgets::artist_links(ui, pos, &track.artists, &track.artist, ty::SECONDARY, colors().dim, colors().text, width)
             {
-                self.pending_artist = Some(artist);
+                acts.push(Action::OpenArtist(artist));
             }
         }
         if st.state == State::Loading {
@@ -113,10 +116,10 @@ impl App {
 
     /// Transport buttons, then elapsed time, the progress bar and the length; the
     /// bar gives way first when space runs out.
-    fn transport_row(&mut self, ui: &mut Ui, area: Rect, st: &Status) {
+    fn transport_row(&mut self, ui: &mut Ui, area: Rect, st: &Status, acts: &mut Actions) {
         let cy = area.center().y;
         let controls = Rect::from_min_size(pos2(area.left(), cy - 20.0), vec2(TRANSPORT_WIDTH.min(area.width()), 40.0));
-        self.transport_buttons(ui, controls, st, true);
+        transport_buttons(ui, controls, st, true, acts);
         let (start, end) = (controls.right() + 14.0, area.right());
         if end - start < 2.0 * TIME_WIDTH + 60.0 {
             return;
@@ -127,68 +130,33 @@ impl App {
         ui.painter().text(pos2(start + TIME_WIDTH, cy), Align2::RIGHT_CENTER, mmss(position), font.clone(), color);
         ui.painter().text(pos2(end - TIME_WIDTH, cy), Align2::LEFT_CENTER, mmss(duration), font, color);
         let slider = Rect::from_min_max(pos2(start + TIME_WIDTH + 10.0, cy - 13.0), pos2(end - TIME_WIDTH - 10.0, cy + 13.0));
-        self.seek_slider(ui, slider, st);
-    }
-
-    /// Previous, play/pause and next, laid out left to right in `controls`; with
-    /// `modes`, between shuffle and repeat.
-    pub(in crate::ui) fn transport_buttons(&mut self, ui: &mut Ui, controls: Rect, st: &Status, modes: bool) {
-        ui.scope_builder(UiBuilder::new().max_rect(controls).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
-            ui.spacing_mut().item_spacing.x = 10.0;
-            if modes {
-                let hint = if st.shuffle { "Shuffle off" } else { "Shuffle" };
-                if mode_button(ui, Icon::Shuffle, st.shuffle).on_hover_text(hint).clicked() {
-                    self.set_shuffle(!st.shuffle);
-                }
-                ui.add_space(4.0);
-            }
-            if widgets::icon_button(ui, Icon::Prev, 16.0, colors().dim).clicked() {
-                self.player.send(Cmd::Prev);
-            }
-            if widgets::play_button(ui, st.state == State::Playing, 40.0).clicked() {
-                self.player.send(Cmd::Toggle);
-            }
-            if widgets::icon_button(ui, Icon::Next, 16.0, colors().dim).clicked() {
-                self.player.send(Cmd::Next);
-            }
-            if modes {
-                ui.add_space(4.0);
-                let (icon, hint) = match st.repeat {
-                    Repeat::Off => (Icon::Repeat, "Repeat"),
-                    Repeat::All => (Icon::Repeat, "Repeat one"),
-                    Repeat::One => (Icon::RepeatOne, "Repeat off"),
-                };
-                if mode_button(ui, icon, st.repeat != Repeat::Off).on_hover_text(hint).clicked() {
-                    self.set_repeat(st.repeat.next());
-                }
-            }
-        });
+        self.seek_slider(ui, slider, st, acts);
     }
 
     /// Click or drag to seek; the position follows the drag until release.
-    pub(in crate::ui) fn seek_slider(&mut self, ui: &mut Ui, slider: Rect, st: &Status) {
+    fn seek_slider(&mut self, ui: &mut Ui, slider: Rect, st: &Status, acts: &mut Actions) {
         let duration = st.track.as_ref().map_or(0.0, |t| t.duration as f64);
         let position = self.seek_drag.map(|f| f as f64 * duration).unwrap_or(st.position).min(duration);
         ui.scope_builder(UiBuilder::new().max_rect(slider), |ui| {
             let mut fraction = if duration > 0.0 { (position / duration) as f32 } else { 0.0 };
-            let seed = st.track.as_ref().map_or(0, |t| t.id);
+            let seed = st.track.as_ref().map_or(0, |t| wave_seed(&t.id));
             let resp = widgets::wave_slider(ui, &mut fraction, slider.width(), seed, duration > 0.0);
             if resp.dragged() {
                 self.seek_drag = Some(fraction);
             }
             if resp.drag_stopped() || (resp.clicked() && !resp.dragged()) {
-                self.player.send(Cmd::Seek(fraction as f64 * duration));
+                acts.push(Action::Player(Cmd::Seek(fraction as f64 * duration)));
                 self.seek_drag = None;
             }
         });
     }
 
-    fn volume(&mut self, ui: &mut Ui, st: &Status) {
+    fn volume(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
         let mut volume = self.volume_drag.unwrap_or(st.volume);
         let resp = widgets::thin_slider(ui, &mut volume, VOLUME_WIDTH, true, false);
         if resp.changed() {
             self.volume_drag = Some(volume);
-            self.player.send(Cmd::Volume(volume));
+            acts.push(Action::Player(Cmd::Volume(volume)));
         }
         if resp.drag_stopped() || (!resp.dragged() && self.volume_drag.is_some() && !resp.hovered()) {
             self.volume_drag = None;
@@ -196,13 +164,48 @@ impl App {
         let muted = volume <= 0.001;
         if widgets::icon_button(ui, if muted { Icon::Mute } else { Icon::Volume }, 16.0, colors().dim).on_hover_text("Mute").clicked() {
             if muted {
-                self.player.send(Cmd::Volume(self.unmuted_volume.max(0.1)));
+                acts.push(Action::Player(Cmd::Volume(self.unmuted_volume.max(0.1))));
             } else {
                 self.unmuted_volume = volume;
-                self.player.send(Cmd::Volume(0.0));
+                acts.push(Action::Player(Cmd::Volume(0.0)));
             }
         }
     }
+}
+
+/// Previous, play/pause and next, laid out left to right in `controls`; with
+/// `modes`, between shuffle and repeat.
+pub(super) fn transport_buttons(ui: &mut Ui, controls: Rect, st: &Status, modes: bool, acts: &mut Actions) {
+    ui.scope_builder(UiBuilder::new().max_rect(controls).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+        if modes {
+            let hint = if st.shuffle { "Shuffle off" } else { "Shuffle" };
+            if mode_button(ui, Icon::Shuffle, st.shuffle).on_hover_text(hint).clicked() {
+                acts.push(Action::Shuffle(!st.shuffle));
+            }
+            ui.add_space(4.0);
+        }
+        if widgets::icon_button(ui, Icon::Prev, 16.0, colors().dim).clicked() {
+            acts.push(Action::Player(Cmd::Prev));
+        }
+        if widgets::play_button(ui, st.state == State::Playing, 40.0).clicked() {
+            acts.push(Action::Player(Cmd::Toggle));
+        }
+        if widgets::icon_button(ui, Icon::Next, 16.0, colors().dim).clicked() {
+            acts.push(Action::Player(Cmd::Next));
+        }
+        if modes {
+            ui.add_space(4.0);
+            let (icon, hint) = match st.repeat {
+                Repeat::Off => (Icon::Repeat, "Repeat"),
+                Repeat::All => (Icon::Repeat, "Repeat one"),
+                Repeat::One => (Icon::RepeatOne, "Repeat off"),
+            };
+            if mode_button(ui, icon, st.repeat != Repeat::Off).on_hover_text(hint).clicked() {
+                acts.push(Action::Repeat(st.repeat.next()));
+            }
+        }
+    });
 }
 
 /// Shuffle / repeat: lime while on.
@@ -221,4 +224,13 @@ fn toggle_button(ui: &mut Ui, icon: Icon, on: bool) -> egui::Response {
     let color = if on || resp.hovered() { p.text } else { p.dim };
     icons::paint(ui.painter(), Rect::from_center_size(rect.center(), Vec2::splat(17.0)), icon, color);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// The seed of a track's waveform: its number on Deezer, a stable hash (64-bit
+/// FNV-1a) of a server's id, so each track keeps its shape.
+fn wave_seed(id: &TrackId) -> u64 {
+    id.as_str().parse().unwrap_or_else(|_| {
+        let hash = id.as_str().bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3));
+        hash.max(1)
+    })
 }

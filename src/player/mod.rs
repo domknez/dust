@@ -4,41 +4,25 @@
 //! - [`engine`]: the playback loop and command handling
 //! - [`queue`]: queue bookkeeping (pure, unit-tested)
 //! - [`library`]: what the engine needs from a music source (a seam for tests)
-//! - [`stream`]: opening and decoding a track (Deezer song, podcast, server file)
-//! - [`listens`]: listen tracking and reporting to Deezer
+//! - [`listens`]: listen tracking and reporting to the source
+//! - [`preload`]: opening the next track ahead, off the player thread
 //! - [`awake`]: keeping the OS from throttling dust while it plays
 
 pub mod awake;
 mod engine;
 pub mod library;
 mod listens;
+mod preload;
 mod queue;
-mod resample;
 pub mod saved;
-pub mod stream;
 
-use crate::deezer::{Quality, Track};
-use crate::output::airplay::Device;
-use crate::provider::Provider;
+pub use crate::output::Output;
+pub use queue::Flow;
+
+use crate::model::{Quality, Track};
 use eframe::egui;
 use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Mutex};
-
-/// Where audio goes.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Output {
-    Local,
-    AirPlay(Device),
-}
-
-impl Output {
-    pub fn name(&self) -> &str {
-        match self {
-            Output::Local => "This computer",
-            Output::AirPlay(d) => &d.name,
-        }
-    }
-}
+use std::sync::{Arc, Mutex, PoisonError};
 
 /// What happens when a track ends.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -82,9 +66,10 @@ impl Repeat {
 pub enum Cmd {
     /// The music source to play from; a different source than before stops
     /// playback and empties the queue.
-    Client(Provider),
+    Client(crate::source::Shared),
     Quality(Quality),
-    /// Report listens to Deezer (history, Flow, Last.fm scrobbling).
+    /// Report listens to the source (Deezer's history, Flow, Last.fm; a server's
+    /// play counts).
     ReportListens(bool),
     Output(Output),
 
@@ -119,12 +104,12 @@ pub enum Cmd {
     /// Drop everything after the current track (and stop endless Flow).
     ClearUpcoming,
     /// Put back a queue saved by an earlier session, paused at a position; play
-    /// continues from there. `flow`: Some(mood) when it was endless Flow.
+    /// continues from there. `flow`: set when it was endless Flow.
     Restore {
         tracks: Vec<Track>,
         index: usize,
         position: f64,
-        flow: Option<Option<String>>,
+        flow: Option<Flow>,
     },
 }
 
@@ -162,11 +147,14 @@ pub struct Status {
     pub shuffle: bool,
     pub repeat: Repeat,
     pub sleep: Option<Sleep>,
-    /// Active Flow config ("default" for plain Flow), if playing Flow.
-    pub flow: Option<String>,
+    /// The endless Flow being played, if any.
+    pub flow: Option<Flow>,
     pub output: String,
     pub error: Option<String>,
 }
+
+/// Shown when the player thread has died.
+const PLAYER_GONE: &str = "Playback stopped unexpectedly; restart dust";
 
 /// The UI's side of the player: send commands, read status.
 #[derive(Clone)]
@@ -189,10 +177,51 @@ impl PlayerHandle {
     }
 
     pub fn send(&self, cmd: Cmd) {
-        let _ = self.tx.send(cmd);
+        if self.tx.send(cmd).is_err() {
+            // The player thread is gone (it panicked): say so rather than ignore
+            // every click while the last status stays on screen.
+            let mut st = self.status.lock().unwrap_or_else(PoisonError::into_inner);
+            if st.error.as_deref() != Some(PLAYER_GONE) {
+                log_error!("player thread is gone");
+                st.error = Some(PLAYER_GONE.into());
+                st.state = State::Stopped;
+            }
+        }
+    }
+
+    /// A handle with no player behind it: commands wait in the returned receiver,
+    /// and the status is what the test sets.
+    #[cfg(test)]
+    pub fn detached() -> (Self, mpsc::Receiver<Cmd>) {
+        let (tx, rx) = mpsc::channel();
+        (Self { tx, status: Arc::default() }, rx)
+    }
+
+    #[cfg(test)]
+    pub fn set_status(&self, change: impl FnOnce(&mut Status)) {
+        change(&mut self.status.lock().unwrap());
     }
 
     pub fn status(&self) -> Status {
-        self.status.lock().unwrap().clone()
+        // A player thread that panicked while publishing leaves the lock poisoned;
+        // the snapshot in it is still the last one.
+        self.status.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_dead_player_shows_an_error() {
+        let (tx, rx) = mpsc::channel();
+        let status = Arc::new(Mutex::new(Status { state: State::Playing, ..Default::default() }));
+        let player = PlayerHandle { tx, status };
+        drop(rx); // the player thread ended
+        player.send(Cmd::Toggle);
+        let st = player.status();
+        assert_eq!(st.error.as_deref(), Some(PLAYER_GONE));
+        assert_eq!(st.state, State::Stopped);
     }
 }
