@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.0 (2026-10-23)
+
 - Songs follow each other without a pause: dust opens the next track about ten seconds
   before the current one ends and plays it straight after, instead of loading it once
   the last one has finished. Endless Flow and Radio fetch their next batch ahead too
