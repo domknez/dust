@@ -2,8 +2,9 @@
 
 # dust
 
-**A free and open source, ultra-lightweight Deezer desktop client written in Rust — with
-AirPlay 2 streaming built in. Plays your own music from a Navidrome server too.**
+**A free and open source, ultra-lightweight desktop music player written in Rust, for
+your streaming service and your own library — Deezer and Navidrome today — with
+AirPlay 2 streaming built in.**
 
 [![CI](https://github.com/domknez/dust/actions/workflows/ci.yml/badge.svg)](https://github.com/domknez/dust/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -16,7 +17,8 @@ AirPlay 2 streaming built in. Plays your own music from a Navidrome server too.*
 </p>
 
 dust is free software: free to use, study, modify and share under the [MIT license](LICENSE).
-No ads, no telemetry, no account with us — just your Deezer subscription.
+No ads, no telemetry, no account with us — bring a Deezer subscription, your own
+Navidrome (or other Subsonic) server, or both, and switch between them in one click.
 Inspired by [SpotLight](https://github.com/dddevid/SpotLight).
 
 | | dust | Deezer desktop |
@@ -30,106 +32,116 @@ Inspired by [SpotLight](https://github.com/dddevid/SpotLight).
 visible window (they scale with window size on Retina displays); dust itself uses ~70–85 MB,
 including cover art.
 
+## Music sources
+
+dust is one player for several music sources. Each source brings its own catalogue,
+library and login; everything else — the player, queue, AirPlay, lyrics, mini player,
+the look — is shared. Pick the source from the account card at the bottom of the
+sidebar (*Music from*); each keeps its own queue, and dust starts with the one you used
+last. More sources can be added later without changing the rest of the app.
+
+| | Deezer | Navidrome / Subsonic |
+|---|---|---|
+| **You need** | Deezer Premium | your own [Navidrome](https://www.navidrome.org) (or Subsonic / OpenSubsonic) server |
+| **Home** | your recommendations, Flow and its moods, daily mixes, mixes inspired by tracks | *Radio* (endless, from the whole library or one genre), recently added / played, most played, favourites, mixes per artist |
+| **Library** | Loved tracks, playlists, albums, followed artists, podcasts | starred songs as *Loved tracks*, playlists, the whole library under *Albums* and *Artists* |
+| **Playlists** | create, add, remove, rename, delete | create, add, remove, rename, delete |
+| **Likes** | tracks, albums, artists | stars |
+| **Search** | tracks, artists, albums, playlists, podcasts; paste a Deezer link | tracks, artists, albums |
+| **Lyrics** | synced | synced or plain, from the server |
+| **Audio** | MP3 128 / 320 or FLAC (FLAC needs HiFi) | MP3, FLAC, AAC/ALAC, Ogg Vorbis, WAV as they are; other formats converted by the server |
+| **Listening reports** | history, Flow learning and Last.fm through Deezer | play counts and "now playing" on the server (and Last.fm / ListenBrainz if it scrobbles) |
+
+You can use dust with only one of them: the login screen offers *Log in with Deezer*
+and *Connect a Navidrome server*.
+
 ## Features
 
-- **Home like Deezer's:** your personalised recommendations — Flow and its moods
-  (Chill, Focus, Workout, Party, ...), daily mixes, mixes inspired by tracks you play,
-  recently played, new releases,
-  artists and albums picked for you
-- **Endless Flow:** keeps going like on Deezer, fetching more as you listen
-- **Music:** Loved tracks, playlists (list and grid), your albums, the artists you follow
-- **Playlists:** create them (empty, from tracks, or from the whole queue), add tracks,
-  remove tracks, rename and delete your own playlists; synced with Deezer
-- **Likes:** heart tracks (in any list or the player bar) and albums, follow artists;
-  synced with your Deezer account
-- **Artist pages:** popular tracks and the full discography (albums, singles & EPs,
-  live & compilations), playlists featuring them and related artists; click any
-  artist name to get there
-- **Search:** tracks, artists, albums, playlists and podcasts, with your own playlists first; or
-  paste a Deezer link (album, artist, playlist, track, or a share link) to open it
-- **Plays more of the catalogue:** when a track isn't licensed in your region, dust uses
-  the alternative version Deezer offers, like the web app does
-- **Quality:** MP3 128 / MP3 320 / FLAC (FLAC needs a HiFi plan), streamed and decoded
-  on the fly — nothing is written to disk
+**Player** (every source)
+
 - **Queue:** see what's next, jump to any track, reorder by dragging, remove, clear;
   it survives a restart (paused where you left off);
   right-click any track or card → *Play next* / *Add to queue*
-- **Seeking** on a waveform-style progress bar (HTTP range jumps for MP3)
-- **Podcasts:** find shows in Search and play their episodes (newest first, with dates);
-  the podcasts you follow on Deezer are under *Podcasts* in the sidebar. Episodes play
-  from the show's own audio file, at any sample rate
+- **Endless play:** Deezer's Flow and the server's Radio keep going, fetching more as you
+  listen
+- **Seeking** on a waveform-style progress bar
 - **Lyrics:** the lyrics button in the player bar opens the playing track's lyrics; synced
   ones follow the song with the sung line highlighted, and clicking a line jumps there
 - **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs
 - **Sleep timer:** in the player bar's ⋯ menu, with a countdown ring; after 15 minutes
   to an hour the music fades out over 30 seconds and pauses (your volume is back for
   the next play), or it stops at the end of the track (the next one waits for play)
+- **Artist pages:** popular tracks and the full discography, plus related artists; click
+  any artist name to get there
+- **Streamed, not stored:** audio is decoded on the fly — nothing is written to disk
+
+**Listening anywhere**
+
 - **AirPlay 2 and AirPlay 1** output with automatic discovery and a *Play on* picker that shows each speaker's
   model and the playing one's volume — Sonos (incl. Era 100/300),
   HomePod-class receivers, Apple TV, AirPort Express, shairport-sync and most AirPlay speakers
-- **Last.fm scrobbling, history and Flow learning:** dust reports what you listen to
-  back to Deezer, exactly like Deezer's own apps
 - **Speaker buttons work:** volume and play/pause/skip on the speaker control dust
 - **Plays steadily in the background:** while music plays, macOS doesn't nap dust or
   idle-sleep the Mac, and the audio threads run at high priority
-- **Mini player**: a borderless always-on-top strip with cover, title, artist and the
-  speaker it plays on, controls and a progress line along the bottom; drag it anywhere,
-  make it narrower for just the title, times and play, double-click the cover to go back
-- **Updates itself**: new versions download and verify in the
-  background; then *Restart to update* appears in the sidebar (or the update installs
-  when you quit)
 - **Media keys and Now Playing:** keyboard and headset media keys, plus the system's
   Now Playing controls with cover art (macOS Control Center, Windows media overlay,
   Linux MPRIS)
+- **Mini player**: a borderless always-on-top strip with cover, title, artist and the
+  speaker it plays on, controls and a progress line along the bottom; drag it anywhere,
+  make it narrower for just the title, times and play, double-click the cover to go back
+
+**The app**
+
 - **Modern UI ("Graphite"):** clean and crisp, a charcoal dark and a soft grey light theme
   (or follow the system) with one lime accent, Space Grotesk text and titles and
   JetBrains Mono for labels, times and counts
-- **Secure sign-in:** "Log in with Deezer" opens Deezer's own login page; the session is
-  kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service),
-  in one item with the Navidrome login, so the keychain asks for access once
+- **Updates itself**: new versions download and verify in the
+  background; then *Restart to update* appears in the sidebar (or the update installs
+  when you quit)
+- **Secure sign-in:** logins are kept in the OS keychain (macOS Keychain, Windows
+  Credential Manager, Secret Service), all in one item, so the keychain asks for access
+  once
 - Runs on macOS, Linux and Windows
 
-## Navidrome / Subsonic
+**Deezer**
 
-dust also plays your own music from a [Navidrome](https://www.navidrome.org) server (or
-another Subsonic / OpenSubsonic-compatible one), in the same app and the same design.
-Switch between Deezer and the server from the account card at the bottom of the sidebar
-(*Music from*); each keeps its own queue. You can use dust with only a server, no Deezer
-account: *Connect a Navidrome server* on the login screen.
+- **Home like Deezer's:** your personalised recommendations — Flow and its moods
+  (Chill, Focus, Workout, Party, ...), daily mixes, mixes inspired by tracks you play,
+  recently played, new releases, artists and albums picked for you
+- **Plays more of the catalogue:** when a track isn't licensed in your region, dust uses
+  the alternative version Deezer offers, like the web app does
+- **Podcasts:** find shows in Search and play their episodes (newest first, with dates);
+  the podcasts you follow on Deezer are under *Podcasts* in the sidebar
+- **Links:** paste a Deezer link (album, artist, playlist, track, or a share link) into
+  Search to open it
+- **Synced with your account:** likes, follows and playlists, plus listening history and
+  Last.fm scrobbling exactly like Deezer's own apps
+
+**Navidrome / Subsonic**
 
 - **Connect:** account card → *Music from* → *Navidrome · Connect a server…* (or the link
   on the login screen). Enter the server's address (e.g. `http://192.168.1.10:4533`),
-  your user name and password; dust checks them before saving. The password is kept in
-  the OS keychain and sent to the server only as a salted token (Subsonic token
-  authentication), never in plain text.
-- **What works:** Home opens with *Radio* in place of Flow: endless random songs from the
-  whole library, or from one of its biggest genres (the genre chips), fetching more as
-  you listen. Then shelves (recently added, recently played, most played, favourite
-  albums, random) and mixes (one per artist you play most — songs like theirs if the
-  server knows them, otherwise their own); album pages with the artist's
-  other releases; artist pages with popular songs and the discography; the whole
-  library under *Albums* and *Artists*; your playlists (create, add, remove, rename,
-  delete); search; stars as likes (*Loved tracks* are your starred songs); synced or plain
-  lyrics; play counts and "now playing" reported to the server (and Last.fm, if the
-  server scrobbles), unless turned off in Settings; queue, AirPlay, mini player, sleep
-  timer — everything else in dust.
-- **Formats:** MP3, FLAC, AAC/ALAC (M4A), Ogg Vorbis and WAV stream as they are, at any
-  sample rate; anything else (Opus, WMA, ...) is converted to MP3 320 by the server as it
-  plays. Seeking jumps straight into MP3s and converted files; other formats skip ahead
-  from the start (quick on a home network).
-- **Deezer only:** Flow, podcasts, track mixes, opening pasted Deezer links and the
-  streaming quality setting.
+  your user name and password; dust checks them before saving. The password is sent to
+  the server only as a salted token (Subsonic token authentication), never in plain text
+- **Radio:** Home opens with endless random songs from the whole library or from one of
+  its biggest genres (the genre chips), in place of Deezer's Flow
+- **Your files as they are:** MP3, FLAC, AAC/ALAC (M4A), Ogg Vorbis and WAV at any sample
+  rate; anything else (Opus, WMA, ...) is converted to MP3 320 by the server as it plays.
+  Seeking jumps straight into MP3s and converted files; other formats skip ahead from
+  the start (quick on a home network)
+- **Plays reported to the server** (play counts, "now playing"); Navidrome passes them on
+  to Last.fm and ListenBrainz if you linked them there
 - **Trying it without a server:** `scripts/navidrome-test-server.sh` starts a throwaway
   Navidrome in Docker with a few generated test tones (user `dust`, password
   `dust-test-pw`), and `DUST_TEST_SUBSONIC="http://127.0.0.1:4533|dust|dust-test-pw" cargo
-  test subsonic::live -- --ignored` runs the live checks against it.
+  test subsonic::live -- --ignored` runs the live checks against it
 
 ## Install
 
 Download the latest version for your platform from
 [Releases](https://github.com/domknez/dust/releases/latest): a DMG for macOS 11+ (Apple
 Silicon and Intel), a zip for Windows 10/11, and tarballs for Linux x86_64 and ARM64.
-Deezer Premium required.
+You need Deezer Premium, a Navidrome / Subsonic server, or both.
 
 - **macOS:** drag dust to Applications. Releases aren't notarized by Apple yet, so the
   first launch is blocked: open dust once, then click **Open Anyway** under System
@@ -173,25 +185,30 @@ Linux needs ALSA, D-Bus and WebKitGTK headers:
 `sudo apt install libasound2-dev libdbus-1-dev libwebkit2gtk-4.1-dev pkg-config`.
 Without the login window (no WebKitGTK): `cargo build --release --no-default-features`.
 
-## Log in
+## Sign in
 
-Click **Log in with Deezer**: a small window shows deezer.com's own login page (OS
-webview, private session). Once you are signed in, dust picks up the session and closes
-it. The session token (`arl` cookie) is stored in your OS keychain; **Log out** in the
-account menu removes it. Deezer Premium required. Email/password sign-in works; Google
-and Apple sign-in may refuse embedded browsers.
+**Deezer:** click **Log in with Deezer**: a small window shows deezer.com's own login
+page (OS webview, private session). Once you are signed in, dust picks up the session
+and closes it. The session token (`arl` cookie) is stored in your OS keychain; **Log out
+of Deezer** in the account menu removes it. Deezer Premium required. Email/password
+sign-in works; Google and Apple sign-in may refuse embedded browsers.
 
 Fallback: "Paste ARL cookie instead" takes the `arl` value from a logged-in browser
 (DevTools → Application → Cookies). Treat it like a password; "Log out of all devices"
 in Deezer's account settings revokes it.
+
+**Navidrome / Subsonic:** *Connect a Navidrome server* on the login screen, or account
+card → *Music from* → *Navidrome*. The address, user name and password are kept in the
+OS keychain; **Disconnect from Navidrome** in the account menu removes them.
 
 ## Settings
 
 Click your name at the bottom of the sidebar:
 
 - **Appearance:** System, Dark or Light
-- **Streaming quality:** MP3 128, MP3 320 or FLAC
-- **Share listening with Deezer:** history, Flow and Last.fm scrobbling (on by default)
+- **Streaming quality** (Deezer): MP3 128, MP3 320 or FLAC
+- **Listening reports:** *Share listening with Deezer* (history, Flow and Last.fm
+  scrobbling) or *Report plays to the server*, for the source in use (on by default)
 - **Updates**: check automatically (on by default), or check now
 
 dust also remembers your **volume** and your **speaker**: the last AirPlay speaker you
@@ -200,12 +217,13 @@ when you press play).
 
 The update check asks GitHub's public releases API for the latest version at startup
 and every 6 hours; nothing about you or your listening is sent. Turn it off with
-**Check automatically** and dust contacts only Deezer and your speakers.
+**Check automatically** and dust contacts only your music sources and your speakers.
 
 Choices are saved in `settings.conf` in your config directory
 (`~/Library/Application Support/dust` on macOS, `%APPDATA%\dust` on Windows,
 `~/.config/dust` on Linux).
-The queue is saved next to it, in `queue.json`, and comes back paused when dust starts.
+Each source's queue is saved next to it (`queue.json` for Deezer, `queue-navidrome.json`
+for the server) and comes back paused when dust starts.
 
 dust keeps a log of playback and AirPlay events (tracks opened and how long that took,
 speaker connections, flushes, packet stats) for troubleshooting: Settings → **Show
@@ -216,12 +234,18 @@ stays on your computer and is started over beyond 5 MB (the previous one is kept
 
 ## Last.fm scrobbling and listening history
 
-dust reports each listen to Deezer (how long you listened, whether you skipped), the same
-way Deezer's apps do. Deezer uses that for your listening history, "Recently played" and
-Flow recommendations and, if you've connected Last.fm in your Deezer account settings,
-scrobbles it to Last.fm. Nothing is sent anywhere else.
+dust reports what you listen to the source it came from, and nowhere else:
 
-Turn it off under **Share listening with Deezer** in Settings.
+- **Deezer:** each listen (how long you listened, whether you skipped), the same way
+  Deezer's apps do. Deezer uses that for your listening history, "Recently played" and
+  Flow recommendations and, if you've connected Last.fm in your Deezer account settings,
+  scrobbles it to Last.fm.
+- **Navidrome / Subsonic:** "now playing" and a play once a track is heard through (or
+  for four minutes). The server keeps play counts and "Recently played"; Navidrome
+  scrobbles to Last.fm and ListenBrainz if you linked them in its settings — don't also
+  scrobble elsewhere, or plays count twice.
+
+Turn it off in Settings (*Share listening with Deezer* / *Report plays to the server*).
 
 ## AirPlay
 
@@ -257,8 +281,8 @@ packet stats, speaker remote-control requests, media keys and listen reports.
 `DUST_DISPLAY_NAME="Listener"` shows that name instead of your Deezer account's, for
 screenshots.
 
-With a stored session (log in with the app first), these check the Deezer side without
-opening the window:
+With a stored Deezer session (log in with the app first), these check the Deezer side
+without opening the window:
 
 ```sh
 dust --debug-home                          # home page sections
@@ -346,7 +370,8 @@ Contributions are welcome.
 
 ## Disclaimer
 
-dust is an unofficial client and is not affiliated with or endorsed by Deezer. It uses
-Deezer's private web API with your own subscription, for personal use; it may break at
-any time or conflict with Deezer's terms of service. dust only streams: it does not
-download or save tracks.
+dust is an unofficial client and is not affiliated with or endorsed by Deezer or
+Navidrome. For Deezer it uses Deezer's private web API with your own subscription, for
+personal use; that may break at any time or conflict with Deezer's terms of service.
+For Navidrome and other Subsonic servers it uses the public Subsonic / OpenSubsonic API.
+dust only streams: it does not download or save tracks.
