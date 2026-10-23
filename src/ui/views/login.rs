@@ -25,7 +25,7 @@ impl App {
                 ui.label(RichText::new("Your music, nothing else.").color(p.dim).font(ty::LEAD.font()));
                 ui.add_space(36.0);
                 // Logging in, or connecting the stored server (not one being typed in).
-                if self.login.is_loading() || (self.sources.connecting() && self.sources.form.is_none()) {
+                if self.login.task.is_loading() || (self.sources.connecting() && self.sources.form.is_none()) {
                     ui.spinner();
                     return;
                 }
@@ -36,7 +36,7 @@ impl App {
                 if ui.link(RichText::new("Connect a Navidrome server").font(ty::BODY.font())).clicked() {
                     self.open_server_form();
                 }
-                if let Some(e) = &self.login_error {
+                if let Some(e) = &self.login.error {
                     ui.add_space(12.0);
                     ui.label(RichText::new(e).color(p.danger));
                 }
@@ -55,23 +55,23 @@ impl App {
             ui.label(RichText::new("Deezer Premium required").color(p.faint).font(ty::SMALL.font()));
             ui.add_space(18.0);
             if ui.link(RichText::new("Paste ARL cookie instead").font(ty::BODY.font())).clicked() {
-                self.show_arl_input = !self.show_arl_input;
+                self.login.show_arl = !self.login.show_arl;
             }
         }
         #[cfg(not(feature = "login-window"))]
         {
-            self.show_arl_input = true;
+            self.login.show_arl = true;
         }
-        if self.show_arl_input {
+        if self.login.show_arl {
             ui.add_space(10.0);
-            let field = egui::TextEdit::singleline(&mut self.arl_input)
+            let field = egui::TextEdit::singleline(&mut self.login.arl)
                 .password(true)
                 .hint_text("arl")
                 .desired_width(340.0)
                 .margin(Margin::symmetric(12, 8));
             let edit = ui.add(field);
-            if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !self.arl_input.trim().is_empty() {
-                let arl = self.arl_input.trim().to_string();
+            if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !self.login.arl.trim().is_empty() {
+                let arl = self.login.arl.trim().to_string();
                 self.log_in_with(ui.ctx(), arl);
             }
             ui.label(RichText::new("deezer.com → DevTools → Application → Cookies → arl").color(p.faint).font(ty::SMALL.font()));

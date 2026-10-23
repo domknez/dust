@@ -31,6 +31,19 @@ pub struct ServerForm {
     focused: bool,
 }
 
+/// The login screen: the Deezer login on its way, the ARL field, and why the last
+/// attempt (or the session) ended.
+#[derive(Default)]
+pub struct Login {
+    pub task: Load<Deezer>,
+    /// The ARL typed in, and whether its field is open.
+    pub arl: String,
+    pub show_arl: bool,
+    /// Store the session in the keychain once the pending login succeeds.
+    pub remember: bool,
+    pub error: Option<String>,
+}
+
 /// Both sources' logins.
 pub struct Sources {
     pub deezer: Option<Deezer>,
@@ -110,8 +123,8 @@ impl App {
                 log_warn!("music server: {e}");
                 match self.sources.form.as_mut() {
                     Some(form) => form.error = Some(e.to_string()),
-                    None if self.client.is_none() && !self.login.is_loading() => {
-                        self.login_error = Some(format!("Couldn't reach your Navidrome server: {e}"));
+                    None if self.client.is_none() && !self.login.task.is_loading() => {
+                        self.login.error = Some(format!("Couldn't reach your Navidrome server: {e}"));
                     }
                     None => {}
                 }

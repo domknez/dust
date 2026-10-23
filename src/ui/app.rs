@@ -5,10 +5,9 @@ use super::browse::Browse;
 use super::covers::Covers;
 use super::history::Visit;
 use super::library::Library;
-use super::load::Load;
 use super::notice::Notice;
 use super::now_playing::NowPlaying;
-use super::sources::Sources;
+use super::sources::{Login, Sources};
 use super::state::{ArtistView, Coll, PlayMode, Source, View};
 use super::style::{self, Appearance, colors, metrics};
 use super::updates::Updates;
@@ -45,23 +44,18 @@ pub struct App {
     pub(super) client: Option<Provider>,
     /// Both sources' logins.
     pub(super) sources: Sources,
+    /// The login screen's state and a Deezer login on its way.
+    pub(super) login: Login,
 
-    // Login
-    pub(super) arl_input: String,
-    pub(super) login: Load<Deezer>,
-    /// Store the session in the keychain once the pending login succeeds.
-    pub(super) remember_login: bool,
-    pub(super) show_arl_input: bool,
-    pub(super) login_error: Option<String>,
-
+    // Content
     /// The source's playlists, likes and other lists.
     pub(super) library: Library,
     /// The page on screen and its content.
     pub(super) browse: Browse,
-    /// What the sleep timer was last set to (for its ring and lit choice).
-    pub(super) sleep_choice: Option<super::views::SleepChoice>,
 
     // Interaction
+    /// What the sleep timer was last set to (for its ring and lit choice).
+    pub(super) sleep_choice: Option<super::views::SleepChoice>,
     /// The panel open on the right, if any.
     pub(super) side_panel: Option<SidePanel>,
     /// The Settings window is open.
@@ -133,11 +127,7 @@ impl App {
             player,
             client: None,
             sources: Sources::new(),
-            arl_input: String::new(),
-            login: Load::Idle,
-            remember_login: false,
-            show_arl_input: false,
-            login_error: None,
+            login: Login::default(),
             library: Library::default(),
             browse: Browse::default(),
             sleep_choice: None,
@@ -159,7 +149,7 @@ impl App {
             logo: crate::icon::logo_texture(ctx),
         };
         if let Some(arl) = credentials::load() {
-            app.login.start(ctx, move || Deezer::login(&arl));
+            app.login.task.start(ctx, move || Deezer::login(&arl));
         }
         app.start_sources(ctx);
         app
@@ -168,23 +158,23 @@ impl App {
     // ------------------------------------------------------------ session
 
     pub(super) fn log_in_with(&mut self, ctx: &egui::Context, arl: String) {
-        self.login_error = None;
-        self.remember_login = true;
-        self.login.start(ctx, move || Deezer::login(&arl));
+        self.login.error = None;
+        self.login.remember = true;
+        self.login.task.start(ctx, move || Deezer::login(&arl));
     }
 
     #[cfg(feature = "login-window")]
     pub(super) fn log_in_with_browser(&mut self, ctx: &egui::Context) {
-        self.login_error = None;
-        self.remember_login = true;
-        self.login.start(ctx, || Deezer::login(&crate::login::obtain_arl().map_err(Error::Other)?));
+        self.login.error = None;
+        self.login.remember = true;
+        self.login.task.start(ctx, || Deezer::login(&crate::login::obtain_arl().map_err(Error::Other)?));
     }
 
     fn on_logged_in(&mut self, ctx: &egui::Context, client: Deezer) {
-        if std::mem::take(&mut self.remember_login) {
+        if std::mem::take(&mut self.login.remember) {
             credentials::save(client.arl());
         }
-        self.arl_input.clear();
+        self.login.arl.clear();
         self.deezer_ready(ctx, client);
     }
 
@@ -377,7 +367,7 @@ impl App {
         }
         if let Some(expired) = failed.into_iter().find(Error::is_session_expired) {
             self.log_out(ctx);
-            self.login_error = Some(expired.to_string());
+            self.login.error = Some(expired.to_string());
             return;
         }
         if let Some(link) = link {
@@ -386,11 +376,11 @@ impl App {
     }
 
     fn poll_login(&mut self, ctx: &egui::Context) {
-        match self.login.poll_take() {
+        match self.login.task.poll_take() {
             Some(Ok(client)) => self.on_logged_in(ctx, client),
             Some(Err(e)) => {
-                self.remember_login = false;
-                self.login_error = Some(e.to_string());
+                self.login.remember = false;
+                self.login.error = Some(e.to_string());
             }
             None => {}
         }
