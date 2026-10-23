@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed: the Dark choice in Settings showed a circle instead of a moon
+
 ## 0.19.0 (2026-10-23)
 
 - The sidebar's playlist list folds away: click *PLAYLISTS* (a chevron shows which way

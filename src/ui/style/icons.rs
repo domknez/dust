@@ -1,6 +1,6 @@
 //! Small vector icons painted with egui shapes. Each takes the icon's square rect.
 
-use eframe::egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, pos2, vec2};
+use eframe::egui::{Color32, Mesh, Painter, Pos2, Rect, Shape, Stroke, pos2, vec2};
 use std::f32::consts::{FRAC_PI_2, PI};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -66,22 +66,39 @@ fn arc(center: Pos2, radius: f32, from: f32, to: f32) -> Vec<Pos2> {
     (0..=n).map(|i| from + (to - from) * i as f32 / n as f32).map(|a| center + vec2(a.cos(), a.sin()) * radius).collect()
 }
 
-/// Crescent outline: a disc of radius `big` minus a disc offset towards the upper right.
-/// Returns the outer arc followed by the inner (bite) arc, as one closed outline.
-fn crescent(center: Pos2, big: f32) -> Vec<Pos2> {
-    let small = big * 0.82;
+/// Crescent: a disc of radius `big` minus a disc offset towards the upper right.
+/// Returns its two edges, both running from one horn to the other: the outer arc
+/// of the big disc and the inner arc of the bite.
+fn crescent(center: Pos2, big: f32) -> (Vec<Pos2>, Vec<Pos2>) {
+    let small = big * 0.85;
     let theta = -PI / 4.0; // direction of the bite
-    let d = big * 0.62; // distance between the two centres
+    let d = big * 0.55; // distance between the two centres
     let dir = vec2(theta.cos(), theta.sin());
     let bite = center + dir * d;
-    // Intersection points, measured from each centre.
+    // Angles of the horns (where the circles cross), measured from each centre.
     let x = (d * d + big * big - small * small) / (2.0 * d);
     let alpha = (x / big).clamp(-1.0, 1.0).acos();
     let beta = ((x - d) / small).clamp(-1.0, 1.0).acos();
-    let mut pts = arc(center, big, theta + alpha, theta + 2.0 * PI - alpha);
-    pts.extend(arc(bite, small, theta - beta, theta + beta).into_iter().skip(1));
-    pts.pop();
-    pts
+    let outer = arc(center, big, theta + alpha, theta + 2.0 * PI - alpha);
+    // The bite's arc on the side facing the big disc's centre (through theta + PI).
+    let inner = arc(bite, small, theta + beta, theta + 2.0 * PI - beta);
+    (outer, inner)
+}
+
+/// Fill the area between two edges with matching point counts (concave shapes
+/// egui can't fill as a polygon).
+fn fill_between(painter: &Painter, a: &[Pos2], b: &[Pos2], color: Color32) {
+    let mut mesh = Mesh::default();
+    for (p, q) in a.iter().zip(b) {
+        mesh.colored_vertex(*p, color);
+        mesh.colored_vertex(*q, color);
+    }
+    for i in 0..a.len().saturating_sub(1) as u32 {
+        let k = i * 2;
+        mesh.add_triangle(k, k + 1, k + 2);
+        mesh.add_triangle(k + 1, k + 3, k + 2);
+    }
+    painter.add(Shape::mesh(mesh));
 }
 
 pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
@@ -191,8 +208,8 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             }
         }
         Icon::Moon => {
-            // Concave, so outlined rather than filled (egui fills convex shapes only).
-            painter.add(Shape::closed_line(crescent(p(r, 0.5, 0.5), w * 0.36), stroke));
+            let (outer, inner) = crescent(p(r, 0.5, 0.5), w * 0.38);
+            fill_between(painter, &outer, &inner, color);
         }
         Icon::Check => {
             painter.add(Shape::line(vec![p(r, 0.18, 0.52), p(r, 0.4, 0.74), p(r, 0.84, 0.28)], stroke));
@@ -309,16 +326,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn crescent_outline_closes() {
+    fn crescent_edges_meet_at_the_horns() {
         let c = pos2(0.0, 0.0);
-        let pts = crescent(c, 10.0);
-        let outer_end = pts[16];
-        let inner_start = pts[17];
-        // Consecutive points never jump more than a small step: the arcs meet.
-        for w in pts.windows(2) {
-            assert!((w[1] - w[0]).length() < 4.5, "gap between {:?} and {:?}", w[0], w[1]);
+        let (outer, inner) = crescent(c, 10.0);
+        assert_eq!(outer.len(), inner.len());
+        for (a, b) in [(outer[0], inner[0]), (*outer.last().unwrap(), *inner.last().unwrap())] {
+            assert!((a - b).length() < 0.01, "horns {a:?} and {b:?} don't meet");
         }
-        assert!((outer_end - inner_start).length() < 4.5);
-        assert!((pts[0] - *pts.last().unwrap()).length() < 4.5);
+        // The inner edge stays inside the disc: it's the bite, not its far side.
+        assert!(inner.iter().all(|p| (*p - c).length() <= 10.01));
+        // The lit part faces away from the bite (lower left).
+        let mid = outer[outer.len() / 2];
+        assert!(mid.x < 0.0 && mid.y > 0.0);
     }
 }
