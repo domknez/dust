@@ -11,6 +11,11 @@
   Crashes are written to the log file too (what failed, where, on which thread)
 - Fixed: on this computer's speakers, the start of a track (or of the audio after a
   seek) could be cut off
+- Fixed: a like that didn't go through, or your playlists failing to refresh, put the
+  error in place of the track list on screen until you went to another page. Errors
+  now show with what failed: a like, a playlist change or a card's play button
+  briefly beside the search field, the playlists in the sidebar. Artists, Albums and
+  Podcasts say when they couldn't load
 - Fixed: logging out or switching source while something was still loading (your
   playlists, likes, a playlist change) could let it land afterwards, on the login
   screen or the other source; what the old source was loading is now dropped

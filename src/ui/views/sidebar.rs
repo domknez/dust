@@ -97,8 +97,13 @@ impl App {
             return;
         }
         egui::ScrollArea::vertical().max_height(height).auto_shrink([false, false]).show(ui, |ui| {
-            if self.library.playlists_task.is_some() {
+            if self.library.playlists_load.is_loading() {
                 ui.spinner();
+            } else if let Some(e) = self.library.playlists_load.error() {
+                // Loaded in the background (also after each playlist change): the
+                // last list stays, with a line saying the refresh failed.
+                let line = egui::RichText::new("Couldn't load playlists").font(ty::SECONDARY.font()).color(p.danger);
+                ui.add(egui::Label::new(line).truncate()).on_hover_text(e);
             }
             ui.spacing_mut().item_spacing.y = 1.0;
             for playlist in &self.library.playlists {

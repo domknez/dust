@@ -5,6 +5,7 @@ use crate::deezer::{Item, Section};
 use crate::player::{Cmd, Status};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
+use crate::ui::load::Load;
 use crate::ui::state::{Coll, PlayMode, Source, View};
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, typography as ty};
@@ -39,24 +40,25 @@ impl App {
         let mut reload = false;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             reload = self.home_header(ui);
-            if self.library.home.is_empty() {
-                if self.library.home_task.is_some() {
+            let home = &self.library.home;
+            let Some(sections) = home.ready().filter(|h| !h.is_empty()) else {
+                if home.is_loading() {
                     ui.add_space(24.0);
                     ui.add(egui::Spinner::new().size(22.0));
-                } else if let Some(e) = &self.browse.list_error {
+                } else if let Some(e) = home.error() {
                     ui.label(RichText::new(e).color(colors().danger));
                 }
                 return;
-            }
-            for i in flow_first(&self.library.home) {
-                let section = &self.library.home[i];
+            };
+            for i in flow_first(sections) {
+                let section = &sections[i];
                 card_row(ui, &mut self.covers, ("home-row", i), &section.title, &section.items, st, &mut picked);
             }
             ui.add_space(24.0);
         });
 
         if reload {
-            self.library.home.clear();
+            self.library.home = Load::Idle;
             self.open_view(&ctx, View::Home);
         }
         self.apply_card_picks(&ctx, picked);

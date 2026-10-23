@@ -25,7 +25,7 @@ impl App {
                 ui.label(RichText::new("Your music, nothing else.").color(p.dim).font(ty::LEAD.font()));
                 ui.add_space(36.0);
                 // Logging in, or connecting the stored server (not one being typed in).
-                if self.login.is_some() || (self.sources.connecting() && self.sources.form.is_none()) {
+                if self.login.is_loading() || (self.sources.connecting() && self.sources.form.is_none()) {
                     ui.spinner();
                     return;
                 }

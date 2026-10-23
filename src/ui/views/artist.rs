@@ -42,11 +42,11 @@ impl App {
             let (row, _) = ui.allocate_exact_size(vec2(width, BUTTONS), Sense::hover());
             self.artist_buttons(ui, row, artist, &mut picked);
 
-            let Some(page) = &self.browse.artist_page else {
+            let Some(page) = self.browse.artist_page.ready() else {
                 ui.add_space(24.0);
-                if self.browse.artist_task.is_some() {
+                if self.browse.artist_page.is_loading() {
                     ui.add(egui::Spinner::new().size(22.0));
-                } else if let Some(e) = &self.browse.list_error {
+                } else if let Some(e) = self.browse.artist_page.error() {
                     ui.label(RichText::new(e).color(colors().danger));
                 }
                 return;
@@ -116,7 +116,7 @@ impl App {
         });
 
         self.apply_card_picks(&ctx, picked.cards);
-        let top: &[Track] = self.browse.artist_page.as_ref().map_or(&[], |p| &p.top);
+        let top: &[Track] = self.browse.artist_page.ready().map_or(&[], |p| &p.top);
         if let Some((i, shuffle)) = picked.play
             && let Some((queue, i)) = playable_from(top, i)
         {
@@ -161,7 +161,7 @@ impl App {
     /// dashed lime ring on the right.
     fn artist_header(&mut self, ui: &mut Ui, head: Rect, artist: &ArtistView) {
         let p = colors();
-        let page = self.browse.artist_page.as_ref();
+        let page = self.browse.artist_page.ready();
         header_band(ui.painter(), head);
         // Faint vertical rules, like the mockup's backdrop.
         let mut x = head.left() + 48.0;
@@ -195,7 +195,7 @@ impl App {
 
     fn artist_buttons(&mut self, ui: &mut Ui, row: Rect, artist: &ArtistView, picked: &mut Picked) {
         ui.painter().hline(row.x_range(), row.bottom(), egui::Stroke::new(1.0, colors().line));
-        let has_top = self.browse.artist_page.as_ref().is_some_and(|pg| !pg.top.is_empty());
+        let has_top = self.browse.artist_page.ready().is_some_and(|pg| !pg.top.is_empty());
         let buttons = Rect::from_min_size(pos2(row.left(), row.center().y - 22.0), vec2(row.width(), 44.0));
         ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
             if has_top && widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {

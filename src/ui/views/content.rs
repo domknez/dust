@@ -21,9 +21,10 @@ impl App {
             } else if self.library.editing.busy() {
                 ui.add_space(12.0);
                 ui.add(egui::Spinner::new().size(14.0));
-            } else if let Some(notice) = self.library.editing.notice() {
+            } else if let Some((notice, error)) = self.notice.current() {
                 ui.add_space(12.0);
-                ui.label(RichText::new(notice).color(colors().accent).font(ty::SECONDARY.font()));
+                let color = if error { colors().danger } else { colors().accent };
+                ui.label(RichText::new(notice).color(color).font(ty::SECONDARY.font()));
             }
         });
         ui.add_space(20.0);

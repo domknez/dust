@@ -1,11 +1,12 @@
 //! Likes: the account's liked tracks, albums and followed artists, toggled from
 //! hearts across the UI. A toggle shows at once and is sent in the background;
-//! if Deezer refuses, it is rolled back and the error shown.
+//! if Deezer refuses, it is rolled back and the error shown as a notice.
 
 use crate::deezer::{Likeable, Likes};
 use crate::model::Error;
 use crate::provider::Provider;
 use crate::ui::app::App;
+use crate::ui::load::Load;
 use eframe::egui;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 
@@ -43,14 +44,14 @@ impl App {
     }
 
     /// Collect toggle results; undo the ones Deezer refused.
-    pub(in crate::ui) fn poll_likes(&mut self) {
+    pub(in crate::ui) fn poll_likes(&mut self, ctx: &egui::Context) {
         loop {
             match self.library.likes.done.try_recv() {
                 Ok((what, liked, Err(e))) => {
                     log_warn!("like {what:?}: {e}");
                     self.library.likes.likes.set(&what, !liked);
                     self.like_changed(&what);
-                    self.browse.list_error = Some(format!("Couldn't update your likes: {e}"));
+                    self.notice.error(ctx, format!("Couldn't update your likes: {e}"));
                 }
                 Ok(_) => {}
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => return,
@@ -61,8 +62,8 @@ impl App {
     /// Lists built from likes are out of date now; reload them when next shown.
     fn like_changed(&mut self, what: &Likeable) {
         match what {
-            Likeable::Artist(_) => self.library.followed.clear(),
-            Likeable::Album(_) => self.library.favorite_albums.clear(),
+            Likeable::Artist(_) => self.library.followed = Load::Idle,
+            Likeable::Album(_) => self.library.favorite_albums = Load::Idle,
             Likeable::Track(_) => {}
         }
     }

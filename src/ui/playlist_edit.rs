@@ -1,20 +1,16 @@
 //! Editing the account's own playlists from the UI: add tracks, create (from a track,
 //! a list or the queue), remove tracks, rename, delete. Dialogs ask for names and
-//! confirm deletes; a short notice reports what happened.
+//! confirm deletes; a short [notice](crate::ui::notice) reports what happened.
 
 use crate::deezer::{Playlist, Track};
 use crate::model::Error;
 use crate::provider::Provider;
 use crate::ui::app::App;
+use crate::ui::load::Load;
 use crate::ui::state::{Source, View};
 use crate::ui::style::{colors, typography as ty};
-use crate::ui::tasks::{self, Task};
 use crate::ui::widgets;
 use eframe::egui::{self, Key, RichText};
-use std::time::{Duration, Instant};
-
-/// How long a notice stays up.
-const NOTICE_FOR: Duration = Duration::from_secs(4);
 
 /// A change to make on the music source (Deezer or a server).
 pub enum Edit {
@@ -52,18 +48,12 @@ pub struct Done {
 #[derive(Default)]
 pub struct PlaylistEditing {
     pub dialog: Option<Dialog>,
-    task: Task<Done>,
-    notice: Option<(String, Instant)>,
+    task: Load<Done>,
 }
 
 impl PlaylistEditing {
     pub fn busy(&self) -> bool {
-        self.task.is_some()
-    }
-
-    /// The current notice, if it's still fresh.
-    pub fn notice(&self) -> Option<&str> {
-        self.notice.as_ref().filter(|(_, at)| at.elapsed() < NOTICE_FOR).map(|(m, _)| m.as_str())
+        self.task.is_loading()
     }
 }
 
@@ -109,7 +99,7 @@ impl App {
 
     pub(in crate::ui) fn edit_playlist(&mut self, ctx: &egui::Context, edit: Edit) {
         let Some(client) = self.client.clone() else { return };
-        self.library.editing.task = tasks::spawn(ctx, move || run(&client, edit));
+        self.library.editing.task.start(ctx, move || run(&client, edit));
     }
 
     /// Ask for a name, then create a playlist with `tracks`.
@@ -119,17 +109,17 @@ impl App {
 
     /// Collect a finished edit: notice, refreshed sidebar, reloaded page.
     pub(in crate::ui) fn poll_playlist_edits(&mut self, ctx: &egui::Context) {
-        let Some(result) = tasks::poll(&mut self.library.editing.task) else { return };
+        let Some(result) = self.library.editing.task.poll_take() else { return };
         let done = match result {
             Ok(done) => done,
             Err(e) => {
-                self.library.editing.notice = Some((format!("Couldn't change the playlist: {e}"), Instant::now()));
+                self.notice.error(ctx, format!("Couldn't change the playlist: {e}"));
                 return;
             }
         };
-        self.library.editing.notice = Some((done.message, Instant::now()));
+        self.notice.info(ctx, done.message);
         if let Some(client) = self.client.clone() {
-            self.library.playlists_task = tasks::spawn(ctx, move || client.playlists());
+            self.library.playlists_load.start(ctx, move || client.playlists());
         }
         let showing = matches!(&self.browse.view, View::Collection(c) if done.playlist.is_some_and(|id| c.source == Source::Playlist(id)));
         if showing && done.deleted {
@@ -137,7 +127,6 @@ impl App {
         } else if showing {
             self.show_view(ctx, self.browse.view.clone());
         }
-        ctx.request_repaint_after(NOTICE_FOR);
     }
 
     /// The open dialog, if any (call once per frame).

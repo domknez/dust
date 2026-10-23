@@ -6,10 +6,10 @@ use super::app::App;
 use super::browse::Browse;
 use super::library::Library;
 use super::likes;
+use super::load::Load;
 use super::state::View;
 use super::style::icons::Icon;
 use super::style::{colors, radius, typography as ty};
-use super::tasks::{self, Task};
 use super::widgets;
 use crate::credentials;
 use crate::deezer::Deezer;
@@ -37,7 +37,7 @@ pub struct Sources {
     pub server: Option<Subsonic>,
     /// Connecting to a server: the attempt, and the login to save if it works (one
     /// typed into the form; a stored one is already saved).
-    pub(super) connecting: Task<Subsonic>,
+    pub(super) connecting: Load<Subsonic>,
     pub(super) connecting_new: Option<Server>,
     pub form: Option<ServerForm>,
     /// The preferred source ([`crate::settings::Prefs::source`], or one the
@@ -49,11 +49,11 @@ pub struct Sources {
 
 impl Sources {
     pub fn new() -> Self {
-        Sources { deezer: None, server: None, connecting: None, connecting_new: None, form: None, settled: false }
+        Sources { deezer: None, server: None, connecting: Load::Idle, connecting_new: None, form: None, settled: false }
     }
 
     pub fn connecting(&self) -> bool {
-        self.connecting.is_some()
+        self.connecting.is_loading()
     }
 }
 
@@ -68,7 +68,7 @@ impl App {
     /// At start: connect the stored server too (Deezer's session is App::new's).
     pub(super) fn start_sources(&mut self, ctx: &egui::Context) {
         if let Some(server) = credentials::load_server() {
-            self.sources.connecting = tasks::spawn(ctx, move || Subsonic::connect(&server));
+            self.sources.connecting.start(ctx, move || Subsonic::connect(&server));
         }
     }
 
@@ -90,7 +90,7 @@ impl App {
 
     /// Server connections finishing.
     pub(super) fn poll_sources(&mut self, ctx: &egui::Context) {
-        let Some(result) = tasks::poll(&mut self.sources.connecting) else { return };
+        let Some(result) = self.sources.connecting.poll_take() else { return };
         let typed = self.sources.connecting_new.take();
         match result {
             Ok(server) => {
@@ -110,7 +110,7 @@ impl App {
                 log_warn!("music server: {e}");
                 match self.sources.form.as_mut() {
                     Some(form) => form.error = Some(e.to_string()),
-                    None if self.client.is_none() && self.login.is_none() => {
+                    None if self.client.is_none() && !self.login.is_loading() => {
                         self.login_error = Some(format!("Couldn't reach your Navidrome server: {e}"));
                     }
                     None => {}
@@ -144,9 +144,9 @@ impl App {
             self.restore_queue(&provider);
         }
         let c = provider.clone();
-        self.library.playlists_task = tasks::spawn(ctx, move || c.playlists());
+        self.library.playlists_load.start(ctx, move || c.playlists());
         let c = provider.clone();
-        self.library.likes_task = tasks::spawn(ctx, move || likes::load(&c));
+        self.library.likes_load.start(ctx, move || likes::load(&c));
         self.client = Some(provider);
         self.open_view(ctx, View::Home);
     }
@@ -302,7 +302,7 @@ impl App {
             form.error = None;
             let server = Server { url: form.url.trim().into(), user: form.user.trim().into(), password: form.password.clone() };
             self.sources.connecting_new = Some(server.clone());
-            self.sources.connecting = tasks::spawn(ctx, move || Subsonic::connect(&server));
+            self.sources.connecting.start(ctx, move || Subsonic::connect(&server));
         }
         if !close {
             self.sources.form = Some(form);

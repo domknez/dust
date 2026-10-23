@@ -4,8 +4,8 @@
 use crate::deezer::Lyrics;
 use crate::player::{Cmd, State, Status};
 use crate::ui::app::App;
+use crate::ui::load::Load;
 use crate::ui::style::{colors, metrics, typography as ty};
-use crate::ui::tasks::{self, Task};
 
 use eframe::egui::{self, RichText, Sense, Ui};
 use std::time::Duration;
@@ -18,8 +18,7 @@ const MAX_WAIT: Duration = Duration::from_millis(500);
 pub struct LyricsState {
     /// The track these are for.
     track: Option<u64>,
-    task: Task<Option<Lyrics>>,
-    loaded: Option<Result<Option<Lyrics>, String>>,
+    loaded: Load<Option<Lyrics>>,
     /// The line last scrolled into view, so it scrolls only when the line changes.
     scrolled_to: Option<usize>,
 }
@@ -45,10 +44,10 @@ impl App {
         }
         self.load_lyrics(ui.ctx(), track.id);
         match &self.lyrics.loaded {
-            None => hint(ui, "Loading lyrics…"),
-            Some(Err(e)) => hint(ui, &format!("Couldn't load lyrics: {e}")),
-            Some(Ok(None)) => hint(ui, "No lyrics for this track"),
-            Some(Ok(Some(lyrics))) => {
+            Load::Idle | Load::Loading(_) => hint(ui, "Loading lyrics…"),
+            Load::Failed(e) => hint(ui, &format!("Couldn't load lyrics: {e}")),
+            Load::Ready(None) => hint(ui, "No lyrics for this track"),
+            Load::Ready(Some(lyrics)) => {
                 let lyrics = lyrics.clone();
                 if lyrics.synced.is_empty() {
                     plain(ui, &lyrics);
@@ -67,14 +66,14 @@ impl App {
     /// Fetch the lyrics of `track` unless they're loaded or loading.
     fn load_lyrics(&mut self, ctx: &egui::Context, track: u64) {
         let state = &mut self.lyrics;
-        if let Some(result) = tasks::poll(&mut state.task) {
-            state.loaded = Some(result.map_err(|e| e.to_string()));
-        }
+        // Shown in the panel; nothing else to do about an error.
+        let _ = state.loaded.poll();
         if state.track == Some(track) {
             return;
         }
         let Some(client) = self.client.clone() else { return };
-        *state = LyricsState { track: Some(track), task: tasks::spawn(ctx, move || client.lyrics(track)), ..Default::default() };
+        *state = LyricsState { track: Some(track), ..Default::default() };
+        state.loaded.start(ctx, move || client.lyrics(track));
     }
 
     fn synced(&mut self, ui: &mut Ui, st: &Status, lyrics: &Lyrics) {

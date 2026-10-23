@@ -171,7 +171,7 @@ impl App {
                 ui.put(below_header, egui::Spinner::new().size(22.0));
                 return;
             }
-            if let Some(e) = &self.browse.list_error {
+            if let Some(e) = self.browse.tracks_error() {
                 text_left(ui.painter(), below_header.min, e, ty::TITLE, colors().danger, width);
                 return;
             }

@@ -8,7 +8,10 @@
 //! - [`now_playing`]: media keys and the OS "Now Playing" widget
 //! - [`updates`]: background update checks and installs
 //! - [`sources`]: Deezer and a Navidrome server: connecting and switching
-//! - [`state`], [`tasks`], [`format`], [`covers`]: supporting pieces
+//! - [`library`]: the source's playlists, likes and lists; [`browse`]: the page on screen
+//! - [`load`]: background loads, each keeping its result or error
+//! - [`notice`]: short messages about things that happened off the page
+//! - [`state`], [`format`], [`covers`]: supporting pieces
 
 mod app;
 mod browse;
@@ -17,12 +20,13 @@ mod format;
 mod history;
 mod library;
 mod likes;
+mod load;
+mod notice;
 mod now_playing;
 mod playlist_edit;
 mod sources;
 mod state;
 mod style;
-mod tasks;
 mod updates;
 mod views;
 mod widgets;
