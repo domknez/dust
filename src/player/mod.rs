@@ -212,6 +212,11 @@ impl PlayerHandle {
         (Self { tx, status: Arc::default() }, rx)
     }
 
+    #[cfg(test)]
+    pub fn set_status(&self, change: impl FnOnce(&mut Status)) {
+        change(&mut self.status.lock().unwrap());
+    }
+
     pub fn status(&self) -> Status {
         // A player thread that panicked while publishing leaves the lock poisoned;
         // the snapshot in it is still the last one.

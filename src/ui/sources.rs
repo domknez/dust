@@ -357,3 +357,119 @@ fn error_box(ui: &mut egui::Ui, message: &str) {
             ui.label(RichText::new(message).font(ty::SECONDARY.font()).color(p.danger));
         });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::player::Status;
+    use crate::ui::app::testing::{TestApp, deezer, ids, navidrome, queue};
+    use std::sync::mpsc::channel;
+
+    /// The stored server's connection finishes.
+    fn server_connects(t: &mut TestApp) {
+        let (tx, rx) = channel();
+        t.app.sources.connecting = Load::Loading(rx);
+        tx.send(Ok(navidrome())).unwrap();
+        t.app.poll_sources();
+    }
+
+    fn in_use(t: &TestApp) -> Option<&'static str> {
+        t.app.client.as_ref().map(Provider::service)
+    }
+
+    /// The tracks of the saved queue of source `key`.
+    fn saved(t: &TestApp, key: &str) -> Option<Vec<u64>> {
+        t.queues().load(key).map(|s| ids(&s.tracks))
+    }
+
+    /// The tracks of the queue restore sent to the player, if one was.
+    fn restored(t: &TestApp) -> Option<Vec<u64>> {
+        t.sent().into_iter().find_map(|cmd| match cmd {
+            Cmd::Restore { tracks, .. } => Some(ids(&tracks)),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn the_source_used_last_time_takes_over_when_it_connects_later() {
+        let mut t = TestApp::new("source=navidrome\n");
+        t.app.deezer_ready(deezer());
+        assert_eq!(in_use(&t), Some("Deezer"), "stands in while the server connects");
+        assert_eq!(t.app.prefs.source, SourcePref::Navidrome, "without becoming the one used next time");
+        server_connects(&mut t);
+        assert_eq!(in_use(&t), Some("Navidrome"));
+        // Deezer logging in again later doesn't switch away.
+        t.app.deezer_ready(deezer());
+        assert_eq!(in_use(&t), Some("Navidrome"));
+    }
+
+    #[test]
+    fn a_stand_in_gives_way_once() {
+        let mut t = TestApp::new("source=deezer\n");
+        server_connects(&mut t);
+        assert_eq!(in_use(&t), Some("Navidrome"));
+        t.app.deezer_ready(deezer());
+        assert_eq!(in_use(&t), Some("Deezer"));
+        server_connects(&mut t);
+        assert_eq!(in_use(&t), Some("Deezer"), "the server reconnecting doesn't take over");
+    }
+
+    #[test]
+    fn a_source_picked_by_hand_sticks() {
+        let mut t = TestApp::new("source=deezer\n");
+        t.app.deezer_ready(deezer());
+        server_connects(&mut t);
+        assert_eq!(in_use(&t), Some("Deezer"));
+        t.update(Action::SwitchSource(Provider::Subsonic(navidrome())));
+        assert_eq!((in_use(&t), t.app.prefs.source), (Some("Navidrome"), SourcePref::Navidrome));
+        t.app.deezer_ready(deezer());
+        assert_eq!(in_use(&t), Some("Navidrome"), "Deezer logging in again doesn't undo the pick");
+    }
+
+    #[test]
+    fn nothing_is_saved_before_the_queue_was_offered_back() {
+        let mut t = TestApp::new("");
+        t.queues().save(&queue(&[1, 2], 1), "");
+        // The player's queue before any login: empty, then whatever it is.
+        t.app.save_queue_if_changed(&Status::default());
+        t.app.save_queue_if_changed(&queue(&[9], 0));
+        assert_eq!(saved(&t, ""), Some(vec![1, 2]));
+    }
+
+    #[test]
+    fn the_saved_queue_comes_back_and_is_kept_up_to_date() {
+        let mut t = TestApp::new("");
+        t.queues().save(&queue(&[1, 2], 1), "");
+        t.app.deezer_ready(deezer());
+        assert_eq!(restored(&t), Some(vec![1, 2]));
+        // Until the player shows it, its empty queue isn't saved over it.
+        t.app.save_queue_if_changed(&Status::default());
+        assert_eq!(saved(&t, ""), Some(vec![1, 2]));
+        t.app.save_queue_if_changed(&queue(&[1, 2], 1));
+        t.app.save_queue_if_changed(&queue(&[1, 2, 3], 2));
+        assert_eq!(saved(&t, ""), Some(vec![1, 2, 3]));
+        assert_eq!(t.queues().load("").map(|s| s.index), Some(2));
+    }
+
+    #[test]
+    fn each_source_keeps_its_own_queue() {
+        let mut t = TestApp::new("");
+        t.queues().save(&queue(&[7], 0), "navidrome");
+        t.app.deezer_ready(deezer());
+        t.app.player.set_status(|st| *st = queue(&[1, 2], 0));
+        t.sent();
+        t.update(Action::SwitchSource(Provider::Subsonic(navidrome())));
+        assert_eq!(saved(&t, ""), Some(vec![1, 2]), "Deezer's queue is saved on the way out");
+        assert_eq!(restored(&t), Some(vec![7]), "and the server's comes back");
+    }
+
+    #[test]
+    fn switching_before_a_restore_arrives_keeps_the_saved_queue() {
+        let mut t = TestApp::new("");
+        t.queues().save(&queue(&[1, 2], 1), "");
+        t.app.deezer_ready(deezer());
+        // The player hasn't shown the restored queue yet: it's still empty.
+        t.update(Action::SwitchSource(Provider::Subsonic(navidrome())));
+        assert_eq!(saved(&t, ""), Some(vec![1, 2]));
+    }
+}

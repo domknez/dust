@@ -227,3 +227,73 @@ impl App {
         self.player.send(Cmd::Sleep(sleep));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::app::testing::{TestApp, deezer, ids, track};
+
+    /// What was played (queue and start), from the commands sent.
+    fn played(t: &TestApp) -> Vec<(Vec<u64>, usize)> {
+        t.sent()
+            .into_iter()
+            .filter_map(|cmd| match cmd {
+                Cmd::Play(queue, index) => Some((ids(&queue), index)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn playing_from_a_row_plays_the_playable_tracks() {
+        let mut t = TestApp::new("");
+        let list = vec![track(1, true), track(2, false), track(3, true)];
+        t.update(Action::PlayFrom { tracks: list.clone(), index: 2, shuffle: false });
+        // A row that can't play starts at the next one that can.
+        t.update(Action::PlayFrom { tracks: list, index: 1, shuffle: false });
+        t.update(Action::PlayFrom { tracks: vec![track(4, false)], index: 0, shuffle: false });
+        assert_eq!(played(&t), [(vec![1, 3], 1), (vec![1, 3], 1)]);
+    }
+
+    #[test]
+    fn shuffle_turns_shuffle_on_and_starts_anywhere() {
+        let mut t = TestApp::new("");
+        t.sent();
+        t.update(Action::PlayFrom { tracks: vec![track(1, true), track(2, true), track(3, true)], index: 0, shuffle: true });
+        assert!(matches!(t.sent()[..], [Cmd::Shuffle(true), Cmd::Play(ref queue, index)] if queue.len() == 3 && index < 3));
+        assert!(t.app.prefs.shuffle, "and it's remembered");
+    }
+
+    #[test]
+    fn add_to_queue_takes_the_playable_tracks_and_says_so() {
+        let mut t = TestApp::new("");
+        t.sent();
+        t.update(Action::QueueAll(vec![track(1, true), track(2, false), track(3, true)]));
+        assert!(matches!(&t.sent()[..], [Cmd::Enqueue(queued)] if ids(queued) == [1, 3]));
+        assert!(t.app.queued_flash.is_some(), "the button confirms it");
+    }
+
+    #[test]
+    fn opening_a_page_from_the_mini_player_brings_the_window_back() {
+        let mut t = TestApp::new("");
+        t.app.deezer_ready(deezer());
+        t.app.mini_player = Some(egui::vec2(1200.0, 800.0));
+        t.update(Action::Player(Cmd::Next));
+        assert!(t.app.mini_player.is_some(), "playback stays in the mini player");
+        t.update(Action::OpenArtist(ArtistRef { id: "27".into(), name: "Daft Punk".into() }));
+        assert!(t.app.mini_player.is_none());
+        assert!(matches!(&t.app.browse.view, View::Artist(artist) if artist.id == "27"));
+        assert!(t.app.browse.artist_page.is_loading());
+    }
+
+    #[test]
+    fn a_like_shows_at_once_and_is_sent_in_the_background() {
+        let mut t = TestApp::new("");
+        t.app.deezer_ready(deezer());
+        let jobs = t.jobs.waiting();
+        let song = Likeable::Track(5);
+        t.update(Action::ToggleLike(song.clone()));
+        assert!(t.app.is_liked(&song));
+        assert_eq!(t.jobs.waiting(), jobs + 1);
+    }
+}

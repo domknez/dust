@@ -120,6 +120,20 @@ impl Subsonic {
         Ok(client)
     }
 
+    /// A server that was never reached, for tests that don't call it.
+    #[cfg(test)]
+    pub fn offline(url: &str, user: &str) -> Subsonic {
+        Subsonic(Arc::new(Inner {
+            agent: ureq::Agent::new_with_defaults(),
+            base: normalize_url(url).expect("a server address"),
+            user: user.into(),
+            token: String::new(),
+            salt: String::new(),
+            song_lyrics: AtomicBool::new(false),
+            ids: Mutex::default(),
+        }))
+    }
+
     /// Make this the server whose cover art the UI shows.
     pub fn activate(&self) {
         *ACTIVE.write().unwrap() = Some(self.clone());

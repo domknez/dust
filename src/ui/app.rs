@@ -353,7 +353,7 @@ impl App {
     }
 
     /// Keep `queue.json` in step with the queue (after the restore was offered).
-    fn save_queue_if_changed(&mut self, st: &Status) {
+    pub(super) fn save_queue_if_changed(&mut self, st: &Status) {
         // Until the player shows the restored queue, its (empty) queue isn't news.
         if self.restore_pending {
             if st.queue.is_empty() {
@@ -616,12 +616,112 @@ pub(super) mod testing {
             let _ = std::fs::remove_dir_all(&self.dir);
         }
     }
+
+    pub fn deezer() -> Deezer {
+        Deezer::offline("Dee Zer")
+    }
+
+    pub fn navidrome() -> crate::subsonic::Subsonic {
+        crate::subsonic::Subsonic::offline("nas:4533", "me")
+    }
+
+    pub fn track(id: u64, available: bool) -> Track {
+        Track {
+            id,
+            title: format!("Song {id}"),
+            artist: String::new(),
+            artists: Vec::new(),
+            album: String::new(),
+            album_id: String::new(),
+            duration: 180,
+            token: String::new(),
+            cover: String::new(),
+            fallback: None,
+            available,
+            available_from: String::new(),
+            episode: None,
+            server: None,
+        }
+    }
+
+    pub fn ids(tracks: &[Track]) -> Vec<u64> {
+        tracks.iter().map(|t| t.id).collect()
+    }
+
+    /// The player showing a queue of these tracks.
+    pub fn queue(ids: &[u64], index: usize) -> Status {
+        Status { queue: std::sync::Arc::new(ids.iter().map(|&id| track(id, true)).collect()), index, ..Default::default() }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::testing::TestApp;
+    use super::testing::{TestApp, deezer, track};
     use super::*;
+    use crate::deezer::Section;
+    use crate::ui::load::Load;
+
+    /// Logged in to Deezer, on the home page.
+    fn logged_in() -> TestApp {
+        let mut t = TestApp::new("");
+        t.app.deezer_ready(deezer());
+        t
+    }
+
+    fn page(t: &TestApp) -> (View, &str) {
+        (t.app.browse.view.clone(), t.app.browse.search.as_str())
+    }
+
+    #[test]
+    fn back_and_forward_bring_back_the_page_and_its_search() {
+        let mut t = logged_in();
+        t.update(Action::Open(View::Loved));
+        t.app.browse.search = "daft punk".into();
+        t.update(Action::Open(View::Search));
+        assert_eq!(t.app.browse.searched, "daft punk");
+        // Typed, but not searched for.
+        t.app.browse.search = "justice".into();
+        t.update(Action::Open(View::Playlists));
+        t.update(Action::Back);
+        assert_eq!(page(&t), (View::Search, "daft punk"));
+        assert!(t.app.browse.search_load.is_loading(), "the search runs again");
+        t.update(Action::Back);
+        assert_eq!(page(&t).0, View::Loved);
+        t.update(Action::Forward);
+        assert_eq!(page(&t), (View::Search, "daft punk"));
+        t.update(Action::Forward);
+        assert_eq!(page(&t).0, View::Playlists);
+        assert!(!t.app.browse.history.can_go_forward());
+    }
+
+    #[test]
+    fn cached_pages_load_once_and_track_lists_each_time() {
+        let mut t = logged_in();
+        assert!(t.app.library.home.is_loading(), "home loads with the source");
+        t.app.library.home = Load::Ready(vec![Section { title: "Mixes".into(), layout: String::new(), items: Vec::new() }]);
+        let jobs = t.jobs.waiting();
+        t.update(Action::Open(View::Loved));
+        assert!(t.app.browse.tracks_load.is_loading());
+        t.update(Action::Open(View::Home));
+        assert_eq!(t.jobs.waiting(), jobs + 1, "home was there already");
+        t.update(Action::Back);
+        assert_eq!(t.jobs.waiting(), jobs + 2, "a track list loads each time it's shown");
+        t.update(Action::ReloadHome);
+        assert!(t.app.library.home.is_loading(), "refresh loads home again");
+    }
+
+    #[test]
+    fn the_sidebar_search_opens_empty() {
+        let mut t = logged_in();
+        t.app.browse.search = "daft".into();
+        t.update(Action::Open(View::Search));
+        t.app.browse.tracks = vec![track(1, true)];
+        t.update(Action::OpenSearch);
+        let browse = &t.app.browse;
+        assert!(browse.tracks.is_empty() && browse.searched.is_empty() && !browse.loading_tracks());
+        t.update(Action::Back);
+        assert_eq!(t.app.browse.searched, "daft", "the search before is a page of its own");
+    }
 
     #[test]
     fn the_app_starts_with_nothing_running() {
