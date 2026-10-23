@@ -13,6 +13,7 @@
 //! - [`playback`]: opening songs and episodes for the player
 //! - [`links`]: Deezer links pasted into search
 //! - [`session`]: cookies, CSRF token and the raw gw-light transport
+//! - [`source`]: Deezer as a [`crate::source::Source`]
 
 mod catalog;
 mod client;
@@ -25,21 +26,24 @@ mod parse;
 mod playback;
 mod playlists;
 pub(crate) mod session;
+mod source;
 mod streaming;
 
 pub use client::Deezer;
-pub use images::art_url;
-pub use links::{Link, is_link};
+pub use source::ID;
 
 // Child modules use these as `super::{Error, Result}`.
 use crate::model::{Error, Result, Service};
 
+/// Deezer, as its errors name it.
+pub const SERVICE: Service = Service::new("Deezer", "Deezer");
+
 /// A failed request to Deezer, as an error naming Deezer.
 fn http(e: ureq::Error) -> Error {
-    Service::Deezer.http(e)
+    SERVICE.http(e)
 }
 
 /// Deezer answered with an error.
 fn api(message: impl Into<String>) -> Error {
-    Service::Deezer.api(message)
+    SERVICE.api(message)
 }

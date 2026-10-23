@@ -4,29 +4,19 @@
 
 use std::fmt;
 
-/// A service dust talks to.
+/// A service dust talks to, as its errors name it. Each source has its own
+/// (`deezer::SERVICE`, `subsonic::SERVICE`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Service {
-    Deezer,
-    /// A Navidrome or other Subsonic / OpenSubsonic server.
-    Subsonic,
+pub struct Service {
+    /// Short name, as the start of an error ("Navidrome: ...").
+    pub name: &'static str,
+    /// What couldn't be reached ("Couldn't reach your Navidrome server").
+    place: &'static str,
 }
 
 impl Service {
-    /// Short name, as the start of an error ("Navidrome: ...").
-    pub fn name(self) -> &'static str {
-        match self {
-            Service::Deezer => "Deezer",
-            Service::Subsonic => "Navidrome",
-        }
-    }
-
-    /// What couldn't be reached ("Couldn't reach your Navidrome server").
-    fn place(self) -> &'static str {
-        match self {
-            Service::Deezer => "Deezer",
-            Service::Subsonic => "your Navidrome server",
-        }
+    pub const fn new(name: &'static str, place: &'static str) -> Service {
+        Service { name, place }
     }
 
     /// The service answered with an error.
@@ -51,7 +41,7 @@ impl Service {
 
 impl fmt::Display for Service {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
+        f.write_str(self.name)
     }
 }
 
@@ -68,7 +58,7 @@ pub enum Error {
     #[error("This track isn't available in your region.")]
     NotAvailable,
     /// Couldn't reach the service.
-    #[error("Couldn't reach {}: {message}", service.place())]
+    #[error("Couldn't reach {}: {message}", service.place)]
     Network { service: Service, message: String },
     /// The service answered with an error.
     #[error("{service}: {message}")]
@@ -98,25 +88,28 @@ impl Error {
 mod tests {
     use super::*;
 
+    const DEEZER: Service = Service::new("Deezer", "Deezer");
+    const SERVER: Service = Service::new("Navidrome", "your Navidrome server");
+
     #[test]
     fn network_errors_name_their_service() {
-        assert_eq!(Service::Deezer.network("timed out").to_string(), "Couldn't reach Deezer: timed out");
-        assert_eq!(Service::Subsonic.network("timed out").to_string(), "Couldn't reach your Navidrome server: timed out");
+        assert_eq!(DEEZER.network("timed out").to_string(), "Couldn't reach Deezer: timed out");
+        assert_eq!(SERVER.network("timed out").to_string(), "Couldn't reach your Navidrome server: timed out");
     }
 
     #[test]
     fn api_errors_name_their_service() {
-        assert_eq!(Service::Deezer.api("DATA_ERROR").to_string(), "Deezer: DATA_ERROR");
-        assert_eq!(Service::Subsonic.api("Wrong username or password").to_string(), "Navidrome: Wrong username or password");
+        assert_eq!(DEEZER.api("DATA_ERROR").to_string(), "Deezer: DATA_ERROR");
+        assert_eq!(SERVER.api("Wrong username or password").to_string(), "Navidrome: Wrong username or password");
     }
 
     #[test]
     fn http_status_is_the_service_answering() {
-        let e = Service::Subsonic.http(ureq::Error::StatusCode(404));
-        assert!(matches!(e, Error::Http { service: Service::Subsonic, status: 404 }));
+        let e = SERVER.http(ureq::Error::StatusCode(404));
+        assert!(matches!(e, Error::Http { service, status: 404 } if service == SERVER));
         assert_eq!(e.to_string(), "Navidrome: HTTP 404");
-        let e = Service::Deezer.http(ureq::Error::ConnectionFailed);
-        assert!(matches!(e, Error::Network { service: Service::Deezer, .. }));
+        let e = DEEZER.http(ureq::Error::ConnectionFailed);
+        assert!(matches!(e, Error::Network { service, .. } if service == DEEZER));
     }
 
     #[test]

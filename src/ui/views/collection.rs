@@ -8,7 +8,7 @@ use crate::ui::app::App;
 use crate::ui::covers::Covers;
 use crate::ui::format::total_clock;
 use crate::ui::playlist_edit::{Dialog, Edit};
-use crate::ui::state::{Coll, Source, View, playable};
+use crate::ui::state::{Coll, CollSource, View, playable};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::views::home::{CARD_ROW_HEIGHT, card_row};
@@ -161,7 +161,7 @@ impl App {
     /// The artist of an album page when every track lists them (not compilations).
     fn album_artist(&self) -> Option<ArtistRef> {
         let View::Collection(coll) = &self.browse.view else { return None };
-        let Source::Album(_) = coll.source else { return None };
+        let CollSource::Album(_) = coll.source else { return None };
         let main = self.browse.tracks.first()?.artists.first()?.clone();
         self.browse.tracks.iter().all(|t| t.artists.iter().any(|a| a.id == main.id)).then_some(main)
     }
@@ -231,7 +231,7 @@ impl App {
             }
             // Albums can be liked from their header.
             if let View::Collection(coll) = &self.browse.view
-                && let Source::Album(id) = &coll.source
+                && let CollSource::Album(id) = &coll.source
             {
                 let what = Likeable::Album(id.clone());
                 if heart_square(ui, self.library.likes.likes.contains(&what)).clicked() {
@@ -321,17 +321,17 @@ impl App {
     /// The own playlist on screen, if that's what is shown.
     pub(in crate::ui) fn showing_own_playlist(&self) -> Option<&Playlist> {
         let View::Collection(coll) = &self.browse.view else { return None };
-        let Source::Playlist(id) = &coll.source else { return None };
+        let CollSource::Playlist(id) = &coll.source else { return None };
         self.library.playlists.iter().find(|p| p.id == *id && p.owned)
     }
 
     /// Whether an album's tracks are on screen.
     fn showing_album(&self) -> bool {
-        matches!(&self.browse.view, View::Collection(coll) if matches!(coll.source, Source::Album(_)))
+        matches!(&self.browse.view, View::Collection(coll) if matches!(coll.source, CollSource::Album(_)))
     }
 
     /// Whether a podcast's episodes are on screen.
     fn showing_podcast(&self) -> bool {
-        matches!(&self.browse.view, View::Collection(coll) if matches!(coll.source, Source::Show(_)))
+        matches!(&self.browse.view, View::Collection(coll) if matches!(coll.source, CollSource::Show(_)))
     }
 }

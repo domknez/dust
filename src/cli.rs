@@ -111,7 +111,7 @@ impl Command {
 }
 
 fn logged_in() -> Deezer {
-    let arl = credentials::load().expect("no stored session; log in with the app first");
+    let arl = credentials::load(crate::deezer::ID).expect("no stored session; log in with the app first");
     Deezer::login(&arl).expect("login")
 }
 

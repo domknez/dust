@@ -8,7 +8,7 @@
 //! - [`style`]: colours, type scale, metrics, icons
 //! - [`now_playing`]: media keys and the OS "Now Playing" widget
 //! - [`updates`]: background update checks and installs
-//! - [`sources`]: Deezer and a Navidrome server: connecting and switching
+//! - [`sources`]: the logged-in music sources: connecting, switching, the account menu's rows
 //! - [`library`]: the source's playlists, likes and lists; [`browse`]: the page on screen
 //! - [`load`]: background loads, each keeping its result or error
 //! - [`notice`]: short messages about things that happened off the page

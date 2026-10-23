@@ -3,6 +3,7 @@
 
 use crate::model::Quality;
 use crate::player::Repeat;
+use crate::source::{KINDS, SourceId};
 use crate::ui::Appearance;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -24,28 +25,12 @@ fn path() -> Option<PathBuf> {
     Some(base.join("dust").join("settings.conf"))
 }
 
-/// The music source used last time (`source`).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SourcePref {
-    Deezer,
-    /// A Navidrome or other Subsonic server.
-    Navidrome,
-}
-
-impl SourcePref {
-    pub fn key(self) -> &'static str {
-        match self {
-            SourcePref::Deezer => "deezer",
-            SourcePref::Navidrome => "navidrome",
-        }
-    }
-}
-
 /// The listener's preferences, as kept in the settings file. Change them with
 /// [`Prefs::update`], which saves what changed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Prefs {
-    pub source: SourcePref,
+    /// The music source used last time.
+    pub source: SourceId,
     pub quality: Quality,
     pub theme: Appearance,
     /// Send listen reports (Deezer history, Flow, Last.fm; server scrobbles).
@@ -75,7 +60,7 @@ impl Prefs {
         let saved = entries(text);
         let get = |k: &str| saved.get(k).map(String::as_str);
         Prefs {
-            source: if get("source") == Some("navidrome") { SourcePref::Navidrome } else { SourcePref::Deezer },
+            source: get("source").and_then(SourceId::from_key).unwrap_or(KINDS[0]),
             quality: get("quality").and_then(Quality::from_key).unwrap_or(Quality::Mp3_320),
             theme: get("theme").and_then(Appearance::from_key).unwrap_or(Appearance::System),
             // Switches that are on unless turned off.
@@ -112,7 +97,7 @@ impl Prefs {
     fn values(&self) -> [(&'static str, String); 10] {
         let flag = |on: bool| if on { "true" } else { "false" }.to_string();
         [
-            ("source", self.source.key().into()),
+            ("source", self.source.key.into()),
             ("quality", self.quality.key().into()),
             ("theme", self.theme.key().into()),
             ("report_listens", flag(self.report_listens)),
@@ -156,7 +141,7 @@ mod tests {
     #[test]
     fn reads_a_saved_file() {
         let p = Prefs::parse(SAVED);
-        assert_eq!(p.source, SourcePref::Navidrome);
+        assert_eq!(p.source, crate::subsonic::ID);
         assert_eq!(p.quality, Quality::Flac);
         assert_eq!(p.theme, Appearance::Dark);
         assert!(!p.report_listens && p.shuffle && !p.auto_update && !p.sidebar_playlists);
@@ -168,7 +153,7 @@ mod tests {
     #[test]
     fn missing_or_odd_values_get_defaults() {
         let p = Prefs::parse("quality=ogg\nvolume=7\noutput=\nsomething else\n");
-        assert_eq!(p.source, SourcePref::Deezer);
+        assert_eq!(p.source, crate::deezer::ID);
         assert_eq!(p.quality, Quality::Mp3_320);
         assert_eq!(p.theme, Appearance::System);
         assert!(p.report_listens && !p.shuffle && p.auto_update && p.sidebar_playlists);

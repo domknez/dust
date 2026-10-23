@@ -8,13 +8,13 @@
 use super::app::{App, SidePanel};
 use super::load::Load;
 use super::playlist_edit::{Dialog, Edit};
-use super::state::{ArtistView, Coll, PlayMode, Source, View, playable};
+use super::state::{ArtistView, Coll, CollSource, PlayMode, View, playable};
 use super::style::Appearance;
 use super::views::{SleepChoice, reveal_log};
 use super::widgets::TrackMenu;
 use crate::model::{ArtistRef, Likeable, Quality, Track};
 use crate::player::{Cmd, Output, Repeat, Sleep};
-use crate::provider::Provider;
+use crate::source::Shared;
 use crate::subsonic::Server;
 use eframe::egui;
 use std::time::{Duration, Instant};
@@ -44,7 +44,7 @@ pub enum Action {
     /// A list's "Add to queue": its playable tracks, confirmed on the button.
     QueueAll(Vec<Track>),
     /// Fetch a collection's tracks, then play or queue them.
-    PlaySource(Source, PlayMode),
+    PlaySource(CollSource, PlayMode),
     /// Anything else for the player: pause, skip, seek, volume, queue edits.
     Player(Cmd),
     Shuffle(bool),
@@ -94,7 +94,7 @@ pub enum Action {
     LogInWithBrowser,
     OpenServerForm,
     ConnectServer(Server),
-    SwitchSource(Provider),
+    SwitchSource(Shared),
     /// Log out of the source in use (or disconnect the server).
     LogOut,
 }
@@ -198,7 +198,7 @@ impl App {
             Action::LogInWithBrowser => self.log_in_with_browser(),
             Action::OpenServerForm => self.open_server_form(),
             Action::ConnectServer(server) => self.connect_server(server),
-            Action::SwitchSource(provider) => self.switch_source(provider),
+            Action::SwitchSource(source) => self.switch_source(source),
             Action::LogOut => self.log_out(),
         }
     }
@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn opening_a_page_from_the_mini_player_brings_the_window_back() {
         let mut t = TestApp::new("");
-        t.app.deezer_ready(deezer());
+        t.app.source_ready(deezer());
         t.app.mini_player = Some(egui::vec2(1200.0, 800.0));
         t.update(Action::Player(Cmd::Next));
         assert!(t.app.mini_player.is_some(), "playback stays in the mini player");
@@ -289,7 +289,7 @@ mod tests {
     #[test]
     fn a_like_shows_at_once_and_is_sent_in_the_background() {
         let mut t = TestApp::new("");
-        t.app.deezer_ready(deezer());
+        t.app.source_ready(deezer());
         let jobs = t.jobs.waiting();
         let song = Likeable::Track(crate::model::TrackId::from(5));
         t.update(Action::ToggleLike(song.clone()));

@@ -11,6 +11,7 @@ use crate::model::{Quality, Track};
 use crate::output::airplay::AirPlaySink;
 use crate::output::local::LocalSink;
 use crate::output::{RATE, Sink};
+use crate::source::SourceId;
 use eframe::egui;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
 use std::sync::{Arc, Mutex};
@@ -42,8 +43,8 @@ pub struct Engine {
     status: Arc<Mutex<Status>>,
     ctx: egui::Context,
     library: Option<SharedLibrary>,
-    /// Which source `library` is (see [`crate::provider::Provider::key`]).
-    source: Option<&'static str>,
+    /// Which source `library` is.
+    source: Option<SourceId>,
     quality: Quality,
     queue: Queue,
     listens: ListenTracker,
@@ -149,7 +150,7 @@ impl Engine {
         self.recover_output();
         self.sleep_due();
         match cmd {
-            Cmd::Client(client) => self.set_source(client.key(), Arc::new(client)),
+            Cmd::Client(client) => self.set_source(client.id(), Arc::new(client)),
             Cmd::Quality(q) => self.quality = q,
             Cmd::ReportListens(on) => self.listens.enabled = on,
             Cmd::Output(o) => self.switch_output(o),
@@ -471,8 +472,8 @@ impl Engine {
 
     /// Play from `library` from now on. Another source than before ends playback and
     /// empties the queue: its tracks belong to the old source.
-    fn set_source(&mut self, key: &'static str, library: SharedLibrary) {
-        if self.source.is_some_and(|k| k != key) {
+    fn set_source(&mut self, id: SourceId, library: SharedLibrary) {
+        if self.source.is_some_and(|s| s != id) {
             log_info!("music source changed: stopping and clearing the queue");
             self.stop();
             if let Some(s) = self.sink.as_mut() {
@@ -482,7 +483,7 @@ impl Engine {
             self.queue.replace(Vec::new(), 0);
             self.restored_at = None;
         }
-        self.source = Some(key);
+        self.source = Some(id);
         self.library = Some(library);
     }
 
@@ -994,13 +995,13 @@ mod tests {
     #[test]
     fn switching_source_clears_the_queue() {
         let (mut e, library, _tx) = engine(FakeLibrary::default());
-        e.set_source("", library.clone());
+        e.set_source(crate::deezer::ID, library.clone());
         e.handle(Cmd::Play(vec![track(1, 60), track(2, 60)], 0));
         assert_eq!(now_playing(&e), Some(1));
         // Logging in again to the same source keeps playing.
-        e.set_source("", library.clone());
+        e.set_source(crate::deezer::ID, library.clone());
         assert_eq!(now_playing(&e), Some(1));
-        e.set_source("navidrome", library);
+        e.set_source(crate::subsonic::ID, library);
         e.publish(true);
         assert_eq!(now_playing(&e), None);
         assert!(!e.playing && e.queue.is_empty());

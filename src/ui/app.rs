@@ -10,18 +10,18 @@ use super::load::Jobs;
 use super::notice::Notice;
 use super::now_playing::NowPlaying;
 use super::sources::{Login, Sources};
-use super::state::{ArtistView, Coll, PlayMode, Source, View, playable, playable_from};
+use super::state::{ArtistView, Coll, CollSource, PlayMode, View, playable, playable_from};
 use super::style::{self, Appearance, colors, metrics};
 use super::updates::Updates;
 use crate::credentials;
-use crate::deezer::{self, Deezer, Link};
-use crate::model::{Error, Quality, Track};
+use crate::deezer::{self, Deezer};
+use crate::model::{Error, Link, Quality, Track};
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
 use crate::player::saved::QueueFiles;
 use crate::player::{Cmd, Flow, Output, PlayerHandle, Repeat, Status};
-use crate::provider::Provider;
 use crate::settings::Prefs;
+use crate::source::{Shared, SourceId};
 use eframe::egui::{self, Key, Margin, Ui};
 
 /// What the panel on the right shows.
@@ -48,9 +48,9 @@ pub struct App {
     pub(super) jobs: Jobs,
     /// Where each source's queue is saved between runs.
     pub(super) queues: QueueFiles,
-    /// The music source in use (Deezer or a Navidrome server).
-    pub(super) client: Option<Provider>,
-    /// Both sources' logins.
+    /// The music source in use.
+    pub(super) client: Option<Shared>,
+    /// The logged-in sources.
     pub(super) sources: Sources,
     /// The login screen's state and a Deezer login on its way.
     pub(super) login: Login,
@@ -121,9 +121,6 @@ impl App {
             Discovery::start(move || repaint.request_repaint()).inspect_err(|e| log_warn!("AirPlay discovery unavailable: {e}")).ok();
         app.remote_control = start_remote_control(app.player.clone());
         app.now_playing = NowPlaying::start(cc, app.player.clone());
-        if let Some(arl) = credentials::load() {
-            app.login.task.start(&app.jobs, move || Deezer::login(&arl));
-        }
         app.start_sources();
         app
     }
@@ -183,10 +180,10 @@ impl App {
 
     fn on_logged_in(&mut self, client: Deezer) {
         if std::mem::take(&mut self.login.remember) {
-            credentials::save(client.arl());
+            credentials::save(deezer::ID, client.arl());
         }
         self.login.arl.clear();
-        self.deezer_ready(client);
+        self.source_ready(std::sync::Arc::new(client));
     }
 
     // ------------------------------------------------------------ navigation
@@ -234,14 +231,14 @@ impl App {
     }
 
     /// A page with a track list: empty it and load the new one.
-    fn load_list(&mut self, client: Provider, view: View) {
+    fn load_list(&mut self, client: Shared, view: View) {
         let browse = &mut self.browse;
         browse.clear_list();
         match view {
             View::Home | View::Playlists | View::Artists | View::Albums | View::Podcasts | View::Artist(_) => {}
             View::Search if browse.search.trim().is_empty() => {}
-            // A pasted Deezer link opens what it points at instead of searching.
-            View::Search if client.features().links && deezer::is_link(&browse.search) => {
+            // A pasted link to the source opens what it points at instead of searching.
+            View::Search if client.is_link(&browse.search) => {
                 let link = browse.search.trim().to_string();
                 browse.searched.clear();
                 browse.link_load.start(&self.jobs, move || client.resolve_link(&link));
@@ -254,8 +251,8 @@ impl App {
             View::Loved => browse.tracks_load.start(&self.jobs, move || client.loved().map(|t| (t, None))),
             View::Collection(coll) => {
                 browse.tracks_load.start(&self.jobs, move || match &coll.source {
-                    Source::Album(id) => client.album_page(id).map(|(t, info)| (t, Some(info))),
-                    source => source.fetch(&client).map(|t| (t, None)),
+                    CollSource::Album(id) => client.album_page(id).map(|(t, info)| (t, Some(info))),
+                    source => source.fetch(&*client).map(|t| (t, None)),
                 });
             }
         }
@@ -265,18 +262,18 @@ impl App {
         self.browse.search.clear();
         match link {
             Link::Album { id, title, artist, picture } => {
-                self.open_collection(Coll { source: Source::Album(id), kind: "ALBUM", title, subtitle: artist, picture });
+                self.open_collection(Coll { source: CollSource::Album(id), kind: "ALBUM", title, subtitle: artist, picture });
             }
             Link::Artist { id } => self.open_artist(ArtistView { id, name: String::new(), picture: None }),
             Link::Playlist { id, title, picture } => {
-                self.open_collection(Coll { source: Source::Playlist(id), kind: "PLAYLIST", title, subtitle: String::new(), picture });
+                self.open_collection(Coll { source: CollSource::Playlist(id), kind: "PLAYLIST", title, subtitle: String::new(), picture });
             }
         }
     }
 
     /// Open a collection; artists get their full page instead of a track list.
     pub(super) fn open_collection(&mut self, coll: Coll) {
-        if let Source::Artist(id) = &coll.source {
+        if let CollSource::Artist(id) = &coll.source {
             return self.open_artist(ArtistView { id: id.clone(), name: coll.title.clone(), picture: coll.picture.clone() });
         }
         self.open_view(View::Collection(Box::new(coll)));
@@ -301,9 +298,9 @@ impl App {
     }
 
     /// Fetch a collection and play/queue it without opening it.
-    pub(super) fn play_source(&mut self, source: Source, mode: PlayMode) {
+    pub(super) fn play_source(&mut self, source: CollSource, mode: PlayMode) {
         let Some(client) = self.client.clone() else { return };
-        self.browse.quick_play.start(&self.jobs, move || source.fetch(&client).map(|t| (t, mode)));
+        self.browse.quick_play.start(&self.jobs, move || source.fetch(&*client).map(|t| (t, mode)));
     }
 
     // ------------------------------------------------------------ settings
@@ -342,15 +339,16 @@ impl App {
         self.player.send(Cmd::Output(output));
     }
 
-    /// Save the queue of source `key` as it is now (unless its restore is still on
-    /// its way, which would save an empty queue over it).
-    pub(super) fn save_queue_now(&mut self, key: &str) {
+    /// Save the queue of `source` as it is now (unless its restore is still on its
+    /// way, which would save an empty queue over it).
+    pub(super) fn save_queue_now(&mut self, source: SourceId) {
         if self.queue_saved.is_some() && !self.restore_pending {
-            self.queues.save(&self.player.status(), key);
+            self.queues.save(&self.player.status(), source);
         }
     }
 
-    /// Keep `queue.json` in step with the queue (after the restore was offered).
+    /// Keep the source's saved queue in step with the queue (after the restore was
+    /// offered).
     pub(super) fn save_queue_if_changed(&mut self, st: &Status) {
         // Until the player shows the restored queue, its (empty) queue isn't news.
         if self.restore_pending {
@@ -363,7 +361,7 @@ impl App {
         let key = (std::sync::Arc::as_ptr(&st.queue) as usize, st.index, st.flow.clone());
         if *last != key {
             if let Some(client) = &self.client {
-                self.queues.save(st, client.key());
+                self.queues.save(st, client.id());
             }
             self.queue_saved = Some(key);
         }
@@ -491,7 +489,7 @@ impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         // Once more with the exact position, to resume right there next time.
         if let Some(client) = &self.client {
-            self.save_queue_now(client.key());
+            self.save_queue_now(client.id());
         }
         self.updates.apply_on_exit();
     }
@@ -616,12 +614,14 @@ pub(super) mod testing {
         }
     }
 
-    pub fn deezer() -> Deezer {
-        Deezer::offline("Dee Zer")
+    /// A Deezer account that never logged in.
+    pub fn deezer() -> Shared {
+        std::sync::Arc::new(Deezer::offline("Dee Zer"))
     }
 
-    pub fn navidrome() -> crate::subsonic::Subsonic {
-        crate::subsonic::Subsonic::offline("nas:4533", "me")
+    /// A music server that was never reached.
+    pub fn navidrome() -> Shared {
+        std::sync::Arc::new(crate::subsonic::Subsonic::offline("nas:4533", "me"))
     }
 
     pub fn track(id: u64, available: bool) -> Track {
@@ -661,7 +661,7 @@ mod tests {
     /// Logged in to Deezer, on the home page.
     fn logged_in() -> TestApp {
         let mut t = TestApp::new("");
-        t.app.deezer_ready(deezer());
+        t.app.source_ready(deezer());
         t
     }
 
@@ -726,7 +726,7 @@ mod tests {
         assert!(matches!(t.sent()[..], [Cmd::Shuffle(true), Cmd::Repeat(Repeat::All)]), "the player gets the saved modes");
         assert_eq!(t.jobs.waiting(), 0);
         assert!(t.app.client.is_none() && t.app.discovery.is_none() && t.app.now_playing.is_none());
-        assert!(t.queues().load("").is_none());
+        assert!(t.queues().load(deezer::ID).is_none());
     }
 
     #[test]

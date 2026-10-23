@@ -1,5 +1,6 @@
 //! Tracks how long the current track has actually been heard and reports each
-//! listen to Deezer (history, Flow, Last.fm), like Deezer's own apps.
+//! listen to the source (Deezer's history, Flow and Last.fm, like its own apps; a
+//! server's play counts).
 
 use super::library::Library;
 use crate::model::{Format, Listen, TrackId};

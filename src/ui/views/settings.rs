@@ -58,11 +58,7 @@ impl App {
             ui.add_space(12.0);
         }
         widgets::caption(ui, "LISTENING");
-        let (title, sub) = if self.features().flow {
-            ("Share listening with Deezer", "History, Flow and Last.fm scrobbling via Deezer")
-        } else {
-            ("Report plays to the server", "Play counts and \"Recently played\" (and Last.fm, if the server scrobbles)")
-        };
+        let (title, sub) = self.client.as_ref().map_or(("Report listens", ""), |c| c.listen_reports());
         if widgets::menu_row(ui, None, title, Some(sub), self.prefs.report_listens, colors().text).clicked() {
             acts.push(Action::ToggleReportListens);
         }

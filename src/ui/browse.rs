@@ -4,8 +4,7 @@
 use super::history::History;
 use super::load::Load;
 use super::state::{PlayMode, View};
-use crate::deezer::Link;
-use crate::model::{AlbumInfo, ArtistPage, Error, Item, ItemKind, Playlist, SearchResults, Section, Track};
+use crate::model::{AlbumInfo, ArtistPage, Error, Item, ItemKind, Link, Playlist, SearchResults, Section, Track};
 
 /// The page in the main area and its content. Replaced wholesale along with the
 /// [`Library`](super::library::Library) when the source changes.
@@ -24,7 +23,7 @@ pub struct Browse {
     /// releases.
     pub tracks_load: Load<(Vec<Track>, Option<AlbumInfo>)>,
     pub search_load: Load<SearchResults>,
-    /// A Deezer link pasted into search, being resolved.
+    /// A link pasted into search, being resolved.
     pub link_load: Load<Link>,
     /// The artist page being shown (for `View::Artist`).
     pub artist_page: Load<ArtistPage>,

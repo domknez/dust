@@ -3,11 +3,11 @@
 //! confirm deletes; a short [notice](crate::ui::notice) reports what happened.
 
 use crate::model::{Error, Playlist, PlaylistId, Track, TrackId};
-use crate::provider::Provider;
+use crate::source::Source;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::load::Load;
-use crate::ui::state::{Source, View, for_playlist};
+use crate::ui::state::{CollSource, View, for_playlist};
 use crate::ui::style::{colors, typography as ty};
 use crate::ui::widgets;
 use eframe::egui::{self, Key, RichText};
@@ -61,7 +61,7 @@ fn plural(n: usize) -> String {
     if n == 1 { "1 track".into() } else { format!("{n} tracks") }
 }
 
-fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
+fn run(client: &dyn Source, edit: Edit) -> Result<Done, Error> {
     let ids = |tracks: Vec<Track>| for_playlist(tracks).into_iter().map(|t| t.id).collect::<Vec<_>>();
     Ok(match edit {
         Edit::Add { playlist, tracks } => {
@@ -94,7 +94,7 @@ fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
 impl App {
     pub(in crate::ui) fn edit_playlist(&mut self, edit: Edit) {
         let Some(client) = self.client.clone() else { return };
-        self.library.editing.task.start(&self.jobs, move || run(&client, edit));
+        self.library.editing.task.start(&self.jobs, move || run(&*client, edit));
     }
 
     /// Ask for a name, then create a playlist with `tracks`.
@@ -116,7 +116,7 @@ impl App {
         if let Some(client) = self.client.clone() {
             self.library.playlists_load.start(&self.jobs, move || client.playlists());
         }
-        let showing = matches!(&self.browse.view, View::Collection(c) if done.playlist.as_ref().is_some_and(|id| matches!(&c.source, Source::Playlist(p) if p == id)));
+        let showing = matches!(&self.browse.view, View::Collection(c) if done.playlist.as_ref().is_some_and(|id| matches!(&c.source, CollSource::Playlist(p) if p == id)));
         if showing && done.deleted {
             self.open_view(View::Playlists);
         } else if showing {
@@ -129,7 +129,7 @@ impl App {
         let Some(mut dialog) = self.library.editing.dialog.take() else { return };
         let p = colors();
         let private_playlists = self.features().private_playlists;
-        let service = self.client.as_ref().map_or("Deezer", Provider::service);
+        let service = self.client.as_ref().map_or("", |c| c.id().name);
         let mut submit = None;
         let mut close = false;
         let modal = egui::Modal::new(egui::Id::new("playlist-dialog")).frame(widgets::popover_frame(ctx)).show(ctx, |ui| {

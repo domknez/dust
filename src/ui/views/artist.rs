@@ -10,7 +10,7 @@ use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
 use crate::ui::format::thousands;
-use crate::ui::state::{ArtistView, Coll, Source};
+use crate::ui::state::{ArtistView, Coll, CollSource};
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, Columns, Grid, GridColumns, RowMenu, Table, text_left};
@@ -168,7 +168,7 @@ impl App {
 /// The artist's popular tracks as a plain list ("show all").
 fn top_tracks(artist: &ArtistView) -> Coll {
     Coll {
-        source: Source::TopTracks(artist.id.clone()),
+        source: CollSource::TopTracks(artist.id.clone()),
         kind: "POPULAR TRACKS",
         title: artist.name.clone(),
         subtitle: String::new(),

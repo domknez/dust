@@ -1,6 +1,6 @@
 //! What browsing shows: cards, sections of cards and the pages built from them.
 
-use super::{Art, Track};
+use super::{Art, PlaylistId, Track};
 
 /// One card on a page (home, search, an artist's page): a playlist, album, artist,
 /// mix, flow, ...
@@ -79,6 +79,15 @@ pub struct ArtistPage {
 pub struct SearchResults {
     pub tracks: Vec<Track>,
     pub sections: Vec<Section>,
+}
+
+/// What a link pasted into search points at, with enough to show its page header
+/// right away.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Link {
+    Album { id: String, title: String, artist: String, picture: Option<Art> },
+    Artist { id: String },
+    Playlist { id: PlaylistId, title: String, picture: Option<Art> },
 }
 
 /// What an album page shows besides its tracks.

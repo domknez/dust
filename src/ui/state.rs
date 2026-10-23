@@ -2,7 +2,7 @@
 
 use crate::model::{Art, ArtistRef, Item, ItemKind, Playlist, PlaylistId, Track};
 use crate::player::Cmd;
-use crate::provider::Provider;
+use crate::source::Source;
 
 /// The page in the main area.
 #[derive(Clone, PartialEq, Debug)]
@@ -38,7 +38,7 @@ impl ArtistView {
 
 /// Where a collection's tracks come from.
 #[derive(Clone, PartialEq, Debug)]
-pub enum Source {
+pub enum CollSource {
     Playlist(PlaylistId),
     Album(String),
     /// Opens the artist's page; played directly, their top tracks.
@@ -52,15 +52,15 @@ pub enum Source {
     Show(String),
 }
 
-impl Source {
-    pub fn fetch(&self, client: &Provider) -> crate::model::Result<Vec<Track>> {
+impl CollSource {
+    pub fn fetch(&self, client: &dyn Source) -> crate::model::Result<Vec<Track>> {
         match self {
-            Source::Playlist(id) => client.playlist(id),
-            Source::Album(id) => client.album(id),
-            Source::Artist(id) | Source::TopTracks(id) => client.artist_top(id),
-            Source::TrackMix(id) => client.track_mix(id),
-            Source::Mix(id) => client.mix(id),
-            Source::Show(id) => client.show_episodes(id),
+            CollSource::Playlist(id) => client.playlist(id),
+            CollSource::Album(id) => client.album(id),
+            CollSource::Artist(id) | CollSource::TopTracks(id) => client.artist_top(id),
+            CollSource::TrackMix(id) => client.track_mix(id),
+            CollSource::Mix(id) => client.mix(id),
+            CollSource::Show(id) => client.show_episodes(id),
         }
     }
 }
@@ -68,7 +68,7 @@ impl Source {
 /// A track collection opened from the sidebar or the home page.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Coll {
-    pub source: Source,
+    pub source: CollSource,
     /// Uppercase label above the title ("PLAYLIST", "ALBUM", ...).
     pub kind: &'static str,
     pub title: String,
@@ -80,7 +80,7 @@ impl Coll {
     /// The album a track is on, if Deezer said which.
     pub fn album_of(track: &Track) -> Option<Self> {
         (!track.album_id.is_empty()).then(|| Coll {
-            source: Source::Album(track.album_id.clone()),
+            source: CollSource::Album(track.album_id.clone()),
             kind: "ALBUM",
             title: track.album.clone(),
             subtitle: track.artist.clone(),
@@ -92,7 +92,7 @@ impl Coll {
     pub fn origin_of(track: &Track) -> Option<Self> {
         match track.episode() {
             Some(episode) if !episode.show_id.is_empty() => Some(Coll {
-                source: Source::Show(episode.show_id.clone()),
+                source: CollSource::Show(episode.show_id.clone()),
                 kind: "PODCAST",
                 title: track.artist.clone(),
                 subtitle: String::new(),
@@ -105,7 +105,7 @@ impl Coll {
 
     pub fn from_playlist(p: &Playlist) -> Self {
         Coll {
-            source: Source::Playlist(p.id.clone()),
+            source: CollSource::Playlist(p.id.clone()),
             kind: "PLAYLIST",
             title: p.title.clone(),
             subtitle: String::new(),
@@ -117,12 +117,12 @@ impl Coll {
     pub fn from_item(it: &Item) -> Option<Self> {
         let (source, kind) = match &it.kind {
             ItemKind::Playlist if it.id.is_empty() => return None,
-            ItemKind::Playlist => (Source::Playlist(PlaylistId::new(&it.id)), "PLAYLIST"),
-            ItemKind::Album => (Source::Album(it.id.clone()), "ALBUM"),
-            ItemKind::Artist => (Source::Artist(it.id.clone()), "ARTIST · TOP TRACKS"),
-            ItemKind::Mix => (Source::Mix(it.id.clone()), "MIX"),
-            ItemKind::TrackMix => (Source::TrackMix(it.id.clone()), "TRACK MIX"),
-            ItemKind::Show => (Source::Show(it.id.clone()), "PODCAST"),
+            ItemKind::Playlist => (CollSource::Playlist(PlaylistId::new(&it.id)), "PLAYLIST"),
+            ItemKind::Album => (CollSource::Album(it.id.clone()), "ALBUM"),
+            ItemKind::Artist => (CollSource::Artist(it.id.clone()), "ARTIST · TOP TRACKS"),
+            ItemKind::Mix => (CollSource::Mix(it.id.clone()), "MIX"),
+            ItemKind::TrackMix => (CollSource::TrackMix(it.id.clone()), "TRACK MIX"),
+            ItemKind::Show => (CollSource::Show(it.id.clone()), "PODCAST"),
             ItemKind::Flow { .. } | ItemKind::Radio { .. } | ItemKind::Other(_) => return None,
         };
         Some(Coll { source, kind, title: it.title.clone(), subtitle: it.subtitle.clone(), picture: it.picture.clone() })
@@ -130,7 +130,7 @@ impl Coll {
 
     /// Artists get round artwork.
     pub fn round(&self) -> bool {
-        matches!(self.source, Source::Artist(_))
+        matches!(self.source, CollSource::Artist(_))
     }
 }
 
@@ -197,7 +197,10 @@ mod tests {
             origin: Origin::Deezer(DeezerSong::default()),
         };
         let coll = Coll::album_of(&track).unwrap();
-        assert_eq!((coll.source, coll.title.as_str(), coll.subtitle.as_str()), (Source::Album("302127".into()), "Discovery", "Daft Punk"));
+        assert_eq!(
+            (coll.source, coll.title.as_str(), coll.subtitle.as_str()),
+            (CollSource::Album("302127".into()), "Discovery", "Daft Punk")
+        );
         assert_eq!(coll.picture, Art::new("cover/abc"));
         assert!(Coll::album_of(&Track { album_id: String::new(), ..track }).is_none());
     }
@@ -226,18 +229,21 @@ mod tests {
 
     #[test]
     fn items_map_to_sources() {
-        assert_eq!(Coll::from_item(&item(ItemKind::Playlist, "42")).map(|c| c.source), Some(Source::Playlist(PlaylistId::new("42"))));
-        assert_eq!(Coll::from_item(&item(ItemKind::Mix, "discovery")).map(|c| c.source), Some(Source::Mix("discovery".into())));
+        assert_eq!(Coll::from_item(&item(ItemKind::Playlist, "42")).map(|c| c.source), Some(CollSource::Playlist(PlaylistId::new("42"))));
+        assert_eq!(Coll::from_item(&item(ItemKind::Mix, "discovery")).map(|c| c.source), Some(CollSource::Mix("discovery".into())));
         assert!(Coll::from_item(&item(ItemKind::Artist, "27")).is_some_and(|c| c.round()));
         assert!(Coll::from_item(&item(ItemKind::Other("channel".into()), "x")).is_none());
-        assert_eq!(Coll::from_item(&item(ItemKind::TrackMix, "4229026412")).map(|c| c.source), Some(Source::TrackMix("4229026412".into())));
+        assert_eq!(
+            Coll::from_item(&item(ItemKind::TrackMix, "4229026412")).map(|c| c.source),
+            Some(CollSource::TrackMix("4229026412".into()))
+        );
         assert_eq!(
             Coll::from_item(&item(ItemKind::Playlist, "J78Lrnn5aCX1IyCU5feMey")).map(|c| c.source),
-            Some(Source::Playlist(PlaylistId::new("J78Lrnn5aCX1IyCU5feMey"))),
+            Some(CollSource::Playlist(PlaylistId::new("J78Lrnn5aCX1IyCU5feMey"))),
             "a music server's own id"
         );
         assert!(Coll::from_item(&item(ItemKind::Playlist, "")).is_none());
-        assert_eq!(Coll::from_item(&item(ItemKind::Show, "724752")).map(|c| c.source), Some(Source::Show("724752".into())));
+        assert_eq!(Coll::from_item(&item(ItemKind::Show, "724752")).map(|c| c.source), Some(CollSource::Show("724752".into())));
         assert!(Coll::from_item(&item(ItemKind::Flow { mood: None }, "default")).is_none(), "Flow plays, it doesn't open");
     }
 }

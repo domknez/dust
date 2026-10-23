@@ -1,6 +1,6 @@
-//! The engine's view of where music comes from. The music sources implement it in
-//! the app (through [`crate::provider::Provider`]); tests use fakes, so the playback
-//! logic runs without network or audio hardware.
+//! The engine's view of where music comes from. In the app it's the music source in
+//! use (a [`crate::source::Shared`]); tests use fakes, so the playback logic runs
+//! without network or audio hardware.
 
 use crate::media::{OpenError, Playback};
 use crate::model::{Listen, Quality, Track, TrackId};

@@ -5,18 +5,10 @@
 use super::images::art;
 use super::parse::{picture, text};
 use super::{Deezer, Error, Result};
-use crate::model::{Art, PlaylistId};
+use crate::model::{Link, PlaylistId};
 use serde_json::{Value, json};
 use std::time::Duration;
 use ureq::ResponseExt;
-
-/// What a link points at, with enough to show its page header right away.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Link {
-    Album { id: String, title: String, artist: String, picture: Option<Art> },
-    Artist { id: String },
-    Playlist { id: PlaylistId, title: String, picture: Option<Art> },
-}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Kind {

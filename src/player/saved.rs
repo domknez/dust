@@ -1,18 +1,15 @@
 //! The queue saved between runs (`queue.json` next to `settings.conf`): tracks, the
 //! current one, where it was, and whether it was endless Flow. Each music source
-//! keeps its own: Deezer's in `queue.json`, a music server's in `queue-<key>.json`.
+//! keeps its own, in its [`SourceId::queue_file`] (Deezer's `queue.json`, a music
+//! server's `queue-navidrome.json`).
 
 use super::{Flow, Status};
 use crate::model::{Art, ArtistRef, DeezerSong, Episode, Origin, ServerSong, Track, TrackId};
 use crate::settings;
+use crate::source::SourceId;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
-/// The queue file of a source; `source` is empty for Deezer.
-fn file(source: &str) -> String {
-    let safe: String = source.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect();
-    if safe.is_empty() { "queue.json".into() } else { format!("queue-{safe}.json") }
-}
 const VERSION: u64 = 1;
 
 /// A queue to restore.
@@ -41,13 +38,12 @@ impl QueueFiles {
         QueueFiles { dir: Some(dir) }
     }
 
-    fn path(&self, source: &str) -> Option<PathBuf> {
-        Some(self.dir.as_ref()?.join(file(source)))
+    fn path(&self, source: SourceId) -> Option<PathBuf> {
+        Some(self.dir.as_ref()?.join(source.queue_file))
     }
 
-    /// Write the player's queue for `source` (see [`file`]); an empty queue removes
-    /// the file.
-    pub fn save(&self, st: &Status, source: &str) {
+    /// Write the player's queue for `source`; an empty queue removes the file.
+    pub fn save(&self, st: &Status, source: SourceId) {
         let Some(path) = self.path(source) else { return };
         if st.queue.is_empty() {
             let _ = std::fs::remove_file(&path);
@@ -64,7 +60,7 @@ impl QueueFiles {
         }
     }
 
-    pub fn load(&self, source: &str) -> Option<Saved> {
+    pub fn load(&self, source: SourceId) -> Option<Saved> {
         let text = std::fs::read_to_string(self.path(source)?).ok()?;
         let saved = decode(&serde_json::from_str(&text).ok()?);
         if saved.is_none() {
@@ -350,9 +346,17 @@ mod tests {
 
     #[test]
     fn each_source_has_its_own_file() {
-        assert_eq!(file(""), "queue.json");
-        assert_eq!(file("navidrome"), "queue-navidrome.json");
-        assert_eq!(file("../x y"), "queue-___x_y.json");
+        let dir = std::env::temp_dir().join(format!("dust-queue-files-{}", std::process::id()));
+        let files = QueueFiles::at(dir.clone());
+        files.save(&status(None), crate::deezer::ID);
+        assert!(dir.join("queue.json").exists(), "Deezer's, as always");
+        assert!(files.load(crate::subsonic::ID).is_none());
+        files.save(&status(None), crate::subsonic::ID);
+        assert!(dir.join("queue-navidrome.json").exists());
+        files.save(&Status::default(), crate::deezer::ID);
+        assert!(!dir.join("queue.json").exists(), "an empty queue removes the file");
+        assert!(files.load(crate::subsonic::ID).is_some());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

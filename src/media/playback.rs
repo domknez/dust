@@ -65,7 +65,8 @@ pub trait Playback {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Service;
+    use crate::deezer::SERVICE as DEEZER;
+    use crate::subsonic::SERVICE as SERVER;
 
     fn kind(e: Error) -> &'static str {
         match OpenError::from(e) {
@@ -78,22 +79,22 @@ mod tests {
     fn track_problems_are_unavailable() {
         assert_eq!(kind(Error::NotAvailable), "unavailable");
         assert_eq!(kind(Error::NoStreamingLicense), "unavailable");
-        assert_eq!(kind(Service::Subsonic.http(ureq::Error::StatusCode(404))), "unavailable");
-        assert_eq!(kind(Service::Deezer.http(ureq::Error::StatusCode(403))), "unavailable");
-        assert_eq!(kind(Service::Subsonic.api("the server sent no audio for this song")), "unavailable");
+        assert_eq!(kind(SERVER.http(ureq::Error::StatusCode(404))), "unavailable");
+        assert_eq!(kind(DEEZER.http(ureq::Error::StatusCode(403))), "unavailable");
+        assert_eq!(kind(SERVER.api("the server sent no audio for this song")), "unavailable");
     }
 
     #[test]
     fn network_problems_are_transient() {
-        assert_eq!(kind(Service::Deezer.network("timed out")), "transient");
-        assert_eq!(kind(Service::Subsonic.http(ureq::Error::ConnectionFailed)), "transient");
-        assert_eq!(kind(Service::Subsonic.http(ureq::Error::StatusCode(503))), "transient");
-        assert_eq!(kind(Service::Deezer.http(ureq::Error::StatusCode(429))), "transient");
+        assert_eq!(kind(DEEZER.network("timed out")), "transient");
+        assert_eq!(kind(SERVER.http(ureq::Error::ConnectionFailed)), "transient");
+        assert_eq!(kind(SERVER.http(ureq::Error::StatusCode(503))), "transient");
+        assert_eq!(kind(DEEZER.http(ureq::Error::StatusCode(429))), "transient");
         assert_eq!(kind(Error::SessionExpired), "transient");
     }
 
     #[test]
     fn messages_are_kept() {
-        assert_eq!(OpenError::from(Service::Subsonic.network("timed out")).to_string(), "Couldn't reach your Navidrome server: timed out");
+        assert_eq!(OpenError::from(SERVER.network("timed out")).to_string(), "Couldn't reach your Navidrome server: timed out");
     }
 }

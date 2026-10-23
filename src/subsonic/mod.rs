@@ -6,6 +6,7 @@
 //! - [`catalog`]: home shelves, albums, artists, playlists, search, likes, lyrics
 //! - [`parse`]: models from the API's JSON
 //! - [`stream`]: the song files, with seeking and server-side conversion
+//! - [`source`]: a server as a [`crate::source::Source`]
 //!
 //! Ids: tracks and playlists keep the server's own ids ([`crate::model::TrackId`],
 //! [`crate::model::PlaylistId`]), so they mean the same after a restart.
@@ -14,7 +15,10 @@ mod catalog;
 #[cfg(test)]
 mod live_tests;
 mod parse;
+mod source;
 mod stream;
+
+pub use source::ID;
 
 use crate::model::{Art, Error, Result, Service};
 use md5::{Digest, Md5};
@@ -158,14 +162,17 @@ fn connect_error(host: &str, e: Error) -> Error {
     Error::Other(message)
 }
 
+/// A music server, as its errors name it.
+pub const SERVICE: Service = Service::new("Navidrome", "your Navidrome server");
+
 /// A failed request to the server, as an error naming it.
 fn http(e: ureq::Error) -> Error {
-    Service::Subsonic.http(e)
+    SERVICE.http(e)
 }
 
 /// The server answered with an error.
 fn api(message: impl Into<String>) -> Error {
-    Service::Subsonic.api(message)
+    SERVICE.api(message)
 }
 
 /// `http://host:port` from what was typed: scheme added if missing, trailing
@@ -217,7 +224,7 @@ mod tests {
         let say = |e| connect_error("nas:4533", e).to_string();
         assert_eq!(say(api("Wrong username or password")), "Wrong username or password");
         assert!(say(http(ureq::Error::StatusCode(404))).starts_with("nas:4533 answered with HTTP 404."));
-        assert!(say(Service::Subsonic.network("Connection refused")).starts_with("Couldn't reach nas:4533."));
+        assert!(say(SERVICE.network("Connection refused")).starts_with("Couldn't reach nas:4533."));
         assert!(say(Error::Other("Not a Subsonic reply: eof".into())).contains("doesn't look like"));
     }
 

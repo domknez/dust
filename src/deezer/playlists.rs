@@ -58,12 +58,13 @@ impl Deezer {
 mod tests {
     use super::*;
 
-    /// Network test on the stored account (`cargo test -- --ignored playlist_round_trip`):
-    /// creates a private playlist, edits it, deletes it.
+    /// Network test on an account (tests don't read the keychain; pass its session:
+    /// `DUST_TEST_ARL=… cargo test -- --ignored playlist_round_trip`): creates a
+    /// private playlist, edits it, deletes it.
     #[test]
     #[ignore]
     fn playlist_round_trip() {
-        let client = Deezer::login(&crate::credentials::load().expect("stored session")).expect("login");
+        let client = Deezer::login(&std::env::var("DUST_TEST_ARL").expect("DUST_TEST_ARL=<arl>")).expect("login");
         let song = |n: u64| TrackId::from(n);
         let id = client.create_playlist("dust test (delete me)", true, &[song(3135556)]).unwrap();
         let ids = |c: &Deezer| c.playlist(&id).unwrap().into_iter().map(|t| t.id).collect::<Vec<_>>();

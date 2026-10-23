@@ -2,7 +2,7 @@
 
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
-use crate::ui::state::{Coll, Source, View};
+use crate::ui::state::{Coll, CollSource, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
@@ -95,7 +95,7 @@ impl App {
             ui.spacing_mut().item_spacing.y = 1.0;
             for playlist in &self.library.playlists {
                 let selected =
-                    matches!(&self.browse.view, View::Collection(c) if matches!(&c.source, Source::Playlist(id) if *id == playlist.id));
+                    matches!(&self.browse.view, View::Collection(c) if matches!(&c.source, CollSource::Playlist(id) if *id == playlist.id));
                 let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::SIDEBAR_PLAYLIST_ROW), Sense::click());
                 if selected || resp.hovered() {
                     ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), if selected { p.raised } else { p.hover });
@@ -111,7 +111,7 @@ impl App {
                 let title_color = if selected || resp.hovered() { p.text } else { p.dim };
                 text_left(ui.painter(), pos2(x, rect.center().y), &playlist.title, ty::BODY, title_color, width);
                 if let Some(mode) = widgets::queue_menu(&resp) {
-                    acts.push(Action::PlaySource(Source::Playlist(playlist.id.clone()), mode));
+                    acts.push(Action::PlaySource(CollSource::Playlist(playlist.id.clone()), mode));
                 }
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                     acts.push(Action::OpenCollection(Coll::from_playlist(playlist)));
@@ -140,7 +140,10 @@ impl App {
         avatar(ui, pos2(rect.left() + 24.0, rect.center().y), 14.0, &name, ty::META);
         let width = rect.width() - 80.0;
         text_left(ui.painter(), pos2(rect.left() + 48.0, rect.center().y - 8.0), &name, ty::BODY.strong(), p.text, width);
-        let quality = if self.features().quality { self.prefs.quality.label().to_lowercase() } else { self.source_host() };
+        let quality = match &self.client {
+            Some(c) if !c.features().quality => c.detail(),
+            _ => self.prefs.quality.label().to_lowercase(),
+        };
         text_left(ui.painter(), pos2(rect.left() + 48.0, rect.center().y + 9.0), &quality, ty::META, p.faint, width);
         self.account_menu(&resp, &name, acts);
     }
@@ -150,7 +153,7 @@ impl App {
         if let Some(name) = std::env::var("DUST_DISPLAY_NAME").ok().filter(|n| !n.is_empty()) {
             return name;
         }
-        self.client.as_ref().map(|c| c.name()).unwrap_or_default()
+        self.client.as_ref().map(|c| c.account()).unwrap_or_default()
     }
 
     /// ⌘1 … ⌘6 (Ctrl elsewhere) open the pages listed in the sidebar.

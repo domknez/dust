@@ -4,7 +4,7 @@
 //! - [`engine`]: the playback loop and command handling
 //! - [`queue`]: queue bookkeeping (pure, unit-tested)
 //! - [`library`]: what the engine needs from a music source (a seam for tests)
-//! - [`listens`]: listen tracking and reporting to Deezer
+//! - [`listens`]: listen tracking and reporting to the source
 //! - [`awake`]: keeping the OS from throttling dust while it plays
 
 pub mod awake;
@@ -18,7 +18,6 @@ pub use queue::Flow;
 
 use crate::model::{Quality, Track};
 use crate::output::airplay::Device;
-use crate::provider::Provider;
 use eframe::egui;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -81,9 +80,10 @@ impl Repeat {
 pub enum Cmd {
     /// The music source to play from; a different source than before stops
     /// playback and empties the queue.
-    Client(Provider),
+    Client(crate::source::Shared),
     Quality(Quality),
-    /// Report listens to Deezer (history, Flow, Last.fm scrobbling).
+    /// Report listens to the source (Deezer's history, Flow, Last.fm; a server's
+    /// play counts).
     ReportListens(bool),
     Output(Output),
 

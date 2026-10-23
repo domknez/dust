@@ -1,9 +1,8 @@
 //! Likes: the account's liked tracks, albums and followed artists, toggled from
 //! hearts across the UI. A toggle shows at once and is sent in the background;
-//! if Deezer refuses, it is rolled back and the error shown as a notice.
+//! if the source refuses, it is rolled back and the error shown as a notice.
 
 use crate::model::{Error, Likeable, Likes};
-use crate::provider::Provider;
 use crate::ui::app::App;
 use crate::ui::load::Load;
 use eframe::egui;
@@ -28,7 +27,7 @@ impl App {
         self.library.likes.likes.contains(what)
     }
 
-    /// Flip a like: shown immediately, confirmed by Deezer in the background.
+    /// Flip a like: shown immediately, confirmed by the source in the background.
     pub(in crate::ui) fn toggle_like(&mut self, what: Likeable) {
         let Some(client) = self.client.clone() else { return };
         let liked = !self.is_liked(&what);
@@ -41,7 +40,7 @@ impl App {
         });
     }
 
-    /// Collect toggle results; undo the ones Deezer refused.
+    /// Collect toggle results; undo the ones the source refused.
     pub(in crate::ui) fn poll_likes(&mut self, ctx: &egui::Context) {
         loop {
             match self.library.likes.done.try_recv() {
@@ -65,9 +64,4 @@ impl App {
             Likeable::Track(_) => {}
         }
     }
-}
-
-/// Load the account's likes (after login).
-pub fn load(client: &Provider) -> Result<Likes, Error> {
-    client.likes()
 }

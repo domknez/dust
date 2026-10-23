@@ -1,4 +1,4 @@
-//! Home: a greeting, the Flow panel with its moods, then Deezer's recommendation
+//! Home: a greeting, the Flow (or Radio) panel with its moods, then the source's
 //! sections as horizontally scrolling rows of cards.
 
 use crate::model::{Item, ItemKind, Section};
@@ -43,7 +43,7 @@ impl App {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             let (r, _) = ui.allocate_exact_size(vec2(196.0, 22.0), Sense::hover());
-            let line = if self.features().flow { "recommended by deezer".to_string() } else { format!("from {}", self.source_host()) };
+            let line = self.client.as_ref().map(|c| c.tagline()).unwrap_or_default();
             text_left(ui.painter(), pos2(r.left(), r.center().y), &line, ty::META, p.dim, r.width());
             reload = widgets::icon_button(ui, Icon::Refresh, 12.0, p.dim).on_hover_text("Refresh").clicked();
         });

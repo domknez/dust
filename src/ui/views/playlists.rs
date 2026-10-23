@@ -4,7 +4,7 @@ use crate::model::Playlist;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
-use crate::ui::state::{Coll, Source};
+use crate::ui::state::{Coll, CollSource};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, Grid, GridColumns, text_left};
 use eframe::egui::{self, CornerRadius, Rect, Sense, Ui, Vec2, pos2, vec2};
@@ -38,7 +38,7 @@ fn playlist_card(ui: &mut Ui, covers: &mut Covers, playlist: &Playlist, acts: &m
     text_left(ui.painter(), pos2(rect.left(), art.bottom() + 16.0), &playlist.title, ty::TITLE.strong(), p.text, card);
     text_left(ui.painter(), pos2(rect.left(), art.bottom() + 36.0), &format!("{} tracks", playlist.count), ty::SECONDARY, p.dim, card);
     if let Some(mode) = widgets::queue_menu(&resp) {
-        acts.push(Action::PlaySource(Source::Playlist(playlist.id.clone()), mode));
+        acts.push(Action::PlaySource(CollSource::Playlist(playlist.id.clone()), mode));
     }
     if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
         acts.push(Action::OpenCollection(Coll::from_playlist(playlist)));
