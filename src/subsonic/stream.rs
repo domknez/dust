@@ -5,6 +5,7 @@ use super::{Subsonic, api, http};
 use crate::deezer::prefetch::Prefetch;
 use crate::deezer::{Format, ServerSong, Track};
 use crate::model::{Error, Result};
+use crate::player::library::OpenError;
 use crate::player::stream::{Opened, Opener, Stream, StreamInfo};
 use std::sync::Arc;
 use std::time::Duration;
@@ -44,8 +45,8 @@ struct ServerBytes {
 }
 
 impl Opener for ServerBytes {
-    fn open(&self, at: f64) -> std::result::Result<Opened, String> {
-        self.open_at(at).map_err(|e| e.to_string())
+    fn open(&self, at: f64) -> std::result::Result<Opened, OpenError> {
+        Ok(self.open_at(at)?)
     }
 }
 
@@ -109,12 +110,13 @@ fn check_audio(resp: &ureq::http::Response<ureq::Body>) -> Result<()> {
 impl Subsonic {
     /// Start a song at `at` seconds. A file dust can't decode after all (say, Opus
     /// in an `.ogg`) is asked for again as MP3.
-    pub fn open_track(&self, track: &Track, at: f64) -> Result<Stream> {
+    pub fn open_track(&self, track: &Track, at: f64) -> std::result::Result<Stream, OpenError> {
         let song = track.server.clone().ok_or_else(|| Error::Other("not a song from this server".into()))?;
         self.remember(&song.id);
         let (delivery, extension) = delivery(&song.suffix);
         match self.open_as(track, &song, delivery, extension, at) {
-            Err(e) if delivery != Delivery::Converted => {
+            // Only a file problem: a network one would fail the same way again.
+            Err(OpenError::Unavailable(e)) if delivery != Delivery::Converted => {
                 log_info!("{}: {e}; asking the server for MP3", song.suffix);
                 self.open_as(track, &song, Delivery::Converted, "mp3", at)
             }
@@ -122,7 +124,14 @@ impl Subsonic {
         }
     }
 
-    fn open_as(&self, track: &Track, song: &ServerSong, delivery: Delivery, extension: &str, at: f64) -> Result<Stream> {
+    fn open_as(
+        &self,
+        track: &Track,
+        song: &ServerSong,
+        delivery: Delivery,
+        extension: &str,
+        at: f64,
+    ) -> std::result::Result<Stream, OpenError> {
         let info = StreamInfo {
             song_id: track.id,
             format: Format::File,
@@ -131,7 +140,7 @@ impl Subsonic {
             jumps: !matches!(delivery, Delivery::Raw { jumps: false }),
         };
         let opener = ServerBytes { client: self.clone(), song: song.clone(), delivery, duration: track.duration };
-        Stream::open(Arc::new(opener), info, at).map_err(Error::Other)
+        Stream::open(Arc::new(opener), info, at)
     }
 
     /// Size of a file on the server, if it says.

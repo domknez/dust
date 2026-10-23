@@ -3,12 +3,43 @@
 
 use super::stream::Stream;
 use crate::deezer::{Deezer, Format, Listen, Quality, Track};
+use crate::model::Error;
 use std::sync::Arc;
+
+/// Why a track didn't open, which decides what the engine does next.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum OpenError {
+    /// The track itself can't be played (not licensed, gone from the server, a file
+    /// that won't decode): skip to the next one.
+    #[error("{0}")]
+    Unavailable(String),
+    /// Not the track's fault (no network, a timeout, the server busy): skipping would
+    /// fail the same way, so playback stops there and play tries again.
+    #[error("{0}")]
+    Transient(String),
+}
+
+impl From<Error> for OpenError {
+    fn from(e: Error) -> Self {
+        let message = e.to_string();
+        match e {
+            Error::NotAvailable | Error::NoStreamingLicense | Error::Api { .. } | Error::Unsupported(_) | Error::Other(_) => {
+                OpenError::Unavailable(message)
+            }
+            // Timeouts, rate limits and server trouble may pass; other statuses (404
+            // for a deleted song, 403 for a refused one) won't.
+            Error::Http { status, .. } if status == 408 || status == 429 || status >= 500 => OpenError::Transient(message),
+            Error::Http { .. } => OpenError::Unavailable(message),
+            // The same for every track: skipping would only fail again.
+            Error::Network { .. } | Error::SessionExpired | Error::InvalidToken => OpenError::Transient(message),
+        }
+    }
+}
 
 /// Opens tracks and Flow, and receives listen reports.
 pub trait Library: Send + Sync {
     /// Start decoding `track` at `at` seconds.
-    fn open(&self, track: &Track, quality: Quality, at: f64) -> Result<Box<dyn Playback>, String>;
+    fn open(&self, track: &Track, quality: Quality, at: f64) -> Result<Box<dyn Playback>, OpenError>;
     /// Next batch of Flow, optionally tuned to a mood.
     fn flow(&self, mood: Option<&str>) -> Result<Vec<Track>, String>;
     /// Fire-and-forget: a track started.
@@ -44,12 +75,12 @@ pub trait Playback {
     /// Seek forward in place by dropping packets until `t`.
     fn skip_to(&mut self, t: f64);
     /// A fresh stream of the same track starting at `at`.
-    fn reopen(&self, at: f64) -> Result<Box<dyn Playback>, String>;
+    fn reopen(&self, at: f64) -> Result<Box<dyn Playback>, OpenError>;
 }
 
 impl Library for Deezer {
-    fn open(&self, track: &Track, quality: Quality, at: f64) -> Result<Box<dyn Playback>, String> {
-        let source = self.stream_source(track, quality).map_err(|e| e.to_string())?;
+    fn open(&self, track: &Track, quality: Quality, at: f64) -> Result<Box<dyn Playback>, OpenError> {
+        let source = self.stream_source(track, quality)?;
         Ok(Box::new(Stream::open_deezer(self, source, at)?))
     }
 
@@ -77,3 +108,39 @@ impl Library for Deezer {
 
 /// Shared handle the engine keeps.
 pub type SharedLibrary = Arc<dyn Library>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Service;
+
+    fn kind(e: Error) -> &'static str {
+        match OpenError::from(e) {
+            OpenError::Unavailable(_) => "unavailable",
+            OpenError::Transient(_) => "transient",
+        }
+    }
+
+    #[test]
+    fn track_problems_are_unavailable() {
+        assert_eq!(kind(Error::NotAvailable), "unavailable");
+        assert_eq!(kind(Error::NoStreamingLicense), "unavailable");
+        assert_eq!(kind(Service::Subsonic.http(ureq::Error::StatusCode(404))), "unavailable");
+        assert_eq!(kind(Service::Deezer.http(ureq::Error::StatusCode(403))), "unavailable");
+        assert_eq!(kind(Service::Subsonic.api("the server sent no audio for this song")), "unavailable");
+    }
+
+    #[test]
+    fn network_problems_are_transient() {
+        assert_eq!(kind(Service::Deezer.network("timed out")), "transient");
+        assert_eq!(kind(Service::Subsonic.http(ureq::Error::ConnectionFailed)), "transient");
+        assert_eq!(kind(Service::Subsonic.http(ureq::Error::StatusCode(503))), "transient");
+        assert_eq!(kind(Service::Deezer.http(ureq::Error::StatusCode(429))), "transient");
+        assert_eq!(kind(Error::SessionExpired), "transient");
+    }
+
+    #[test]
+    fn messages_are_kept() {
+        assert_eq!(OpenError::from(Service::Subsonic.network("timed out")).to_string(), "Couldn't reach your Navidrome server: timed out");
+    }
+}

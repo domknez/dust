@@ -2,7 +2,7 @@
 //! into the active output, and publishes a [`Status`] snapshot for the UI.
 
 use super::awake::{self, Awake};
-use super::library::{Decoded, Playback, SharedLibrary};
+use super::library::{Decoded, OpenError, Playback, SharedLibrary};
 use super::listens::ListenTracker;
 use super::queue::{Flow, Queue, Removed};
 use super::{Cmd, Output, Repeat, SLEEP_FADE, Sleep, State, Status};
@@ -63,7 +63,8 @@ pub struct Engine {
     resume_seek: bool,
     last_publish: Instant,
     alive: bool,
-    /// A restored queue waiting for play: the position to start the current track at.
+    /// The current track waiting for play (a restored queue, or one stopped by a
+    /// network error): the position to start it at.
     restored_at: Option<f64>,
     /// Last automatic reconnect of a lost output (rate limit).
     last_recover: Option<Instant>,
@@ -310,6 +311,7 @@ impl Engine {
     }
 
     /// (Re)start the current queue entry at `at` seconds, skipping unplayable tracks.
+    /// A network problem stops at the track instead (see [`Engine::halt`]).
     fn start_track(&mut self, at: f64) {
         self.restored_at = None;
         self.listens.finish(self.library.as_deref());
@@ -331,7 +333,12 @@ impl Engine {
                     self.begin(stream, &track);
                     return;
                 }
-                Err(e) => {
+                Err(OpenError::Transient(e)) => {
+                    self.error(format!("{} – {}: {e}", track.artist, track.title));
+                    self.halt(at);
+                    return;
+                }
+                Err(OpenError::Unavailable(e)) => {
                     self.error(format!("{} – {}: {e}", track.artist, track.title));
                     failures += 1;
                     if failures >= MAX_OPEN_FAILURES || !self.queue.advance() {
@@ -362,15 +369,27 @@ impl Engine {
         self.listens.finish(self.library.as_deref());
         match self.open(&track, 0.0) {
             Ok(stream) => self.begin(stream, &track),
-            Err(e) => {
+            Err(OpenError::Transient(e)) => {
+                self.error(format!("{} – {}: {e}", track.artist, track.title));
+                self.halt(0.0);
+            }
+            Err(OpenError::Unavailable(e)) => {
                 self.error(format!("{} – {}: {e}", track.artist, track.title));
                 self.start_track(0.0);
             }
         }
     }
 
-    fn open(&self, track: &Track, at: f64) -> Result<Box<dyn Playback>, String> {
-        let library = self.library.as_ref().ok_or("Not logged in")?;
+    /// Opening the current track failed for a reason that isn't the track's (no
+    /// network): stop there, with the track waiting at `at` so play tries again,
+    /// rather than skipping tracks that would fail the same way.
+    fn halt(&mut self, at: f64) {
+        self.stop();
+        self.restored_at = Some(at);
+    }
+
+    fn open(&self, track: &Track, at: f64) -> Result<Box<dyn Playback>, OpenError> {
+        let library = self.library.as_ref().ok_or_else(|| OpenError::Transient("Not logged in".into()))?;
         let started = Instant::now();
         let opened = library.open(track, self.quality, at);
         let ms = started.elapsed().as_millis();
@@ -494,7 +513,13 @@ impl Engine {
         if stream.needs_reopen_for(t) {
             match stream.reopen(t) {
                 Ok(reopened) => self.stream = Some(reopened),
-                Err(_) => {
+                Err(OpenError::Transient(e)) => {
+                    let track = self.queue.current().map_or_else(String::new, |t| format!("{} – {}: ", t.artist, t.title));
+                    self.error(format!("{track}{e}"));
+                    self.halt(t);
+                    return;
+                }
+                Err(OpenError::Unavailable(_)) => {
                     // The CDN URL may have expired; resolve it again.
                     self.start_track(t);
                     return;
@@ -643,19 +668,24 @@ mod tests {
         }
     }
 
-    /// Tracks yield one "packet" per second; ids in `unplayable` fail to open.
+    /// Tracks yield one "packet" per second; ids in `unplayable` fail to open, and
+    /// every track fails while `offline` is set.
     #[derive(Default)]
     struct FakeLibrary {
         unplayable: Vec<u64>,
+        offline: std::sync::atomic::AtomicBool,
         next_flow_id: Mutex<u64>,
         started: Mutex<Vec<u64>>,
         listens: Mutex<Vec<Listen>>,
     }
 
     impl Library for FakeLibrary {
-        fn open(&self, track: &Track, _: Quality, at: f64) -> Result<Box<dyn Playback>, String> {
+        fn open(&self, track: &Track, _: Quality, at: f64) -> Result<Box<dyn Playback>, OpenError> {
+            if self.offline.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err(OpenError::Transient("offline".into()));
+            }
             if self.unplayable.contains(&track.id) {
-                return Err("not available".into());
+                return Err(OpenError::Unavailable("not available".into()));
             }
             Ok(Box::new(FakePlayback { id: track.id, secs: track.duration as f64, written: at, done: false }))
         }
@@ -713,7 +743,7 @@ mod tests {
         fn skip_to(&mut self, t: f64) {
             self.written = t;
         }
-        fn reopen(&self, at: f64) -> Result<Box<dyn Playback>, String> {
+        fn reopen(&self, at: f64) -> Result<Box<dyn Playback>, OpenError> {
             Ok(Box::new(FakePlayback { id: self.id, secs: self.secs, written: at, done: false }))
         }
     }
@@ -1052,6 +1082,32 @@ mod tests {
         e.handle(Cmd::Play(vec![track(1, 2), track(2, 2), track(3, 2), track(4, 2)], 0));
         assert_eq!(now_playing(&e), None);
         assert!(!e.playing);
+    }
+
+    #[test]
+    fn network_errors_stop_at_the_track_instead_of_skipping() {
+        let offline = FakeLibrary { offline: true.into(), ..Default::default() };
+        let (mut e, library, _tx) = engine(offline);
+        e.handle(Cmd::Play(vec![track(1, 2), track(2, 2)], 0));
+        assert_eq!((now_playing(&e), e.queue.index()), (None, 0), "stayed on the first track");
+        assert!(!e.playing);
+        assert!(e.status.lock().unwrap().error.as_deref().is_some_and(|m| m.contains("offline")));
+        assert_eq!(e.status.lock().unwrap().state, State::Paused, "waits for play");
+
+        // Back online: play tries the same track again.
+        library.offline.store(false, std::sync::atomic::Ordering::Relaxed);
+        e.handle(Cmd::Toggle);
+        assert_eq!(now_playing(&e), Some(1));
+        assert!(e.status.lock().unwrap().error.is_none());
+    }
+
+    #[test]
+    fn network_error_on_the_next_track_keeps_the_queue_there() {
+        let (mut e, library, _tx) = engine(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 2), track(2, 2), track(3, 2)], 0));
+        library.offline.store(true, std::sync::atomic::Ordering::Relaxed);
+        play_out(&mut e);
+        assert_eq!((now_playing(&e), e.queue.index()), (None, 1), "stopped at the second track, not past it");
     }
 
     #[test]

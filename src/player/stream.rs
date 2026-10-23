@@ -1,7 +1,7 @@
 //! One playing track: its byte stream (a decrypted Deezer song, a podcast's own
 //! file, or a song file from a music server), container reader and decoder.
 
-use super::library::{Decoded, Playback};
+use super::library::{Decoded, OpenError, Playback};
 use super::resample::Resampler;
 use crate::deezer::{Deezer, Format, StreamSource};
 use crate::output::RATE;
@@ -29,7 +29,7 @@ pub struct Opened {
 
 /// Where a track's bytes come from; opened again for seeks.
 pub trait Opener: Send + Sync {
-    fn open(&self, at: f64) -> Result<Opened, String>;
+    fn open(&self, at: f64) -> Result<Opened, OpenError>;
 }
 
 /// What the decoder needs to know about a stream besides its bytes.
@@ -54,11 +54,11 @@ struct DeezerBytes {
 }
 
 impl Opener for DeezerBytes {
-    fn open(&self, at: f64) -> Result<Opened, String> {
+    fn open(&self, at: f64) -> Result<Opened, OpenError> {
         let source = &self.source;
         if source.format == Format::Podcast {
             // Jumps by an estimated byte offset; skips from the start if it can't.
-            let (bytes, start) = self.client.open_direct(&source.url, at, source.duration).map_err(|e| e.to_string())?;
+            let (bytes, start) = self.client.open_direct(&source.url, at, source.duration)?;
             return Ok(Opened { bytes, base: start, skip_until: if start > 0.0 { 0.0 } else { at } });
         }
         // CBR MP3 maps time to bytes, so jump with an HTTP range; FLAC must start at 0.
@@ -66,7 +66,7 @@ impl Opener for DeezerBytes {
             Format::Mp3(kbps) if at > 0.0 => ((at * kbps as f64 * BYTES_PER_KBPS) as u64, 0.0),
             _ => (0, at),
         };
-        let (bytes, offset) = self.client.open_stream(source, offset).map_err(|e| e.to_string())?;
+        let (bytes, offset) = self.client.open_stream(source, offset)?;
         let base = match source.format {
             Format::Mp3(kbps) => offset as f64 / (kbps as f64 * BYTES_PER_KBPS),
             Format::Flac | Format::Podcast | Format::File => 0.0,
@@ -99,7 +99,7 @@ pub struct Stream {
 
 impl Stream {
     /// Open a Deezer song or podcast episode at track time `at` (seconds).
-    pub fn open_deezer(client: &Deezer, source: StreamSource, at: f64) -> Result<Stream, String> {
+    pub fn open_deezer(client: &Deezer, source: StreamSource, at: f64) -> Result<Stream, OpenError> {
         let info = StreamInfo {
             song_id: source.song_id,
             format: source.format,
@@ -111,25 +111,32 @@ impl Stream {
     }
 
     /// Open the bytes from `opener` at track time `at` (seconds).
-    pub fn open(opener: Arc<dyn Opener>, info: StreamInfo, at: f64) -> Result<Stream, String> {
+    pub fn open(opener: Arc<dyn Opener>, info: StreamInfo, at: f64) -> Result<Stream, OpenError> {
+        // Anything that goes wrong after the bytes arrive is the file's: skip it.
+        let bad = OpenError::Unavailable;
         let Opened { bytes, base, skip_until } = opener.open(at)?;
         let mss = MediaSourceStream::new(Box::new(ReadOnlySource::new(bytes)), Default::default());
         let mut hint = Hint::new();
         hint.with_extension(&info.extension);
-        let reader = symphonia::default::get_probe()
-            .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
-            .map_err(|e| format!("probe: {e}"))?;
-        let track = reader.default_track(TrackType::Audio).ok_or("No audio track")?;
-        let params = track.codec_params.as_ref().and_then(|p| p.audio()).ok_or("No audio codec")?;
+        let reader = symphonia::default::get_probe().probe(&hint, mss, FormatOptions::default(), MetadataOptions::default()).map_err(
+            |e| match e {
+                // The download stalled or broke off while the container was being
+                // read (a file that just ends early is the file's fault).
+                DecodeError::IoError(e) if e.kind() != std::io::ErrorKind::UnexpectedEof => OpenError::Transient(format!("probe: {e}")),
+                e => bad(format!("probe: {e}")),
+            },
+        )?;
+        let track = reader.default_track(TrackType::Audio).ok_or_else(|| bad("No audio track".into()))?;
+        let params = track.codec_params.as_ref().and_then(|p| p.audio()).ok_or_else(|| bad("No audio codec".into()))?;
         let resampler = match params.sample_rate {
             Some(rate) if rate != RATE && info.any_rate => Some(Resampler::new(rate, RATE)),
-            Some(rate) if rate != RATE => return Err(format!("Unsupported sample rate {rate}")),
+            Some(rate) if rate != RATE => return Err(bad(format!("Unsupported sample rate {rate}"))),
             _ => None,
         };
         let decoder = symphonia::default::get_codecs()
             .make_audio_decoder(params, &AudioDecoderOptions::default())
-            .map_err(|e| format!("decoder: {e}"))?;
-        let time_base = track.time_base.or_else(|| TimeBase::try_new(1, RATE)).ok_or("No time base")?;
+            .map_err(|e| bad(format!("decoder: {e}")))?;
+        let time_base = track.time_base.or_else(|| TimeBase::try_new(1, RATE)).ok_or_else(|| bad("No time base".into()))?;
         Ok(Stream {
             audio_track: track.id,
             time_base,
@@ -241,7 +248,7 @@ impl Playback for Stream {
         self.written = t;
     }
 
-    fn reopen(&self, at: f64) -> Result<Box<dyn Playback>, String> {
+    fn reopen(&self, at: f64) -> Result<Box<dyn Playback>, OpenError> {
         Ok(Box::new(Stream::open(self.opener.clone(), self.info.clone(), at)?))
     }
 }

@@ -4,6 +4,9 @@
 
 - Fixed: errors from a Navidrome server said "Deezer" ("Couldn't reach Deezer: ..."); they
   now name the server
+- Fixed: when the network dropped, dust skipped through the queue as if the tracks
+  couldn't be played. It now stops at the track with the error shown; press play to
+  try again. Tracks that really can't be played are still skipped
 
 ## 0.19.1 (2026-10-23)
 

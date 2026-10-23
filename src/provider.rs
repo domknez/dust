@@ -7,7 +7,7 @@ use crate::deezer::{
     AlbumInfo, ArtistPage, Deezer, Item, Likeable, Likes, Link, Listen, Lyrics, Playlist, Quality, SearchResults, Section, Track,
 };
 use crate::model::{Error, Result};
-use crate::player::library::{Library, Playback};
+use crate::player::library::{Library, OpenError, Playback};
 use crate::subsonic::Subsonic;
 
 /// A logged-in music source. Cheap to clone and share between threads.
@@ -263,10 +263,10 @@ fn unsupported(what: &str) -> Error {
 }
 
 impl Library for Provider {
-    fn open(&self, track: &Track, quality: Quality, at: f64) -> std::result::Result<Box<dyn Playback>, String> {
+    fn open(&self, track: &Track, quality: Quality, at: f64) -> std::result::Result<Box<dyn Playback>, OpenError> {
         match self {
             Provider::Deezer(d) => d.open(track, quality, at),
-            Provider::Subsonic(s) => s.open_track(track, at).map(|stream| Box::new(stream) as Box<dyn Playback>).map_err(|e| e.to_string()),
+            Provider::Subsonic(s) => s.open_track(track, at).map(|stream| Box::new(stream) as Box<dyn Playback>),
         }
     }
 
