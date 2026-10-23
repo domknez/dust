@@ -259,7 +259,7 @@ impl App {
         let ready = !busy && !form.url.trim().is_empty() && !form.user.trim().is_empty();
         let mut connect = false;
         let mut close = false;
-        let modal = egui::Modal::new(egui::Id::new("server-dialog")).frame(widgets::popover_frame(ctx)).show(ctx, |ui| {
+        let modal = egui::Modal::new(egui::Id::unique("server-dialog")).frame(widgets::popover_frame(ctx)).show(ctx, |ui| {
             ui.set_width(DIALOG_WIDTH);
             egui::Frame::new().inner_margin(egui::Margin::same(10)).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;

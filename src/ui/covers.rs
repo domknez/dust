@@ -187,7 +187,8 @@ fn decode(bytes: &[u8]) -> Option<ColorImage> {
 }
 
 fn decode_jpeg(bytes: &[u8]) -> Option<ColorImage> {
-    let mut dec = JpegDecoder::new_with_options(bytes, DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA));
+    let mut dec =
+        JpegDecoder::new_with_options(std::io::Cursor::new(bytes), DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA));
     let pixels = dec.decode().ok()?;
     let info = dec.info()?;
     image_from(&pixels, [info.width as usize, info.height as usize])

@@ -32,7 +32,7 @@ impl App {
         let p = colors();
         let sleep = st.sleep.filter(|s| !matches!(s, Sleep::At(at) if *at <= Instant::now()));
         let choice = sleep.and(self.sleep_choice);
-        let menu_id = Id::new("more-menu");
+        let menu_id = Id::unique("more-menu");
         let resp = widgets::icon_button(ui, Icon::More, 18.0, p.dim).on_hover_text("More");
         let mut pick = None;
         let popup = egui::Popup::menu(&resp).id(menu_id).width(MENU_WIDTH).frame(widgets::popover_frame(ui.ctx()));
@@ -122,7 +122,7 @@ fn sleep_panel(ui: &mut Ui, sleep: Option<Sleep>, choice: Option<SleepChoice>) -
     let end = Rect::from_min_size(grid.min + vec2(third + GAP, CHOICE_HEIGHT + GAP), vec2(2.0 * third + GAP, CHOICE_HEIGHT));
     cells.push((end, SleepChoice::EndOfTrack, "End of track".to_string()));
     for (rect, this, label) in cells {
-        let resp = ui.interact(rect, ui.id().with(("sleep-choice", label.as_str())), Sense::click());
+        let resp = ui.interact(rect, ui.scope_id().with(("sleep-choice", label.as_str())), Sense::click());
         let on = choice == Some(this);
         let (bg, fg) = match (on, resp.hovered()) {
             (true, _) => (p.accent_fill, p.on_accent),

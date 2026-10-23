@@ -77,7 +77,7 @@ impl App {
             for (i, (panel, label)) in tabs.into_iter().enumerate() {
                 let tab =
                     Rect::from_min_size(pos2(tray.left() + 3.0 + i as f32 * width, tray.top() + 3.0), vec2(width, tray.height() - 6.0));
-                let resp = ui.interact(tab, ui.id().with(("side-tab", i)), Sense::click());
+                let resp = ui.interact(tab, ui.scope_id().with(("side-tab", i)), Sense::click());
                 let on = self.side_panel == Some(panel);
                 let color = match (on, resp.hovered()) {
                     (true, _) => p.bg,

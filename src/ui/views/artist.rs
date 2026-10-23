@@ -190,7 +190,7 @@ fn tabs(ui: &Ui, right_top: egui::Pos2, labels: &[&str], selected: usize) -> Opt
         let width = ui.painter().layout_no_wrap(label.to_string(), ty::META.font(), p.text).size().x + 16.0;
         let rect = Rect::from_min_size(pos2(x - width, right_top.y - 10.0), vec2(width, 22.0));
         x -= width + 4.0;
-        let resp = ui.interact(rect, ui.id().with(("discography-tab", i)), Sense::click());
+        let resp = ui.interact(rect, ui.scope_id().with(("discography-tab", i)), Sense::click());
         let on = i == selected;
         let color = match (on, resp.hovered()) {
             (true, _) => p.bg,
@@ -216,7 +216,7 @@ fn release(ui: &mut Ui, covers: &mut Covers, item: &Item, acts: &mut Actions) {
     let rect = ui.max_rect();
     let size = rect.width();
     let art = Rect::from_min_size(rect.min, Vec2::splat(size));
-    let resp = ui.interact(rect, ui.id().with(("release", &item.id)), Sense::click());
+    let resp = ui.interact(rect, ui.scope_id().with(("release", &item.id)), Sense::click());
     widgets::cover(ui, covers, item.picture.as_ref(), metrics::GRID_CARD_PX, art, radius::CARD);
     if resp.hovered() {
         let ring = art.expand(3.0);

@@ -63,7 +63,7 @@ impl App {
     fn search_field(&mut self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
         let [width, height] = metrics::SEARCH_FIELD;
-        let id = ui.id().with("search-field");
+        let id = ui.scope_id().with("search-field");
         let (rect, pill) = ui.allocate_exact_size(vec2(width.min(ui.available_width()), height), Sense::click());
         // Clicking anywhere on the pill (icon, padding) puts the cursor in the field.
         if pill.clicked() {

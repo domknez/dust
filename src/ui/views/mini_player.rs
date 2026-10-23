@@ -67,7 +67,7 @@ impl App {
         let full = ui.max_rect();
         let p = colors();
         // Registered first so every control drawn on top of it wins the pointer.
-        let background = ui.interact(full, ui.id().with("mini-drag"), Sense::click_and_drag());
+        let background = ui.interact(full, ui.scope_id().with("mini-drag"), Sense::click_and_drag());
         if background.drag_started() {
             ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
         }
@@ -139,7 +139,7 @@ impl App {
         if st.state == State::Loading {
             ui.put(art, egui::Spinner::new().size(18.0));
         }
-        let art_click = ui.interact(art, ui.id().with("mini-art"), Sense::click()).on_hover_text("Double-click for the full window");
+        let art_click = ui.interact(art, ui.scope_id().with("mini-art"), Sense::click()).on_hover_text("Double-click for the full window");
         if art_click.double_clicked() {
             acts.push(Action::ToggleMiniPlayer);
         }
@@ -155,7 +155,7 @@ impl App {
         let p = colors();
         let duration = st.track.as_ref().map_or(0.0, |t| t.duration as f64);
         let strip = Rect::from_min_max(pos2(full.left(), full.bottom() - 8.0), full.max);
-        let resp = ui.interact(strip, ui.id().with("mini-seek"), Sense::click_and_drag());
+        let resp = ui.interact(strip, ui.scope_id().with("mini-seek"), Sense::click_and_drag());
         let pointer = resp.interact_pointer_pos().map(|pt| ((pt.x - full.left()) / full.width()).clamp(0.0, 1.0));
         if duration > 0.0
             && resp.dragged()

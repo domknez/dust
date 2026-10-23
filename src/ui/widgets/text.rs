@@ -39,7 +39,7 @@ pub fn text_link(
     let painter = ui.painter();
     let galley = line(painter, text, style, color, max_width);
     let rect = Rect::from_min_size(pos2(pos.x, pos.y - galley.size().y / 2.0), galley.size());
-    let resp = ui.interact(rect, ui.id().with(id), Sense::click()).on_hover_cursor(CursorIcon::PointingHand);
+    let resp = ui.interact(rect, ui.scope_id().with(id), Sense::click()).on_hover_cursor(CursorIcon::PointingHand);
     let tint = if resp.hovered() { hover } else { color };
     painter.galley_with_override_text_color(rect.min, galley, tint);
     if resp.hovered() {

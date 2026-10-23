@@ -74,7 +74,7 @@ pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, ra
     let mut pick = None;
 
     let play = Rect::from_min_size(pos2(rect.right() - 68.0, rect.top() + 20.0), Vec2::splat(48.0));
-    let resp = ui.interact(play, ui.id().with("flow-play"), Sense::click()).on_hover_text(format!("Play {name}"));
+    let resp = ui.interact(play, ui.scope_id().with("flow-play"), Sense::click()).on_hover_text(format!("Play {name}"));
     let fill = if resp.hovered() { p.accent_fill.lerp_to_gamma(egui::Color32::WHITE, 0.3) } else { p.accent_fill };
     painter.rect_filled(play, CornerRadius::same(radius::CONTROL), fill);
     icons::paint(&painter, Rect::from_center_size(play.center(), Vec2::splat(20.0)), Icon::Play, p.on_accent);
@@ -102,7 +102,7 @@ pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, ra
         painter.rect_stroke(tray, CornerRadius::same(radius::CONTROL), egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
     }
     for (chip, id, label) in chips {
-        let resp = ui.interact(chip, ui.id().with(("flow-mood", id)), Sense::click());
+        let resp = ui.interact(chip, ui.scope_id().with(("flow-mood", id)), Sense::click());
         let on = playing == Some(id);
         let (bg, fg) = match (on, resp.hovered()) {
             (true, _) => (Some(p.accent_fill), p.on_accent),

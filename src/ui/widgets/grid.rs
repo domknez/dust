@@ -52,8 +52,8 @@ impl Grid {
             }
             // Its own id, so what a cell remembers (an open menu) stays with it
             // while others scroll in and out of view.
-            let id = ui.id().with(("grid-cell", k));
-            cell(&mut ui.new_child(UiBuilder::new().id(id).max_rect(rect)), k);
+            let id = ui.scope_id().with(("grid-cell", k));
+            cell(&mut ui.new_child(UiBuilder::new().scope_id(id).max_rect(rect)), k);
         }
     }
 
