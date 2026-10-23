@@ -46,7 +46,8 @@ impl App {
             let current = self.current_visit();
             self.browse.history.leave(current, &crate::ui::history::Visit { view: View::Search, query: String::new() });
             self.browse.view = View::Search;
-            self.browse.tracks.clear();
+            // Nothing from the page before (its list, a load or error) carries over.
+            self.browse.clear_list();
             self.browse.searched.clear();
         }
         let podcasts = self.features().podcasts;
