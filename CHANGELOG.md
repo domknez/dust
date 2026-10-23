@@ -11,7 +11,6 @@
   no longer hold up the player while the speaker answers (up to a couple of seconds on a
   slow network), and a dragged volume slider or the sleep timer's fade sends the
   speaker only the latest level
-
 - Fixed: errors from a Navidrome server said "Deezer" ("Couldn't reach Deezer: ..."); they
   now name the server
 - Fixed: when the network dropped, dust skipped through the queue as if the tracks
