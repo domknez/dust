@@ -318,12 +318,15 @@ src/
 ├── main.rs            entry point: run the app, or a command-line mode (cli.rs)
 ├── log.rs             DUST_LOG levels, log macros and the log file
 ├── model/             the types every source fills and the player and UI read: tracks (with what
-│                      only their source needs in Track::origin), cards, pages, playlists, likes,
-│                      lyrics, quality, cover art (Art, resolved to URLs by its source), errors
+│                      only their source needs in Track::origin), track and playlist ids (the
+│                      source's own, as text), cards, pages, playlists, likes, lyrics, quality,
+│                      cover art (Art, resolved to URLs by its source), errors
+├── source/            the Source trait every music source implements, SourceId (a source's
+│                      names in settings, saved queues and the keychain) and the KINDS registry
 ├── deezer/            Deezer client: session, catalogue, streaming and playback, listen reports,
-│                      stream cipher
-├── subsonic/          Navidrome / Subsonic client: token auth, catalogue, likes, playlists, streams
-├── provider.rs        the source in use (Deezer or a server) behind one interface
+│                      stream cipher; source.rs makes it a Source
+├── subsonic/          Navidrome / Subsonic client: token auth, catalogue, likes, playlists,
+│                      streams; source.rs makes it a Source
 ├── media/             decoding any source's byte stream: container reader, decoder, seeks,
 │                      resampling, stall-proof network reads
 ├── player/            playback engine thread, queue (pure, tested), listen tracking, saved queue
@@ -333,12 +336,13 @@ src/
 │                      ap2/ (pairing, plists, PTP clock), dacp (speaker remote control)
 ├── ui/
 │   ├── app.rs         UI state, lifecycle and panel layout
-│   ├── sources.rs     Deezer and a Navidrome server: connecting, switching, logging out
+│   ├── sources.rs     the logged-in sources: starting stored logins, switching, logging out,
+│                      the account menu's rows (MENU), the server form
 │   ├── now_playing.rs media keys and the OS Now Playing widget
 │   ├── views/         one file per screen or panel
 │   ├── widgets/       reusable painted components
 │   └── style/         palette, type scale, metrics, icons — all visual constants live here
-├── credentials.rs     Deezer session and server login in the OS keychain
+├── credentials.rs     each source's login in one OS keychain item
 ├── settings.rs        settings file
 ├── update.rs          self-update from GitHub Releases
 └── login.rs           "Log in with Deezer" webview helper
@@ -349,6 +353,26 @@ To change how dust looks, start in `src/ui/style/`: views use named text roles
 raw values. `cargo test` covers the protocol and data layers and the playback engine
 (against fake outputs); the commands under [Troubleshooting](#troubleshooting) check real
 audio output and the Deezer API.
+
+### Adding a music source
+
+A source (Jellyfin, Plex, local files, ...) is a module of its own, like `src/subsonic/`:
+
+1. Fill the `model` types from its API: `Track`, `Item` cards, `Playlist`, `Likes`. Ids
+   are the source's own text (`TrackId`, `PlaylistId`). If playing a track needs
+   something of its own, add an `Origin` variant for it and save it with the queue in
+   `player/saved.rs`.
+2. Implement `source::Source` in its `source.rs`: identity and labels, browsing,
+   playlists and likes, `open` (bytes for `media::Stream` through an `Opener`),
+   `endless`, listen reports, `art_url`. What it doesn't have (podcasts, track mixes,
+   links, lyrics, playlist editing) can keep the default methods; say what it offers in
+   `features`.
+3. Give it a `SourceId` (settings value, queue file, keychain field, name; these never
+   change once released) and add it to `source::KINDS`.
+4. Add its row to `ui::sources::MENU` (icon, and the action that connects it), and the
+   UI for logging in if it needs one: a form like the server's in `ui/sources.rs`, which
+   ends in `App::source_ready` with the connected source; store its login with
+   `credentials::save(ID, …)` and start it from `App::start_sources`.
 
 ## Credits
 
