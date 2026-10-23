@@ -38,7 +38,7 @@ fn playlist_card(ui: &mut Ui, covers: &mut Covers, playlist: &Playlist, acts: &m
     text_left(ui.painter(), pos2(rect.left(), art.bottom() + 16.0), &playlist.title, ty::TITLE.strong(), p.text, card);
     text_left(ui.painter(), pos2(rect.left(), art.bottom() + 36.0), &format!("{} tracks", playlist.count), ty::SECONDARY, p.dim, card);
     if let Some(mode) = widgets::queue_menu(&resp) {
-        acts.push(Action::PlaySource(Source::Playlist(playlist.id), mode));
+        acts.push(Action::PlaySource(Source::Playlist(playlist.id.clone()), mode));
     }
     if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
         acts.push(Action::OpenCollection(Coll::from_playlist(playlist)));

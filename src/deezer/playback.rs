@@ -43,7 +43,7 @@ impl Deezer {
     pub fn open_track(&self, track: &Track, quality: Quality, at: f64) -> Result<Stream, OpenError> {
         let source = self.stream_source(track, quality)?;
         let info = StreamInfo {
-            song_id: source.song_id,
+            song_id: source.song_id.clone(),
             format: source.format,
             extension: if source.format == Format::Flac { "flac" } else { "mp3" }.into(),
             any_rate: source.format == Format::Podcast,

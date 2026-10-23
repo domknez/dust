@@ -1,8 +1,10 @@
 //! Models from the Subsonic API's JSON (`f=json`). Servers differ in which optional
 //! fields they fill, so everything falls back to the classic Subsonic fields.
 
-use super::{api, local_id};
-use crate::model::{Art, ArtistRef, Item, ItemKind, LyricLine, Lyrics, Origin, Playlist, Result, Section, ServerSong, Track};
+use super::api;
+use crate::model::{
+    Art, ArtistRef, Item, ItemKind, LyricLine, Lyrics, Origin, Playlist, PlaylistId, Result, Section, ServerSong, Track, TrackId,
+};
 use serde_json::Value;
 
 /// The `subsonic-response` object of a reply, or the server's error.
@@ -67,7 +69,7 @@ pub fn song(v: &Value) -> Option<Track> {
         .or_else(|| Some(text(&v["artist"])).filter(|a| !a.is_empty()))
         .unwrap_or_else(|| artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "));
     Some(Track {
-        id: local_id(&id),
+        id: TrackId::new(id),
         title: text(&v["title"]),
         artist,
         artists,
@@ -77,7 +79,7 @@ pub fn song(v: &Value) -> Option<Track> {
         art: cover(v),
         available: true,
         available_from: String::new(),
-        origin: Origin::Server(ServerSong { id, suffix: text(&v["suffix"]).to_lowercase() }),
+        origin: Origin::Server(ServerSong { suffix: text(&v["suffix"]).to_lowercase() }),
     })
 }
 
@@ -127,26 +129,25 @@ pub fn artists_items(values: Vec<&Value>) -> Vec<Item> {
     values.into_iter().filter_map(artist_item).collect()
 }
 
-/// The playlists of `getPlaylists`, with their server ids.
-pub fn playlists(v: &Value, user: &str) -> Vec<(String, Playlist)> {
+/// The playlists of `getPlaylists`.
+pub fn playlists(v: &Value, user: &str) -> Vec<Playlist> {
     list(&v["playlists"], "playlist").into_iter().filter_map(|p| playlist(p, user)).collect()
 }
 
-pub fn playlist(v: &Value, user: &str) -> Option<(String, Playlist)> {
+pub fn playlist(v: &Value, user: &str) -> Option<Playlist> {
     let id = text(&v["id"]);
     if id.is_empty() {
         return None;
     }
     let owner = text(&v["owner"]);
-    let playlist = Playlist {
-        id: local_id(&id),
+    Some(Playlist {
+        id: PlaylistId::new(id),
         title: text(&v["name"]),
         count: number(&v["songCount"]) as u32,
         owned: owner.is_empty() || owner == user,
         private: v["public"] != true,
         picture: cover(v),
-    };
-    Some((id, playlist))
+    })
 }
 
 /// What kind of release an album is: OpenSubsonic's release types, else whether
@@ -265,8 +266,8 @@ mod tests {
         assert_eq!(t.album_id, "5F81DCwcfjVByziJAH9maf");
         assert_eq!(t.artists, vec![ArtistRef { id: "1cX14wrZBmbXZQpEQ79FiO".into(), name: "Square Wave Trio".into() }]);
         assert_eq!(t.art, Art::new("al-5F81DCwcfjVByziJAH9maf_0"));
-        assert_eq!(t.origin, Origin::Server(ServerSong { id: "qPyR7XLJOiu93qWw1n06xy".into(), suffix: "wav".into() }));
-        assert_eq!(t.id, local_id("qPyR7XLJOiu93qWw1n06xy"));
+        assert_eq!(t.origin, Origin::Server(ServerSong { suffix: "wav".into() }));
+        assert_eq!(t.id, TrackId::new("qPyR7XLJOiu93qWw1n06xy"), "the server's own id");
         assert!(t.available);
     }
 
@@ -313,10 +314,9 @@ mod tests {
     fn playlists_with_owner() {
         let found = playlists(&fixture("playlists"), "dust");
         assert_eq!(found.len(), 1);
-        let (id, p) = &found[0];
-        assert_eq!((id.as_str(), p.title.as_str(), p.count, p.owned, p.private), ("J78Lrnn5aCX1IyCU5feMey", "Testlist", 2, true, true));
-        assert_eq!(p.id, local_id(id));
-        assert!(!playlists(&fixture("playlists"), "someone else")[0].1.owned);
+        let p = &found[0];
+        assert_eq!((p.id.as_str(), p.title.as_str(), p.count, p.owned, p.private), ("J78Lrnn5aCX1IyCU5feMey", "Testlist", 2, true, true));
+        assert!(!playlists(&fixture("playlists"), "someone else")[0].owned);
         let r = fixture("playlist");
         assert_eq!(songs(list(&r["playlist"], "entry")).len(), 2);
     }

@@ -4,7 +4,7 @@
 //! Rows report what was clicked as [`Action`]s.
 
 use super::{TrackMenu, artist_links, cover, equalizer, heart_at, queue_menu, text_left, text_link, track_menu};
-use crate::model::{Likeable, Playlist, Track};
+use crate::model::{Likeable, Playlist, Track, TrackId};
 use crate::player::Cmd;
 use crate::ui::action::{Action, Actions};
 use crate::ui::covers::Covers;
@@ -95,8 +95,8 @@ pub struct Table<'a> {
     pub tracks: &'a [Track],
     pub columns: &'a Columns,
     /// The playing track's id, and whether it's playing (not paused).
-    pub now: (Option<u64>, bool),
-    pub liked: &'a dyn Fn(u64) -> bool,
+    pub now: (Option<&'a TrackId>, bool),
+    pub liked: &'a dyn Fn(&TrackId) -> bool,
     pub menu: RowMenu<'a>,
 }
 
@@ -115,9 +115,9 @@ fn track_row(ui: &mut Ui, covers: &mut Covers, table: &Table, i: usize, rect: Re
     let p = colors();
     let (track, columns, menu) = (&table.tracks[i], table.columns, &table.menu);
     let (playing_id, playing) = table.now;
-    let liked = (table.liked)(track.id);
+    let liked = (table.liked)(&track.id);
     let resp = ui.interact(rect, ui.id().with(("row", i)), Sense::click());
-    let current = playing_id == Some(track.id);
+    let current = playing_id == Some(&track.id);
     // Pointer anywhere in the row, including over its own heart and links: asking
     // `hovered()` would flip to false over the heart and make it flicker.
     let hovered = ui.rect_contains_pointer(rect);
@@ -186,7 +186,7 @@ fn track_row(ui: &mut Ui, covers: &mut Covers, table: &Table, i: usize, rect: Re
     painter.text(pos2(columns.time, cy), Align2::RIGHT_CENTER, mmss(track.duration as f64), ty::META.font(), sub_color);
     // Heart: always shown when liked, on hover otherwise (songs only).
     if !track.is_episode() && (liked || hovered) && heart_at(ui, pos2(columns.heart, cy), ("row", i), liked, 15.0).clicked() {
-        acts.push(Action::ToggleLike(Likeable::Track(track.id)));
+        acts.push(Action::ToggleLike(Likeable::Track(track.id.clone())));
     }
 
     if !available {

@@ -1,12 +1,13 @@
 //! What the listener likes: tracks, albums and artists.
 
+use super::TrackId;
 use std::collections::HashSet;
 
 /// Something the listener can like: favourite tracks, albums and followed artists on
 /// Deezer, starred ones on a music server.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Likeable {
-    Track(u64),
+    Track(TrackId),
     Album(String),
     Artist(String),
 }
@@ -14,7 +15,7 @@ pub enum Likeable {
 /// Everything the account likes, by id.
 #[derive(Clone, Debug, Default)]
 pub struct Likes {
-    pub tracks: HashSet<u64>,
+    pub tracks: HashSet<TrackId>,
     pub albums: HashSet<String>,
     pub artists: HashSet<String>,
 }
@@ -52,7 +53,7 @@ mod tests {
     #[test]
     fn likes_track_toggles() {
         let mut likes = Likes::default();
-        let (song, album, artist) = (Likeable::Track(7), Likeable::Album("302127".into()), Likeable::Artist("27".into()));
+        let (song, album, artist) = (Likeable::Track(TrackId::from(7)), Likeable::Album("302127".into()), Likeable::Artist("27".into()));
         assert!(!likes.contains(&song));
         likes.set(&song, true);
         likes.set(&album, true);

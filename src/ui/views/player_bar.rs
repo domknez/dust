@@ -1,7 +1,7 @@
 //! Player bar, one row: now playing on the left; transport, times and progress in
 //! the middle; lyrics, queue, the ⋯ menu, output and volume on the right.
 
-use crate::model::Likeable;
+use crate::model::{Likeable, TrackId};
 use crate::player::{Cmd, Repeat, State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::{App, SidePanel};
@@ -68,7 +68,7 @@ impl App {
             let used = text_width(&track.title, ty::TITLE.strong()).max(text_width(&track.artist, ty::SECONDARY)).min(width);
             let heart = pos2(x + used + 22.0, area.center().y);
             // Episodes can't be liked.
-            let what = Likeable::Track(track.id);
+            let what = Likeable::Track(track.id.clone());
             let liked = self.library.likes.likes.contains(&what);
             if !track.is_episode() && widgets::heart_at(ui, heart, "now-playing", liked, 16.0).clicked() {
                 acts.push(Action::ToggleLike(what));
@@ -139,7 +139,7 @@ impl App {
         let position = self.seek_drag.map(|f| f as f64 * duration).unwrap_or(st.position).min(duration);
         ui.scope_builder(UiBuilder::new().max_rect(slider), |ui| {
             let mut fraction = if duration > 0.0 { (position / duration) as f32 } else { 0.0 };
-            let seed = st.track.as_ref().map_or(0, |t| t.id);
+            let seed = st.track.as_ref().map_or(0, |t| wave_seed(&t.id));
             let resp = widgets::wave_slider(ui, &mut fraction, slider.width(), seed, duration > 0.0);
             if resp.dragged() {
                 self.seek_drag = Some(fraction);
@@ -224,4 +224,13 @@ fn toggle_button(ui: &mut Ui, icon: Icon, on: bool) -> egui::Response {
     let color = if on || resp.hovered() { p.text } else { p.dim };
     icons::paint(ui.painter(), Rect::from_center_size(rect.center(), Vec2::splat(17.0)), icon, color);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// The seed of a track's waveform: its number on Deezer, a stable hash (64-bit
+/// FNV-1a) of a server's id, so each track keeps its shape.
+fn wave_seed(id: &TrackId) -> u64 {
+    id.as_str().parse().unwrap_or_else(|_| {
+        let hash = id.as_str().bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3));
+        hash.max(1)
+    })
 }

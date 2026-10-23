@@ -1,6 +1,6 @@
 //! A playable track, whichever source it comes from.
 
-use super::Art;
+use super::{Art, TrackId};
 
 /// An artist named on a track or album, so the name can link to their page.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -11,8 +11,8 @@ pub struct ArtistRef {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Track {
-    /// The source's id for the track (a hash of a music server's string id).
-    pub id: u64,
+    /// The source's id for the track.
+    pub id: TrackId,
     pub title: String,
     /// All artists joined for display ("A, B").
     pub artist: String,
@@ -79,11 +79,9 @@ pub struct Episode {
     pub published: String,
 }
 
-/// A song on a Subsonic-compatible server.
+/// A song on a Subsonic-compatible server (the track's id is the server's).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerSong {
-    /// The server's id for the song.
-    pub id: String,
     /// File type (`mp3`, `flac`, `m4a`, ...), to pick a decoder or ask for a
     /// conversion.
     pub suffix: String,

@@ -1,13 +1,13 @@
 //! Song lyrics from Deezer: time-synced lines when it has them, plain text otherwise.
 
 use super::{Deezer, Error, Result, parse};
-use crate::model::{LyricLine, Lyrics};
+use crate::model::{LyricLine, Lyrics, TrackId};
 use serde_json::{Value, json};
 
 impl Deezer {
     /// The lyrics of a track, or None if Deezer has none.
-    pub fn lyrics(&self, song_id: u64) -> Result<Option<Lyrics>> {
-        match self.call("song.getLyrics", json!({"sng_id": song_id.to_string()})) {
+    pub fn lyrics(&self, song_id: &TrackId) -> Result<Option<Lyrics>> {
+        match self.call("song.getLyrics", json!({"sng_id": song_id.as_str()})) {
             Ok(r) => Ok(lyrics(&r)),
             // Deezer answers "no lyrics" with a DATA_ERROR.
             Err(Error::Api { message: e, .. }) if e.contains("DATA_ERROR") => Ok(None),

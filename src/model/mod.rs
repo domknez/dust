@@ -3,6 +3,7 @@
 //! song's token, a server song's file type) sits in [`Origin`].
 //!
 //! - [`error`]: what went wrong talking to a source, worded for the listener
+//! - [`id`]: track and playlist ids, as their source writes them
 //! - [`art`]: pictures, and how the source turns them into URLs
 //! - [`track`]: tracks, their artists and their [`Origin`]
 //! - [`catalog`]: cards, sections and the pages made of them
@@ -13,6 +14,7 @@
 mod art;
 mod catalog;
 mod error;
+mod id;
 mod likes;
 mod listen;
 mod lyrics;
@@ -23,6 +25,7 @@ mod track;
 pub use art::{Art, ArtResolver};
 pub use catalog::{AlbumInfo, ArtistPage, Item, ItemKind, SearchResults, Section};
 pub use error::{Error, Service};
+pub use id::{PlaylistId, TrackId};
 pub use likes::{Likeable, Likes};
 pub use listen::Listen;
 pub use lyrics::{LyricLine, Lyrics};

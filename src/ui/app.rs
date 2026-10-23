@@ -626,7 +626,7 @@ pub(super) mod testing {
 
     pub fn track(id: u64, available: bool) -> Track {
         Track {
-            id,
+            id: id.into(),
             title: format!("Song {id}"),
             artist: String::new(),
             artists: Vec::new(),
@@ -640,8 +640,9 @@ pub(super) mod testing {
         }
     }
 
+    /// The numbers of tracks made by [`track`].
     pub fn ids(tracks: &[Track]) -> Vec<u64> {
-        tracks.iter().map(|t| t.id).collect()
+        tracks.iter().map(|t| t.id.as_str().parse().expect("a test track")).collect()
     }
 
     /// The player showing a queue of these tracks.

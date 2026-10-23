@@ -6,8 +6,8 @@
 use crate::deezer::{self, Deezer, Link};
 use crate::media::{OpenError, Playback};
 use crate::model::{
-    AlbumInfo, Art, ArtResolver, ArtistPage, Error, Item, Likeable, Likes, Listen, Lyrics, Playlist, Quality, Result, SearchResults,
-    Section, Track,
+    AlbumInfo, Art, ArtResolver, ArtistPage, Error, Item, Likeable, Likes, Listen, Lyrics, Playlist, PlaylistId, Quality, Result,
+    SearchResults, Section, Track, TrackId,
 };
 use crate::player::library::Library;
 use crate::subsonic::Subsonic;
@@ -110,7 +110,7 @@ impl Provider {
         }
     }
 
-    pub fn playlist(&self, id: u64) -> Result<Vec<Track>> {
+    pub fn playlist(&self, id: &PlaylistId) -> Result<Vec<Track>> {
         match self {
             Provider::Deezer(d) => d.playlist(id),
             Provider::Subsonic(s) => s.playlist(id),
@@ -210,28 +210,28 @@ impl Provider {
         }
     }
 
-    pub fn lyrics(&self, song_id: u64) -> Result<Option<Lyrics>> {
+    pub fn lyrics(&self, song_id: &TrackId) -> Result<Option<Lyrics>> {
         match self {
             Provider::Deezer(d) => d.lyrics(song_id),
             Provider::Subsonic(s) => s.lyrics(song_id),
         }
     }
 
-    pub fn create_playlist(&self, title: &str, private: bool, tracks: &[u64]) -> Result<u64> {
+    pub fn create_playlist(&self, title: &str, private: bool, tracks: &[TrackId]) -> Result<Option<PlaylistId>> {
         match self {
-            Provider::Deezer(d) => d.create_playlist(title, private, tracks),
+            Provider::Deezer(d) => d.create_playlist(title, private, tracks).map(Some),
             Provider::Subsonic(s) => s.create_playlist(title, tracks),
         }
     }
 
-    pub fn add_to_playlist(&self, playlist: u64, tracks: &[u64]) -> Result<usize> {
+    pub fn add_to_playlist(&self, playlist: &PlaylistId, tracks: &[TrackId]) -> Result<usize> {
         match self {
             Provider::Deezer(d) => d.add_to_playlist(playlist, tracks),
             Provider::Subsonic(s) => s.add_to_playlist(playlist, tracks),
         }
     }
 
-    pub fn remove_from_playlist(&self, playlist: u64, tracks: &[u64]) -> Result<()> {
+    pub fn remove_from_playlist(&self, playlist: &PlaylistId, tracks: &[TrackId]) -> Result<()> {
         match self {
             Provider::Deezer(d) => d.remove_from_playlist(playlist, tracks),
             Provider::Subsonic(s) => s.remove_from_playlist(playlist, tracks),
@@ -245,17 +245,10 @@ impl Provider {
         }
     }
 
-    pub fn delete_playlist(&self, playlist: u64) -> Result<()> {
+    pub fn delete_playlist(&self, playlist: &PlaylistId) -> Result<()> {
         match self {
             Provider::Deezer(d) => d.delete_playlist(playlist),
             Provider::Subsonic(s) => s.delete_playlist(playlist),
-        }
-    }
-
-    /// Tracks restored from a saved queue: let the source know their ids.
-    pub fn adopt(&self, tracks: &[Track]) {
-        if let Provider::Subsonic(s) = self {
-            s.remember_tracks(tracks);
         }
     }
 }
@@ -290,12 +283,12 @@ impl Library for Provider {
         }
     }
 
-    fn report_listen_start(&self, song_id: u64) {
+    fn report_listen_start(&self, song_id: TrackId) {
         match self {
             Provider::Deezer(d) => {
                 let client = d.clone();
                 std::thread::spawn(move || {
-                    if let Err(e) = client.report_listen_start(song_id) {
+                    if let Err(e) = client.report_listen_start(&song_id) {
                         log_debug!("listen start report failed: {e}");
                     }
                 });
@@ -304,7 +297,7 @@ impl Library for Provider {
                 let client = s.clone();
                 let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
                 std::thread::spawn(move || {
-                    if let Err(e) = client.scrobble(song_id, false, now) {
+                    if let Err(e) = client.scrobble(&song_id, false, now) {
                         log_debug!("now playing report failed: {e}");
                     }
                 });
@@ -328,7 +321,7 @@ impl Library for Provider {
                     return;
                 }
                 let client = s.clone();
-                std::thread::spawn(move || match client.scrobble(listen.song_id, true, listen.started_unix) {
+                std::thread::spawn(move || match client.scrobble(&listen.song_id, true, listen.started_unix) {
                     Ok(()) => log_debug!("scrobbled {} ({} s)", listen.song_id, listen.listened_secs),
                     Err(e) => log_warn!("scrobble failed: {e}"),
                 });

@@ -1,7 +1,7 @@
 //! Lyrics panel: the playing track's lyrics, the sung line highlighted and kept in
 //! view when they're synced; click a line to jump there.
 
-use crate::model::Lyrics;
+use crate::model::{Lyrics, TrackId};
 use crate::player::{Cmd, State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
@@ -18,7 +18,7 @@ const MAX_WAIT: Duration = Duration::from_millis(500);
 #[derive(Default)]
 pub struct LyricsState {
     /// The track these are for.
-    track: Option<u64>,
+    track: Option<TrackId>,
     loaded: Load<Option<Lyrics>>,
     /// The line last scrolled into view, so it scrolls only when the line changes.
     scrolled_to: Option<usize>,
@@ -44,7 +44,7 @@ impl App {
             hint(ui, "Podcasts don't have lyrics");
             return;
         }
-        self.load_lyrics(track.id);
+        self.load_lyrics(&track.id);
         let LyricsState { loaded, scrolled_to, .. } = &mut self.lyrics;
         match loaded {
             Load::Idle | Load::Loading(_) => hint(ui, "Loading lyrics…"),
@@ -56,16 +56,17 @@ impl App {
     }
 
     /// Fetch the lyrics of `track` unless they're loaded or loading.
-    fn load_lyrics(&mut self, track: u64) {
+    fn load_lyrics(&mut self, track: &TrackId) {
         let state = &mut self.lyrics;
         // Shown in the panel; nothing else to do about an error.
         let _ = state.loaded.poll();
-        if state.track == Some(track) {
+        if state.track.as_ref() == Some(track) {
             return;
         }
         let Some(client) = self.client.clone() else { return };
-        *state = LyricsState { track: Some(track), ..Default::default() };
-        state.loaded.start(&self.jobs, move || client.lyrics(track));
+        *state = LyricsState { track: Some(track.clone()), ..Default::default() };
+        let track = track.clone();
+        state.loaded.start(&self.jobs, move || client.lyrics(&track));
     }
 }
 

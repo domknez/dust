@@ -1,10 +1,10 @@
 //! The account's playlists.
 
-use super::Art;
+use super::{Art, PlaylistId};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Playlist {
-    pub id: u64,
+    pub id: PlaylistId,
     pub title: String,
     pub count: u32,
     /// Made by this account (editable), not one it follows.

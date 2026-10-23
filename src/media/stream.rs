@@ -3,7 +3,7 @@
 
 use super::playback::{Decoded, OpenError, Playback};
 use super::resample::Resampler;
-use crate::model::Format;
+use crate::model::{Format, TrackId};
 use crate::output::RATE;
 use std::io::Read;
 use std::sync::Arc;
@@ -33,7 +33,7 @@ pub trait Opener: Send + Sync {
 #[derive(Clone)]
 pub struct StreamInfo {
     /// Song id reported for listens.
-    pub song_id: u64,
+    pub song_id: TrackId,
     pub format: Format,
     /// File extension, a hint for picking the container reader.
     pub extension: String,
@@ -166,8 +166,8 @@ impl Stream {
 }
 
 impl Playback for Stream {
-    fn song_id(&self) -> u64 {
-        self.info.song_id
+    fn song_id(&self) -> TrackId {
+        self.info.song_id.clone()
     }
 
     fn format(&self) -> Format {

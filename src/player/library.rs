@@ -3,7 +3,7 @@
 //! logic runs without network or audio hardware.
 
 use crate::media::{OpenError, Playback};
-use crate::model::{Listen, Quality, Track};
+use crate::model::{Listen, Quality, Track, TrackId};
 use std::sync::Arc;
 
 /// Opens tracks and Flow, and receives listen reports.
@@ -13,7 +13,7 @@ pub trait Library: Send + Sync {
     /// Next batch of Flow, optionally tuned to a mood.
     fn flow(&self, mood: Option<&str>) -> Result<Vec<Track>, String>;
     /// Fire-and-forget: a track started.
-    fn report_listen_start(&self, song_id: u64);
+    fn report_listen_start(&self, song_id: TrackId);
     /// Fire-and-forget: a track finished or was skipped.
     fn report_listen(&self, listen: Listen);
 }

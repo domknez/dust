@@ -94,7 +94,8 @@ impl App {
             }
             ui.spacing_mut().item_spacing.y = 1.0;
             for playlist in &self.library.playlists {
-                let selected = matches!(&self.browse.view, View::Collection(c) if c.source == Source::Playlist(playlist.id));
+                let selected =
+                    matches!(&self.browse.view, View::Collection(c) if matches!(&c.source, Source::Playlist(id) if *id == playlist.id));
                 let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::SIDEBAR_PLAYLIST_ROW), Sense::click());
                 if selected || resp.hovered() {
                     ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), if selected { p.raised } else { p.hover });
@@ -110,7 +111,7 @@ impl App {
                 let title_color = if selected || resp.hovered() { p.text } else { p.dim };
                 text_left(ui.painter(), pos2(x, rect.center().y), &playlist.title, ty::BODY, title_color, width);
                 if let Some(mode) = widgets::queue_menu(&resp) {
-                    acts.push(Action::PlaySource(Source::Playlist(playlist.id), mode));
+                    acts.push(Action::PlaySource(Source::Playlist(playlist.id.clone()), mode));
                 }
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                     acts.push(Action::OpenCollection(Coll::from_playlist(playlist)));

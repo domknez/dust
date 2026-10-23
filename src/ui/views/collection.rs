@@ -1,7 +1,7 @@
 //! Track lists: search results, Loved tracks and opened collections. A header
 //! (artwork, title, Play/Shuffle) scrolls with a virtualised track table.
 
-use crate::model::{Art, ArtistRef, Item, Likeable, Playlist};
+use crate::model::{Art, ArtistRef, Item, Likeable, Playlist, TrackId};
 use crate::player::{State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
@@ -43,7 +43,7 @@ struct Header {
 
 impl App {
     pub(in crate::ui) fn collection_page(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
-        let (playing_id, playing) = (st.track.as_ref().map(|t| t.id), st.state == State::Playing);
+        let (playing_id, playing) = (st.track.as_ref().map(|t| &t.id), st.state == State::Playing);
         let header_height = if self.browse.view == View::Search { self.search_header_height() } else { COLLECTION_HEADER };
         let count = self.browse.tracks.len();
         let album = self.showing_album();
@@ -90,7 +90,7 @@ impl App {
             let first = ((viewport.top() - header_height) / row).floor().max(0.0) as usize;
             let last = (((viewport.bottom() - header_height) / row).ceil().max(0.0) as usize).min(count);
             let removable = self.showing_own_playlist().is_some();
-            let liked = |id| self.library.likes.likes.tracks.contains(&id);
+            let liked = |id: &TrackId| self.library.likes.likes.tracks.contains(id);
             let table = Table {
                 tracks: &self.browse.tracks,
                 columns: &columns,
@@ -321,8 +321,8 @@ impl App {
     /// The own playlist on screen, if that's what is shown.
     pub(in crate::ui) fn showing_own_playlist(&self) -> Option<&Playlist> {
         let View::Collection(coll) = &self.browse.view else { return None };
-        let Source::Playlist(id) = coll.source else { return None };
-        self.library.playlists.iter().find(|p| p.id == id && p.owned)
+        let Source::Playlist(id) = &coll.source else { return None };
+        self.library.playlists.iter().find(|p| p.id == *id && p.owned)
     }
 
     /// Whether an album's tracks are on screen.

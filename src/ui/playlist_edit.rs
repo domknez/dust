@@ -2,7 +2,7 @@
 //! a list or the queue), remove tracks, rename, delete. Dialogs ask for names and
 //! confirm deletes; a short [notice](crate::ui::notice) reports what happened.
 
-use crate::model::{Error, Playlist, Track};
+use crate::model::{Error, Playlist, PlaylistId, Track, TrackId};
 use crate::provider::Provider;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
@@ -16,7 +16,7 @@ use eframe::egui::{self, Key, RichText};
 pub enum Edit {
     Add { playlist: Playlist, tracks: Vec<Track> },
     Create { title: String, private: bool, tracks: Vec<Track> },
-    Remove { playlist: u64, tracks: Vec<u64> },
+    Remove { playlist: PlaylistId, tracks: Vec<TrackId> },
     Rename { playlist: Playlist, title: String },
     Delete { playlist: Playlist },
 }
@@ -41,7 +41,7 @@ pub enum Dialog {
 /// What finished: the notice to show, and the playlist it changed (to reload it).
 pub struct Done {
     message: String,
-    playlist: Option<u64>,
+    playlist: Option<PlaylistId>,
     deleted: bool,
 }
 
@@ -62,10 +62,10 @@ fn plural(n: usize) -> String {
 }
 
 fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
-    let ids = |tracks: Vec<Track>| for_playlist(tracks).iter().map(|t| t.id).collect::<Vec<_>>();
+    let ids = |tracks: Vec<Track>| for_playlist(tracks).into_iter().map(|t| t.id).collect::<Vec<_>>();
     Ok(match edit {
         Edit::Add { playlist, tracks } => {
-            let added = client.add_to_playlist(playlist.id, &ids(tracks))?;
+            let added = client.add_to_playlist(&playlist.id, &ids(tracks))?;
             let message = match added {
                 0 => format!("Already in {}", playlist.title),
                 n => format!("Added {} to {}", plural(n), playlist.title),
@@ -74,10 +74,10 @@ fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
         }
         Edit::Create { title, private, tracks } => {
             let id = client.create_playlist(&title, private, &ids(tracks))?;
-            Done { message: format!("Created {title}"), playlist: Some(id), deleted: false }
+            Done { message: format!("Created {title}"), playlist: id, deleted: false }
         }
         Edit::Remove { playlist, tracks } => {
-            client.remove_from_playlist(playlist, &tracks)?;
+            client.remove_from_playlist(&playlist, &tracks)?;
             Done { message: format!("Removed {}", plural(tracks.len())), playlist: Some(playlist), deleted: false }
         }
         Edit::Rename { playlist, title } => {
@@ -85,7 +85,7 @@ fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
             Done { message: format!("Renamed to {title}"), playlist: Some(playlist.id), deleted: false }
         }
         Edit::Delete { playlist } => {
-            client.delete_playlist(playlist.id)?;
+            client.delete_playlist(&playlist.id)?;
             Done { message: format!("Deleted {}", playlist.title), playlist: Some(playlist.id), deleted: true }
         }
     })
@@ -116,7 +116,7 @@ impl App {
         if let Some(client) = self.client.clone() {
             self.library.playlists_load.start(&self.jobs, move || client.playlists());
         }
-        let showing = matches!(&self.browse.view, View::Collection(c) if done.playlist.is_some_and(|id| c.source == Source::Playlist(id)));
+        let showing = matches!(&self.browse.view, View::Collection(c) if done.playlist.as_ref().is_some_and(|id| matches!(&c.source, Source::Playlist(p) if p == id)));
         if showing && done.deleted {
             self.open_view(View::Playlists);
         } else if showing {

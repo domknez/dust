@@ -2,14 +2,13 @@
 //! Deezer, filling the same models ([`crate::model::Track`] and friends) so the UI
 //! and player work the same with either.
 //!
-//! - [`Subsonic`]: connecting (token authentication), calls and id bookkeeping
+//! - [`Subsonic`]: connecting (token authentication) and calls
 //! - [`catalog`]: home shelves, albums, artists, playlists, search, likes, lyrics
 //! - [`parse`]: models from the API's JSON
 //! - [`stream`]: the song files, with seeking and server-side conversion
 //!
-//! Ids: the server's ids are strings, dust's track and playlist ids are numbers. A
-//! song's or playlist's number is a hash of its server id; the client remembers
-//! which string each number stands for.
+//! Ids: tracks and playlists keep the server's own ids ([`crate::model::TrackId`],
+//! [`crate::model::PlaylistId`]), so they mean the same after a restart.
 
 mod catalog;
 #[cfg(test)]
@@ -17,12 +16,11 @@ mod live_tests;
 mod parse;
 mod stream;
 
-use crate::model::{Art, Error, Origin, Result, Service, Track};
+use crate::model::{Art, Error, Result, Service};
 use md5::{Digest, Md5};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// API version we speak (Navidrome supports it, plus the OpenSubsonic extensions).
@@ -61,19 +59,11 @@ struct Inner {
     salt: String,
     /// The server supports OpenSubsonic's synced lyrics (`getLyricsBySongId`).
     song_lyrics: AtomicBool,
-    /// Server ids behind dust's numeric track and playlist ids.
-    ids: Mutex<HashMap<u64, String>>,
 }
 
 /// A connected server. Cheap to clone and share between threads.
 #[derive(Clone)]
 pub struct Subsonic(Arc<Inner>);
-
-/// dust's number for a server id: a stable 64-bit FNV-1a hash (never 0).
-pub fn local_id(id: &str) -> u64 {
-    let hash = id.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3));
-    hash.max(1)
-}
 
 impl Subsonic {
     /// Connect and check the credentials (`ping`).
@@ -94,8 +84,7 @@ impl Subsonic {
             .build()
             .into();
         let user = server.user.trim().to_string();
-        let client =
-            Subsonic(Arc::new(Inner { agent, base, user, token, salt, song_lyrics: AtomicBool::new(false), ids: Mutex::default() }));
+        let client = Subsonic(Arc::new(Inner { agent, base, user, token, salt, song_lyrics: AtomicBool::new(false) }));
         client.call("ping", &[]).map_err(|e| connect_error(client.host(), e))?;
         // OpenSubsonic servers list their extensions; plain Subsonic ones don't have
         // the call.
@@ -116,7 +105,6 @@ impl Subsonic {
             token: String::new(),
             salt: String::new(),
             song_lyrics: AtomicBool::new(false),
-            ids: Mutex::default(),
         }))
     }
 
@@ -154,27 +142,6 @@ impl Subsonic {
         let resp = self.0.agent.get(&self.url(method, params)).call().map_err(http)?;
         let body: Value = resp.into_body().read_json().map_err(|e| Error::Other(format!("Not a Subsonic reply: {e}")))?;
         parse::response(body)
-    }
-
-    /// The server id behind one of dust's numeric ids.
-    fn server_id(&self, id: u64) -> Result<String> {
-        self.0.ids.lock().unwrap().get(&id).cloned().ok_or_else(|| Error::Other("This item is no longer known; open it again".into()))
-    }
-
-    /// dust's number for a server id, remembered for the way back.
-    fn remember(&self, id: &str) -> u64 {
-        let local = local_id(id);
-        self.0.ids.lock().unwrap().entry(local).or_insert_with(|| id.to_string());
-        local
-    }
-
-    /// Learn the server ids of tracks that came from elsewhere (a restored queue).
-    pub fn remember_tracks(&self, tracks: &[Track]) {
-        for track in tracks {
-            if let Origin::Server(song) = &track.origin {
-                self.remember(&song.id);
-            }
-        }
     }
 }
 
@@ -275,10 +242,14 @@ mod tests {
     }
 
     #[test]
-    fn local_ids_are_stable_and_non_zero() {
-        assert_eq!(local_id("qPyR7XLJOiu93qWw1n06xy"), local_id("qPyR7XLJOiu93qWw1n06xy"));
-        assert_ne!(local_id("a"), local_id("b"));
-        assert_ne!(local_id(""), 0);
+    fn ids_are_the_servers_own() {
+        // What a song was parsed as before a restart is asked for by the same id
+        // after it, by a client that never saw it: there is no map to lose.
+        let song = parse::song(&serde_json::json!({"id": "qPyR7XLJOiu93qWw1n06xy", "title": "Pulse", "suffix": "wav"})).unwrap();
+        assert_eq!(song.id.as_str(), "qPyR7XLJOiu93qWw1n06xy");
+        let restarted = Subsonic::offline("nas:4533", "me");
+        let url = restarted.url("stream", &[("id", song.id.as_str())]);
+        assert!(url.ends_with("&id=qPyR7XLJOiu93qWw1n06xy"), "{url}");
     }
 
     #[test]

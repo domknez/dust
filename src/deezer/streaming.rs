@@ -5,7 +5,7 @@ use super::parse::text;
 use super::session::CALL_TIMEOUT;
 use super::{Deezer, Error, Result, api, http};
 use crate::media::Prefetch;
-use crate::model::{Format, Origin, Quality, Track};
+use crate::model::{Format, Origin, Quality, Track, TrackId};
 use serde_json::{Value, json};
 use std::io::Read;
 
@@ -17,7 +17,7 @@ const MEDIA_API: &str = "https://media.deezer.com/v1/get_url";
 pub struct StreamSource {
     pub url: String,
     pub format: Format,
-    pub song_id: u64,
+    pub song_id: TrackId,
     /// The track's length (s), to find positions in podcast files.
     pub duration: u32,
 }
@@ -29,20 +29,21 @@ impl Deezer {
         let song = match &track.origin {
             Origin::Deezer(song) => song,
             Origin::Episode(episode) => {
-                return Ok(StreamSource { url: episode.url.clone(), format: Format::Podcast, song_id: track.id, duration: track.duration });
+                let (url, song_id) = (episode.url.clone(), track.id.clone());
+                return Ok(StreamSource { url, format: Format::Podcast, song_id, duration: track.duration });
             }
             Origin::Server(_) => return Err(Error::Other("not a Deezer track".into())),
         };
         let with_id = |(url, format): (String, Format), song_id| StreamSource { url, format, song_id, duration: track.duration };
         let first_error = match self.media_url(&song.token, quality) {
-            Ok(found) => return Ok(with_id(found, track.id)),
+            Ok(found) => return Ok(with_id(found, track.id.clone())),
             Err(e) => e,
         };
-        if let Ok(found) = self.refresh_token(track.id).and_then(|t| self.media_url(&t, quality)) {
-            return Ok(with_id(found, track.id));
+        if let Ok(found) = self.refresh_token(&track.id).and_then(|t| self.media_url(&t, quality)) {
+            return Ok(with_id(found, track.id.clone()));
         }
         match &song.fallback {
-            Some((id, token)) => self.media_url(token, quality).map(|found| with_id(found, *id)).map_err(|_| first_error),
+            Some((id, token)) => self.media_url(token, quality).map(|found| with_id(found, TrackId::from(*id))).map_err(|_| first_error),
             None => Err(first_error),
         }
     }
@@ -76,6 +77,8 @@ impl Deezer {
     /// Open a decrypted byte stream, starting at `offset` rounded down to a stripe
     /// chunk. Returns the reader and the offset actually used.
     pub fn open_stream(&self, source: &StreamSource, offset: u64) -> Result<(Box<dyn Read + Send + Sync>, u64)> {
+        // The song's number is its decryption key.
+        let song: u64 = source.song_id.as_str().parse().map_err(|_| Error::NotAvailable)?;
         let offset = offset - offset % CHUNK as u64;
         // No overall deadline: a track streams for minutes and may sit paused.
         // Prefetch bounds each wait for data instead.
@@ -84,13 +87,13 @@ impl Deezer {
             req = req.header("Range", &format!("bytes={offset}-"));
         }
         let body = Prefetch::new(req.call().map_err(http)?.into_body().into_reader(), CALL_TIMEOUT);
-        let reader = StripeReader::new(body, source.song_id, offset / CHUNK as u64);
+        let reader = StripeReader::new(body, song, offset / CHUNK as u64);
         Ok((Box::new(reader), offset))
     }
 
     /// Fresh track token, used when a cached one was rejected.
-    fn refresh_token(&self, id: u64) -> Result<String> {
-        let r = self.call("song.getListData", json!({"sng_ids": [id]}))?;
+    fn refresh_token(&self, id: &TrackId) -> Result<String> {
+        let r = self.call("song.getListData", json!({"sng_ids": [super::parse::id_value(id.as_str())]}))?;
         r["data"][0]["TRACK_TOKEN"].as_str().map(str::to_string).ok_or(Error::NotAvailable)
     }
 

@@ -4,7 +4,8 @@
 use super::Subsonic;
 use super::parse::{self, list, text};
 use crate::model::{
-    AlbumInfo, ArtistPage, Error, Item, ItemKind, Likeable, Likes, Lyrics, Playlist, Result, SearchResults, Section, Track,
+    AlbumInfo, ArtistPage, Error, Item, ItemKind, Likeable, Likes, Lyrics, Playlist, PlaylistId, Result, SearchResults, Section, Track,
+    TrackId,
 };
 use serde_json::Value;
 
@@ -67,23 +68,16 @@ impl Subsonic {
         Ok(parse::albums(list(&self.album_values(kind, size, offset)?, "album")))
     }
 
-    /// Tracks parsed from `values`, their ids remembered.
-    fn tracks(&self, values: Vec<&Value>) -> Vec<Track> {
-        let tracks = parse::songs(values);
-        self.remember_tracks(&tracks);
-        tracks
-    }
-
     pub fn album(&self, id: &str) -> Result<Vec<Track>> {
         let r = self.call("getAlbum", &[("id", id)])?;
-        Ok(self.tracks(list(&r["album"], "song")))
+        Ok(parse::songs(list(&r["album"], "song")))
     }
 
     /// An album's tracks, year and label, and the artist's other releases.
     pub fn album_page(&self, id: &str) -> Result<(Vec<Track>, AlbumInfo)> {
         let r = self.call("getAlbum", &[("id", id)])?;
         let album = &r["album"];
-        let tracks = self.tracks(list(album, "song"));
+        let tracks = parse::songs(list(album, "song"));
         let year = album["year"].as_u64().filter(|&y| y > 0).map(|y| y.to_string()).unwrap_or_default();
         let label = list(album, "recordLabels").first().map(|l| text(&l["name"])).unwrap_or_default();
         let artist = text(&album["artistId"]);
@@ -121,7 +115,7 @@ impl Subsonic {
     /// their newest albums.
     fn top_songs(&self, name: &str, artist: &Value) -> Result<Vec<Track>> {
         let r = self.call("getTopSongs", &[("artist", name), ("count", "20")])?;
-        let top = self.tracks(list(&r["topSongs"], "song"));
+        let top = parse::songs(list(&r["topSongs"], "song"));
         if !top.is_empty() {
             return Ok(top);
         }
@@ -171,14 +165,14 @@ impl Subsonic {
     /// Starred songs ("Loved tracks").
     pub fn loved(&self) -> Result<Vec<Track>> {
         let starred = self.starred()?;
-        Ok(self.tracks(list(&starred, "song")))
+        Ok(parse::songs(list(&starred, "song")))
     }
 
     /// Ids of starred songs, albums and artists.
     pub fn likes(&self) -> Result<Likes> {
         let starred = self.starred()?;
         let ids = |key: &str| list(&starred, key).into_iter().map(|v| text(&v["id"])).filter(|i| !i.is_empty());
-        let tracks = ids("song").map(|id| self.remember(&id)).collect();
+        let tracks = ids("song").map(TrackId::new).collect();
         Ok(Likes { tracks, albums: ids("album").collect(), artists: ids("artist").collect() })
     }
 
@@ -186,7 +180,7 @@ impl Subsonic {
     pub fn set_liked(&self, what: &Likeable, liked: bool) -> Result<()> {
         let method = if liked { "star" } else { "unstar" };
         match what {
-            Likeable::Track(id) => self.call(method, &[("id", &self.server_id(*id)?)]),
+            Likeable::Track(id) => self.call(method, &[("id", id.as_str())]),
             Likeable::Album(id) => self.call(method, &[("albumId", id)]),
             Likeable::Artist(id) => self.call(method, &[("artistId", id)]),
         }
@@ -195,18 +189,12 @@ impl Subsonic {
 
     pub fn playlists(&self) -> Result<Vec<Playlist>> {
         let r = self.call("getPlaylists", &[])?;
-        Ok(parse::playlists(&r, self.name())
-            .into_iter()
-            .map(|(id, p)| {
-                self.remember(&id);
-                p
-            })
-            .collect())
+        Ok(parse::playlists(&r, self.name()))
     }
 
-    pub fn playlist(&self, id: u64) -> Result<Vec<Track>> {
-        let r = self.call("getPlaylist", &[("id", &self.server_id(id)?)])?;
-        Ok(self.tracks(list(&r["playlist"], "entry")))
+    pub fn playlist(&self, id: &PlaylistId) -> Result<Vec<Track>> {
+        let r = self.call("getPlaylist", &[("id", id.as_str())])?;
+        Ok(parse::songs(list(&r["playlist"], "entry")))
     }
 
     pub fn search(&self, query: &str) -> Result<SearchResults> {
@@ -217,7 +205,7 @@ impl Subsonic {
             .filter(|(_, items)| !items.is_empty())
             .map(|(title, items)| Section { title: title.into(), items })
             .collect();
-        Ok(SearchResults { tracks: self.tracks(list(found, "song")), sections })
+        Ok(SearchResults { tracks: parse::songs(list(found, "song")), sections })
     }
 
     /// A mix from the home page: random songs, or songs like an artist's (their own
@@ -225,7 +213,7 @@ impl Subsonic {
     pub fn mix(&self, id: &str) -> Result<Vec<Track>> {
         if let Some(artist) = id.strip_prefix(ARTIST_MIX) {
             let r = self.call("getSimilarSongs2", &[("id", artist), ("count", MIX)])?;
-            let similar = self.tracks(list(&r["similarSongs2"], "song"));
+            let similar = parse::songs(list(&r["similarSongs2"], "song"));
             if !similar.is_empty() {
                 return Ok(similar);
             }
@@ -234,7 +222,7 @@ impl Subsonic {
             return Ok(own);
         }
         let r = self.call("getRandomSongs", &[("size", MIX)])?;
-        Ok(self.tracks(list(&r["randomSongs"], "song")))
+        Ok(parse::songs(list(&r["randomSongs"], "song")))
     }
 
     /// Radio: random songs from the whole library, or from one genre. Asked again
@@ -245,20 +233,20 @@ impl Subsonic {
             params.push(("genre", genre));
         }
         let r = self.call("getRandomSongs", &params)?;
-        Ok(self.tracks(list(&r["randomSongs"], "song")))
+        Ok(parse::songs(list(&r["randomSongs"], "song")))
     }
 
     /// A song's lyrics: OpenSubsonic's (synced when available), else the classic
     /// plain text found by artist and title.
-    pub fn lyrics(&self, song: u64) -> Result<Option<Lyrics>> {
-        let id = self.server_id(song)?;
+    pub fn lyrics(&self, song: &TrackId) -> Result<Option<Lyrics>> {
+        let id = song.as_str();
         if self.0.song_lyrics.load(std::sync::atomic::Ordering::Relaxed) {
-            let r = self.call("getLyricsBySongId", &[("id", &id)])?;
+            let r = self.call("getLyricsBySongId", &[("id", id)])?;
             if let Some(lyrics) = parse::structured_lyrics(&r) {
                 return Ok(Some(lyrics));
             }
         }
-        let r = self.call("getSong", &[("id", &id)])?;
+        let r = self.call("getSong", &[("id", id)])?;
         let (artist, title) = (text(&r["song"]["artist"]), text(&r["song"]["title"]));
         let r = self.call("getLyrics", &[("artist", &artist), ("title", &title)])?;
         Ok(parse::plain_lyrics(&r))
@@ -267,66 +255,55 @@ impl Subsonic {
     /// Report a song: `submission` false when it starts ("now playing"), true once
     /// it has been listened to (counts as a play, and a Last.fm scrobble if the
     /// server is set up for it).
-    pub fn scrobble(&self, song: u64, submission: bool, started_unix: u64) -> Result<()> {
-        let id = self.server_id(song)?;
+    pub fn scrobble(&self, song: &TrackId, submission: bool, started_unix: u64) -> Result<()> {
         let time = (started_unix * 1000).to_string();
         let submission = if submission { "true" } else { "false" };
-        self.call("scrobble", &[("id", &id), ("submission", submission), ("time", &time)]).map(drop)
+        self.call("scrobble", &[("id", song.as_str()), ("submission", submission), ("time", &time)]).map(drop)
     }
 
     // ------------------------------------------------------------ playlists
 
-    pub fn create_playlist(&self, title: &str, tracks: &[u64]) -> Result<u64> {
-        let ids = self.server_ids(tracks)?;
+    /// A new playlist holding `tracks`; its id, if the server says (servers before
+    /// API 1.14 don't return the new playlist).
+    pub fn create_playlist(&self, title: &str, tracks: &[TrackId]) -> Result<Option<PlaylistId>> {
         let mut params = vec![("name", title)];
-        params.extend(ids.iter().map(|id| ("songId", id.as_str())));
+        params.extend(tracks.iter().map(|id| ("songId", id.as_str())));
         let r = self.call("createPlaylist", &params)?;
         let id = text(&r["playlist"]["id"]);
-        if id.is_empty() {
-            // Servers before API 1.14 don't return the new playlist.
-            return Ok(0);
-        }
-        Ok(self.remember(&id))
+        Ok((!id.is_empty()).then(|| PlaylistId::new(id)))
     }
 
     /// Add the tracks that aren't on the playlist yet; returns how many were added.
-    pub fn add_to_playlist(&self, playlist: u64, tracks: &[u64]) -> Result<usize> {
-        let current: std::collections::HashSet<u64> = self.playlist(playlist)?.iter().map(|t| t.id).collect();
-        let new: Vec<u64> = tracks.iter().copied().filter(|t| !current.contains(t)).collect();
+    pub fn add_to_playlist(&self, playlist: &PlaylistId, tracks: &[TrackId]) -> Result<usize> {
+        let current: std::collections::HashSet<TrackId> = self.playlist(playlist)?.into_iter().map(|t| t.id).collect();
+        let new: Vec<&TrackId> = tracks.iter().filter(|t| !current.contains(*t)).collect();
         if new.is_empty() {
             return Ok(0);
         }
-        let id = self.server_id(playlist)?;
-        let ids = self.server_ids(&new)?;
-        let mut params = vec![("playlistId", id.as_str())];
-        params.extend(ids.iter().map(|id| ("songIdToAdd", id.as_str())));
+        let mut params = vec![("playlistId", playlist.as_str())];
+        params.extend(new.iter().map(|id| ("songIdToAdd", id.as_str())));
         self.call("updatePlaylist", &params)?;
         Ok(new.len())
     }
 
     /// Remove every occurrence of the tracks (Subsonic removes by position).
-    pub fn remove_from_playlist(&self, playlist: u64, tracks: &[u64]) -> Result<()> {
+    pub fn remove_from_playlist(&self, playlist: &PlaylistId, tracks: &[TrackId]) -> Result<()> {
         let positions: Vec<String> =
             self.playlist(playlist)?.iter().enumerate().filter(|(_, t)| tracks.contains(&t.id)).map(|(i, _)| i.to_string()).collect();
         if positions.is_empty() {
             return Ok(());
         }
-        let id = self.server_id(playlist)?;
-        let mut params = vec![("playlistId", id.as_str())];
+        let mut params = vec![("playlistId", playlist.as_str())];
         params.extend(positions.iter().map(|i| ("songIndexToRemove", i.as_str())));
         self.call("updatePlaylist", &params).map(drop)
     }
 
     pub fn rename_playlist(&self, playlist: &Playlist, title: &str) -> Result<()> {
-        self.call("updatePlaylist", &[("playlistId", &self.server_id(playlist.id)?), ("name", title)]).map(drop)
+        self.call("updatePlaylist", &[("playlistId", playlist.id.as_str()), ("name", title)]).map(drop)
     }
 
-    pub fn delete_playlist(&self, playlist: u64) -> Result<()> {
-        self.call("deletePlaylist", &[("id", &self.server_id(playlist)?)]).map(drop)
-    }
-
-    fn server_ids(&self, ids: &[u64]) -> Result<Vec<String>> {
-        ids.iter().map(|&id| self.server_id(id)).collect()
+    pub fn delete_playlist(&self, playlist: &PlaylistId) -> Result<()> {
+        self.call("deletePlaylist", &[("id", playlist.as_str())]).map(drop)
     }
 }
 

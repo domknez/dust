@@ -1,7 +1,9 @@
 //! Building models from gw-light JSON, which mixes strings and numbers freely.
 
 use super::images::art;
-use crate::model::{AlbumInfo, Art, ArtistPage, ArtistRef, DeezerSong, Episode, Item, ItemKind, Origin, Playlist, Section, Track};
+use crate::model::{
+    AlbumInfo, Art, ArtistPage, ArtistRef, DeezerSong, Episode, Item, ItemKind, Origin, Playlist, PlaylistId, Section, Track, TrackId,
+};
 use serde_json::Value;
 
 /// String field, tolerating numbers and nulls.
@@ -20,6 +22,12 @@ pub fn number(v: &Value) -> u64 {
         Value::String(s) => s.parse().unwrap_or(0),
         _ => 0,
     }
+}
+
+/// One of Deezer's ids (written out by [`TrackId`] and [`PlaylistId`]) as the API
+/// takes it: the number it is.
+pub fn id_value(id: &str) -> Value {
+    id.parse::<u64>().map_or_else(|_| Value::from(id), Value::from)
 }
 
 /// A picture from its family (`cover`, `playlist`, ...) and md5 fields, if both
@@ -52,7 +60,7 @@ pub fn track(v: &Value) -> Option<Track> {
     let blocked = rights["STREAM_SUB_AVAILABLE"].as_bool() == Some(false) && fallback.is_none();
     let available_from = if blocked { text(&rights["STREAM_SUB"]) } else { String::new() };
     Some(Track {
-        id,
+        id: TrackId::from(id),
         title,
         artist,
         artists,
@@ -77,7 +85,7 @@ pub fn episode(v: &Value) -> Option<Track> {
     // "2026-09-17 00:40:49" -> "2026-09-17"
     let published = text(&v["EPISODE_PUBLISHED_TIMESTAMP"]).chars().take(10).collect();
     Some(Track {
-        id,
+        id: TrackId::from(id),
         title: text(&v["EPISODE_TITLE"]),
         artist: show.clone(),
         artists: Vec::new(),
@@ -118,7 +126,7 @@ pub fn tracks(v: &Value) -> Vec<Track> {
 /// A playlist of the profile; `me` is the account's user id (ownership).
 pub fn playlist(v: &Value, me: u64) -> Playlist {
     Playlist {
-        id: number(&v["PLAYLIST_ID"]),
+        id: PlaylistId::from(number(&v["PLAYLIST_ID"])),
         title: text(&v["TITLE"]),
         count: number(&v["NB_SONG"]) as u32,
         owned: number(&v["PARENT_USER_ID"]) == me,
@@ -389,8 +397,8 @@ mod tests {
     fn episodes_and_shows() {
         let t = episode(&episode_json("935346132", "2026-09-17 00:40:49")).unwrap();
         assert_eq!(
-            (t.id, t.title.as_str(), t.artist.as_str(), t.duration, t.art.as_ref().map(Art::as_str)),
-            (935346132, "Episode 935346132", "Lex Fridman Podcast", 13430, Some("talk/fa87"))
+            (t.id.as_str(), t.title.as_str(), t.artist.as_str(), t.duration, t.art.as_ref().map(Art::as_str)),
+            ("935346132", "Episode 935346132", "Lex Fridman Podcast", 13430, Some("talk/fa87"))
         );
         assert!(t.available && t.album_id.is_empty() && t.artists.is_empty());
         let e = t.episode().unwrap();
@@ -406,7 +414,7 @@ mod tests {
             episode_json("2", "2026-03-01 10:00:00"),
             episode_json("3", "2025-12-31 10:00:00"),
         ]}});
-        assert_eq!(show_episodes(&page).iter().map(|t| t.id).collect::<Vec<_>>(), vec![2, 1, 3], "newest first");
+        assert_eq!(show_episodes(&page).iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["2", "1", "3"], "newest first");
 
         let card = card_item(
             "show",

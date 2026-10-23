@@ -168,7 +168,6 @@ impl App {
         self.restore_pending = false;
         if let Some(s) = self.queues.load(provider.key()) {
             log_info!("restoring a queue of {} tracks", s.tracks.len());
-            provider.adopt(&s.tracks);
             self.player.send(Cmd::Restore { tracks: s.tracks, index: s.index, position: s.position, flow: s.flow });
             self.restore_pending = true;
         }

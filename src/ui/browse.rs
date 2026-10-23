@@ -136,7 +136,7 @@ mod tests {
     use std::sync::mpsc::channel;
 
     fn playlist(id: u64, title: &str) -> Playlist {
-        Playlist { id, title: title.into(), count: 3, owned: true, private: false, picture: None }
+        Playlist { id: id.into(), title: title.into(), count: 3, owned: true, private: false, picture: None }
     }
 
     #[test]

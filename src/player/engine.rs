@@ -646,13 +646,18 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{DeezerSong, Format, Listen, Origin};
+    use crate::model::{DeezerSong, Format, Listen, Origin, TrackId};
     use crate::player::library::Library;
     use std::sync::mpsc::{Sender, channel};
 
+    /// The number a test track was made with.
+    fn n(id: &TrackId) -> u64 {
+        id.as_str().parse().expect("a test track")
+    }
+
     fn track(id: u64, secs: u32) -> Track {
         Track {
-            id,
+            id: TrackId::from(id),
             title: format!("t{id}"),
             artist: String::new(),
             artists: Vec::new(),
@@ -682,10 +687,10 @@ mod tests {
             if self.offline.load(std::sync::atomic::Ordering::Relaxed) {
                 return Err(OpenError::Transient("offline".into()));
             }
-            if self.unplayable.contains(&track.id) {
+            if self.unplayable.contains(&n(&track.id)) {
                 return Err(OpenError::Unavailable("not available".into()));
             }
-            Ok(Box::new(FakePlayback { id: track.id, secs: track.duration as f64, written: at, done: false }))
+            Ok(Box::new(FakePlayback { id: track.id.clone(), secs: track.duration as f64, written: at, done: false }))
         }
 
         fn flow(&self, _: Option<&str>) -> Result<Vec<Track>, String> {
@@ -695,8 +700,8 @@ mod tests {
             Ok(batch)
         }
 
-        fn report_listen_start(&self, song_id: u64) {
-            self.started.lock().unwrap().push(song_id);
+        fn report_listen_start(&self, song_id: TrackId) {
+            self.started.lock().unwrap().push(n(&song_id));
         }
 
         fn report_listen(&self, listen: Listen) {
@@ -705,15 +710,15 @@ mod tests {
     }
 
     struct FakePlayback {
-        id: u64,
+        id: TrackId,
         secs: f64,
         written: f64,
         done: bool,
     }
 
     impl Playback for FakePlayback {
-        fn song_id(&self) -> u64 {
-            self.id
+        fn song_id(&self) -> TrackId {
+            self.id.clone()
         }
         fn format(&self) -> Format {
             Format::Mp3(320)
@@ -742,7 +747,7 @@ mod tests {
             self.written = t;
         }
         fn reopen(&self, at: f64) -> Result<Box<dyn Playback>, OpenError> {
-            Ok(Box::new(FakePlayback { id: self.id, secs: self.secs, written: at, done: false }))
+            Ok(Box::new(FakePlayback { id: self.id.clone(), secs: self.secs, written: at, done: false }))
         }
     }
 
@@ -786,7 +791,7 @@ mod tests {
     }
 
     fn now_playing(e: &Engine) -> Option<u64> {
-        e.stream.as_ref().map(|s| s.song_id())
+        e.stream.as_ref().map(|s| n(&s.song_id()))
     }
 
     /// A sink that stops working when `broken` is set; counts how many were made.
@@ -874,7 +879,7 @@ mod tests {
         play_out(&mut e);
         {
             let st = e.status.lock().unwrap();
-            assert_eq!((st.state, st.track.as_ref().map(|t| t.id), st.position), (State::Paused, Some(2), 0.0));
+            assert_eq!((st.state, st.track.as_ref().map(|t| n(&t.id)), st.position), (State::Paused, Some(2), 0.0));
             assert_eq!(st.sleep, None, "used up");
         }
         e.handle(Cmd::Toggle);
@@ -983,7 +988,7 @@ mod tests {
         e.listens.heard(Duration::from_secs(5));
         play_out(&mut e);
         assert_eq!(*library.started.lock().unwrap(), vec![2]);
-        assert_eq!(library.listens.lock().unwrap().iter().map(|l| l.song_id).collect::<Vec<_>>(), vec![2]);
+        assert_eq!(library.listens.lock().unwrap().iter().map(|l| n(&l.song_id)).collect::<Vec<_>>(), vec![2]);
     }
 
     #[test]
@@ -1009,7 +1014,7 @@ mod tests {
         e.handle(Cmd::Restore { tracks, index: 1, position: 80.0, flow: Some(Flow { mood: Some("chill".into()) }) });
         {
             let st = e.status.lock().unwrap();
-            assert_eq!((st.state, st.track.as_ref().map(|t| t.id), st.position), (State::Paused, Some(2), 80.0));
+            assert_eq!((st.state, st.track.as_ref().map(|t| n(&t.id)), st.position), (State::Paused, Some(2), 80.0));
             assert_eq!(st.flow, Some(Flow { mood: Some("chill".into()) }));
         }
         assert_eq!(now_playing(&e), None, "nothing streams before play");
@@ -1142,7 +1147,7 @@ mod tests {
         e.handle(Cmd::Next);
         let listens = library.listens.lock().unwrap();
         assert_eq!(listens.len(), 1);
-        assert_eq!((listens[0].song_id, listens[0].listened_secs, listens[0].skipped), (1, 10, true));
+        assert_eq!((n(&listens[0].song_id), listens[0].listened_secs, listens[0].skipped), (1, 10, true));
     }
 
     #[test]

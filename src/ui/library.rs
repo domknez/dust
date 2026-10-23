@@ -57,7 +57,7 @@ mod tests {
     use std::sync::mpsc::channel;
 
     fn playlist(id: u64) -> Playlist {
-        Playlist { id, title: format!("P{id}"), count: 1, owned: true, private: false, picture: None }
+        Playlist { id: id.into(), title: format!("P{id}"), count: 1, owned: true, private: false, picture: None }
     }
 
     #[test]
@@ -69,7 +69,7 @@ mod tests {
         playlists.0.send(Ok(vec![playlist(1)])).unwrap();
         home.0.send(Err(Error::Other("home is down".into()))).unwrap();
         let failed = library.poll();
-        assert_eq!(library.playlists.iter().map(|p| p.id).collect::<Vec<_>>(), [1]);
+        assert_eq!(library.playlists.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["1"]);
         assert_eq!(failed.len(), 1);
         assert_eq!(library.home.error(), Some("home is down"));
         assert!(library.playlists_load.error().is_none(), "the home error stays with home");

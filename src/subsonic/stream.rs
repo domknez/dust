@@ -3,7 +3,7 @@
 
 use super::{Subsonic, api, http};
 use crate::media::{OpenError, Opened, Opener, Prefetch, Stream, StreamInfo};
-use crate::model::{Error, Format, Origin, Result, ServerSong, Track};
+use crate::model::{Error, Format, Origin, Result, Track, TrackId};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -36,7 +36,8 @@ fn delivery(suffix: &str) -> (Delivery, &'static str) {
 
 struct ServerBytes {
     client: Subsonic,
-    song: ServerSong,
+    /// The song's id on the server.
+    id: TrackId,
     delivery: Delivery,
     duration: u32,
 }
@@ -49,7 +50,7 @@ impl Opener for ServerBytes {
 
 impl ServerBytes {
     fn open_at(&self, at: f64) -> Result<Opened> {
-        let id = self.song.id.as_str();
+        let id = self.id.as_str();
         match self.delivery {
             Delivery::Converted => {
                 // Whole seconds: the server starts the conversion there.
@@ -111,34 +112,26 @@ impl Subsonic {
         let Origin::Server(song) = &track.origin else {
             return Err(Error::Other("not a song from this server".into()).into());
         };
-        self.remember(&song.id);
         let (delivery, extension) = delivery(&song.suffix);
-        match self.open_as(track, song, delivery, extension, at) {
+        match self.open_as(track, delivery, extension, at) {
             // Only a file problem: a network one would fail the same way again.
             Err(OpenError::Unavailable(e)) if delivery != Delivery::Converted => {
                 log_info!("{}: {e}; asking the server for MP3", song.suffix);
-                self.open_as(track, song, Delivery::Converted, "mp3", at)
+                self.open_as(track, Delivery::Converted, "mp3", at)
             }
             result => result,
         }
     }
 
-    fn open_as(
-        &self,
-        track: &Track,
-        song: &ServerSong,
-        delivery: Delivery,
-        extension: &str,
-        at: f64,
-    ) -> std::result::Result<Stream, OpenError> {
+    fn open_as(&self, track: &Track, delivery: Delivery, extension: &str, at: f64) -> std::result::Result<Stream, OpenError> {
         let info = StreamInfo {
-            song_id: track.id,
+            song_id: track.id.clone(),
             format: Format::File,
             extension: extension.into(),
             any_rate: true,
             jumps: !matches!(delivery, Delivery::Raw { jumps: false }),
         };
-        let opener = ServerBytes { client: self.clone(), song: song.clone(), delivery, duration: track.duration };
+        let opener = ServerBytes { client: self.clone(), id: track.id.clone(), delivery, duration: track.duration };
         Stream::open(Arc::new(opener), info, at)
     }
 

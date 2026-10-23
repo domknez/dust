@@ -62,7 +62,7 @@ mod tests {
         assert_eq!(mmss(245.3), "4:05");
         assert_eq!(mmss(-3.0), "0:00");
         let t = |d| Track {
-            id: 1,
+            id: 1.into(),
             title: String::new(),
             artist: String::new(),
             artists: Vec::new(),

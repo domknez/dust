@@ -2,7 +2,7 @@
 //! items open (albums, artists, mixes, Flow).
 
 use super::{Deezer, Error, Result, parse};
-use crate::model::{AlbumInfo, ArtistPage, Item, Likeable, Likes, Playlist, SearchResults, Section, Track};
+use crate::model::{AlbumInfo, ArtistPage, Item, Likeable, Likes, Playlist, PlaylistId, SearchResults, Section, Track, TrackId};
 use serde_json::json;
 
 impl Deezer {
@@ -26,13 +26,13 @@ impl Deezer {
 
     /// The account's "Loved tracks".
     pub fn loved(&self) -> Result<Vec<Track>> {
-        self.playlist(self.0.loved_id)
+        self.playlist(&PlaylistId::from(self.0.loved_id))
     }
 
-    pub fn playlist(&self, id: u64) -> Result<Vec<Track>> {
+    pub fn playlist(&self, id: &PlaylistId) -> Result<Vec<Track>> {
         let r = self.call(
             "deezer.pagePlaylist",
-            json!({"playlist_id": id, "lang": "en", "nb": 2000, "start": 0, "tab": 0, "tags": true, "header": true}),
+            json!({"playlist_id": parse::id_value(id.as_str()), "lang": "en", "nb": 2000, "start": 0, "tab": 0, "tags": true, "header": true}),
         )?;
         Ok(parse::tracks(&r["SONGS"]["data"]))
     }
@@ -41,7 +41,8 @@ impl Deezer {
     pub fn playlists(&self) -> Result<Vec<Playlist>> {
         let r = self.call("deezer.pageProfile", json!({"user_id": self.0.user_id, "tab": "playlists", "nb": 500}))?;
         let list = r["TAB"]["playlists"]["data"].as_array().cloned().unwrap_or_default();
-        Ok(list.iter().map(|v| parse::playlist(v, self.0.user_id)).filter(|p| p.id != 0 && p.id != self.0.loved_id).collect())
+        let (none, loved) = (PlaylistId::from(0), PlaylistId::from(self.0.loved_id));
+        Ok(list.iter().map(|v| parse::playlist(v, self.0.user_id)).filter(|p| p.id != none && p.id != loved).collect())
     }
 
     /// Personalised home page, as sections of items (what the web app shows).
@@ -133,7 +134,14 @@ impl Deezer {
     /// Ids of liked tracks, albums and followed artists.
     pub fn likes(&self) -> Result<Likes> {
         let songs = self.call("song.getFavoriteIds", json!({"nb": 10000, "start": 0}))?;
-        let tracks = songs["data"].as_array().into_iter().flatten().map(|s| parse::number(&s["SNG_ID"])).filter(|&id| id != 0).collect();
+        let tracks = songs["data"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|s| parse::number(&s["SNG_ID"]))
+            .filter(|&id| id != 0)
+            .map(TrackId::from)
+            .collect();
         let ids = |items: Vec<Item>| items.into_iter().map(|i| i.id).collect();
         Ok(Likes { tracks, albums: ids(self.favorite_albums()?), artists: ids(self.favorite_artists()?) })
     }
@@ -150,8 +158,8 @@ impl Deezer {
     /// Like or unlike on Deezer.
     pub fn set_liked(&self, what: &Likeable, liked: bool) -> Result<()> {
         let (method, body) = match (what, liked) {
-            (Likeable::Track(id), true) => ("favorite_song.add", json!({"SNG_ID": id.to_string()})),
-            (Likeable::Track(id), false) => ("favorite_song.remove", json!({"SNG_ID": id.to_string()})),
+            (Likeable::Track(id), true) => ("favorite_song.add", json!({"SNG_ID": id.as_str()})),
+            (Likeable::Track(id), false) => ("favorite_song.remove", json!({"SNG_ID": id.as_str()})),
             (Likeable::Album(id), true) => ("album.addFavorite", json!({"ALB_ID": id})),
             (Likeable::Album(id), false) => ("album.deleteFavorite", json!({"ALB_ID": id})),
             (Likeable::Artist(id), true) => ("artist.addFavorite", json!({"ART_ID": id})),

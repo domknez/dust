@@ -2,7 +2,7 @@
 //! listen to Deezer (history, Flow, Last.fm), like Deezer's own apps.
 
 use super::library::Library;
-use crate::model::{Format, Listen};
+use crate::model::{Format, Listen, TrackId};
 use std::time::Duration;
 
 /// A listen that played to within this many seconds of the end isn't a skip.
@@ -26,8 +26,15 @@ impl ListenTracker {
     }
 
     /// A new track started: report the start and begin counting.
-    pub fn start(&mut self, library: Option<&dyn Library>, song_id: u64, format: Format, track_secs: u32) {
-        let listen = Listen { song_id, format, started_unix: unix_now(), listened_secs: 0, skipped: false, stream_id: stream_uuid() };
+    pub fn start(&mut self, library: Option<&dyn Library>, song_id: TrackId, format: Format, track_secs: u32) {
+        let listen = Listen {
+            song_id: song_id.clone(),
+            format,
+            started_unix: unix_now(),
+            listened_secs: 0,
+            skipped: false,
+            stream_id: stream_uuid(),
+        };
         if self.enabled
             && let Some(library) = library
         {

@@ -1,6 +1,6 @@
 //! What the player needs from a track being decoded, and why one didn't open.
 
-use crate::model::{Error, Format};
+use crate::model::{Error, Format, TrackId};
 
 /// Why a track didn't open, which decides what the engine does next.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -45,7 +45,7 @@ pub enum Decoded {
 /// One track being decoded.
 pub trait Playback {
     /// Song id actually streamed (differs from the track's on regional fallbacks).
-    fn song_id(&self) -> u64;
+    fn song_id(&self) -> TrackId;
     fn format(&self) -> Format;
     /// Track time (s) at the end of the audio handed to the sink.
     fn written(&self) -> f64;

@@ -5,7 +5,7 @@
 use super::images::art;
 use super::parse::{picture, text};
 use super::{Deezer, Error, Result};
-use crate::model::Art;
+use crate::model::{Art, PlaylistId};
 use serde_json::{Value, json};
 use std::time::Duration;
 use ureq::ResponseExt;
@@ -15,7 +15,7 @@ use ureq::ResponseExt;
 pub enum Link {
     Album { id: String, title: String, artist: String, picture: Option<Art> },
     Artist { id: String },
-    Playlist { id: u64, title: String, picture: Option<Art> },
+    Playlist { id: PlaylistId, title: String, picture: Option<Art> },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -73,7 +73,7 @@ impl Deezer {
                     .call("deezer.pagePlaylist", json!({"playlist_id": id, "lang": "en", "nb": 0, "start": 0, "tab": 0, "header": true}))?;
                 let data = &page["DATA"];
                 let picture = picture(&data["PICTURE_TYPE"], &data["PLAYLIST_PICTURE"]);
-                Ok(Link::Playlist { id, title: text(&data["TITLE"]), picture })
+                Ok(Link::Playlist { id: PlaylistId::from(id), title: text(&data["TITLE"]), picture })
             }
         }
     }

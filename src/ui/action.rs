@@ -210,7 +210,7 @@ impl App {
             TrackMenu::AddTo(playlist) => self.edit_playlist(Edit::Add { playlist, tracks: vec![track] }),
             TrackMenu::NewPlaylist => self.new_playlist(vec![track]),
             TrackMenu::Remove => {
-                if let Some(playlist) = self.showing_own_playlist().map(|p| p.id) {
+                if let Some(playlist) = self.showing_own_playlist().map(|p| p.id.clone()) {
                     self.edit_playlist(Edit::Remove { playlist, tracks: vec![track.id] });
                 }
             }
@@ -291,7 +291,7 @@ mod tests {
         let mut t = TestApp::new("");
         t.app.deezer_ready(deezer());
         let jobs = t.jobs.waiting();
-        let song = Likeable::Track(5);
+        let song = Likeable::Track(crate::model::TrackId::from(5));
         t.update(Action::ToggleLike(song.clone()));
         assert!(t.app.is_liked(&song));
         assert_eq!(t.jobs.waiting(), jobs + 1);

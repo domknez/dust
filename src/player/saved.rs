@@ -3,7 +3,7 @@
 //! keeps its own: Deezer's in `queue.json`, a music server's in `queue-<key>.json`.
 
 use super::{Flow, Status};
-use crate::model::{Art, ArtistRef, DeezerSong, Episode, Origin, ServerSong, Track};
+use crate::model::{Art, ArtistRef, DeezerSong, Episode, Origin, ServerSong, Track, TrackId};
 use crate::settings;
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -101,6 +101,10 @@ fn decode(v: &Value) -> Option<Saved> {
 /// ones a track doesn't have (the shape dust has always written). The picture is
 /// `art`, as its source names it; files from 0.16 and before have `cover` instead
 /// (see [`legacy_art`]).
+///
+/// The `id` is the source's: a number for Deezer (as always), text for a music
+/// server. Files from 0.19 and before have a number standing for a server song's id
+/// too; its real one is `server.id`, which is still written.
 fn encode_track(t: &Track) -> Value {
     let (song, episode, server) = match &t.origin {
         Origin::Deezer(song) => (Some(song), None, None),
@@ -108,7 +112,7 @@ fn encode_track(t: &Track) -> Value {
         Origin::Server(server) => (None, None, Some(server)),
     };
     json!({
-        "id": t.id,
+        "id": t.id.as_str().parse::<u64>().map_or_else(|_| json!(t.id.as_str()), Value::from),
         "title": t.title,
         "artist": t.artist,
         "artists": t.artists.iter().map(|a| json!({"id": a.id, "name": a.name})).collect::<Vec<_>>(),
@@ -121,7 +125,7 @@ fn encode_track(t: &Track) -> Value {
         "available": t.available,
         "available_from": t.available_from,
         "episode": episode.map(|e| json!({"url": e.url, "show_id": e.show_id, "published": e.published})),
-        "server": server.map(|s| json!({"id": s.id, "suffix": s.suffix})),
+        "server": server.map(|s| json!({"id": t.id.as_str(), "suffix": s.suffix})),
     })
 }
 
@@ -137,10 +141,16 @@ fn decode_track(v: &Value) -> Option<Track> {
     });
     let server = v["server"].as_object().and_then(|s| {
         let text = |k: &str| s.get(k).and_then(Value::as_str).map(str::to_string);
-        Some(ServerSong { id: text("id")?, suffix: text("suffix").unwrap_or_default() })
+        Some((TrackId::new(text("id")?), ServerSong { suffix: text("suffix").unwrap_or_default() }))
     });
+    let id = match (&server, &v["id"]) {
+        (Some((id, _)), _) => id.clone(),
+        (None, Value::Number(n)) => TrackId::from(n.as_u64()?),
+        (None, Value::String(id)) if !id.is_empty() => TrackId::new(id),
+        _ => return None,
+    };
     let origin = match (server, episode) {
-        (Some(server), _) => Origin::Server(server),
+        (Some((_, server)), _) => Origin::Server(server),
         (None, Some(episode)) => Origin::Episode(episode),
         (None, None) => {
             let fallback = v["fallback"].as_object().and_then(|f| Some((f.get("id")?.as_u64()?, f.get("token")?.as_str()?.to_string())));
@@ -148,7 +158,7 @@ fn decode_track(v: &Value) -> Option<Track> {
         }
     };
     Some(Track {
-        id: v["id"].as_u64()?,
+        id,
         title: s("title"),
         artist: s("artist"),
         artists,
@@ -186,7 +196,7 @@ mod tests {
 
     fn track(id: u64) -> Track {
         Track {
-            id,
+            id: TrackId::from(id),
             title: format!("Song {id}"),
             artist: "A, B".into(),
             artists: vec![ArtistRef { id: "27".into(), name: "A".into() }],
@@ -228,11 +238,35 @@ mod tests {
         assert_eq!(decode(&encode(&st)).unwrap().tracks, vec![track(1), episode]);
     }
 
+    /// A server song with the server's own id.
+    fn server_song(id: &str) -> Track {
+        Track { id: TrackId::new(id), origin: Origin::Server(ServerSong { suffix: "flac".into() }), ..track(4) }
+    }
+
     #[test]
     fn server_songs_keep_their_id() {
-        let song = Track { origin: Origin::Server(ServerSong { id: "qPyR7XLJOiu93qWw1n06xy".into(), suffix: "flac".into() }), ..track(4) };
+        let song = server_song("qPyR7XLJOiu93qWw1n06xy");
         let st = Status { queue: Arc::new(vec![song.clone()]), index: 0, ..Default::default() };
-        assert_eq!(decode(&encode(&st)).unwrap().tracks, vec![song]);
+        let saved = encode(&st);
+        assert_eq!(saved["tracks"][0]["id"], "qPyR7XLJOiu93qWw1n06xy");
+        assert_eq!(saved["tracks"][0]["server"]["id"], "qPyR7XLJOiu93qWw1n06xy");
+        assert_eq!(decode(&saved).unwrap().tracks, vec![song]);
+        // A server that numbers its songs reads back the same.
+        let numbered = server_song("1234");
+        let st = Status { queue: Arc::new(vec![numbered.clone()]), index: 0, ..Default::default() };
+        assert_eq!(decode(&encode(&st)).unwrap().tracks, vec![numbered]);
+    }
+
+    #[test]
+    fn deezer_ids_stay_numbers() {
+        let saved = encode(&status(None));
+        assert_eq!(saved["tracks"][0]["id"], json!(1));
+        let mut text_id = saved.clone();
+        text_id["tracks"][0]["id"] = json!("1");
+        assert_eq!(decode(&text_id).unwrap().tracks[0].id, TrackId::from(1));
+        text_id["tracks"][0]["id"] = json!(null);
+        text_id["index"] = json!(0);
+        assert_eq!(decode(&text_id).unwrap().tracks.len(), 1, "a track without an id is dropped");
     }
 
     /// `queue.json` as dust 0.16 wrote it: a song with a regional fallback, a
@@ -260,7 +294,10 @@ mod tests {
         let saved = decode(&serde_json::from_str(DEEZER_0_16).unwrap()).unwrap();
         assert_eq!((saved.index, saved.position, saved.flow.clone()), (1, 61.3, Some(Flow { mood: Some("chill".into()) })));
         let [song, episode] = &saved.tracks[..] else { panic!("two tracks") };
-        assert_eq!((song.id, song.title.as_str(), song.album_id.as_str(), song.duration), (3135553, "One More Time", "302127", 320));
+        assert_eq!(
+            (song.id.as_str(), song.title.as_str(), song.album_id.as_str(), song.duration),
+            ("3135553", "One More Time", "302127", 320)
+        );
         assert_eq!(
             song.origin,
             Origin::Deezer(DeezerSong { token: "AAAA-token".into(), fallback: Some((3135554, "AAAB-fallback".into())) })
@@ -277,14 +314,16 @@ mod tests {
         let saved = decode(&serde_json::from_str(NAVIDROME_0_16).unwrap()).unwrap();
         assert_eq!(saved.flow, None);
         let song = &saved.tracks[0];
-        assert_eq!(song.origin, Origin::Server(ServerSong { id: "qPyR7XLJOiu93qWw1n06xy".into(), suffix: "wav".into() }));
+        assert_eq!(song.id, TrackId::new("qPyR7XLJOiu93qWw1n06xy"), "the server's id, not the number standing for it");
+        assert_eq!(song.origin, Origin::Server(ServerSong { suffix: "wav".into() }));
         assert_eq!(song.art, Art::new("al-5F81DCwcfjVByziJAH9maf_0"));
     }
 
     #[test]
     fn queues_keep_what_0_16_reads() {
         // An older dust reading a newer file (after a downgrade) finds every field
-        // it knows but the picture, which it does without.
+        // it knows but the picture, which it does without; a server song's `id` is
+        // the server's own now (an older dust skips such a queue).
         for text in [DEEZER_0_16, NAVIDROME_0_16] {
             let old: Value = serde_json::from_str(text).unwrap();
             let saved = decode(&old).unwrap();
@@ -299,6 +338,10 @@ mod tests {
             for (track, old) in new["tracks"].as_array_mut().unwrap().iter_mut().zip(old["tracks"].as_array().unwrap()) {
                 track.as_object_mut().unwrap().remove("art");
                 track["cover"] = old["cover"].clone();
+                if !old["server"].is_null() {
+                    assert_eq!(track["id"], old["server"]["id"]);
+                    track["id"] = old["id"].clone();
+                }
             }
             assert_eq!(new, old);
             assert_eq!(decode(&encode(&st)).unwrap().tracks, saved.tracks, "and the new file reads back the same");

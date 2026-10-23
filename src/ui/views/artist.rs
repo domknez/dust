@@ -4,7 +4,7 @@
 
 use super::collection::header_band;
 use super::home::card_row;
-use crate::model::{Item, Likeable, Section};
+use crate::model::{Item, Likeable, Section, TrackId};
 use crate::player::{State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
@@ -30,7 +30,7 @@ const DISCOGRAPHY: [(&str, &str); 3] = [("Albums", "Albums"), ("Singles & EPs", 
 
 impl App {
     pub(in crate::ui) fn artist_view(&mut self, ui: &mut Ui, st: &Status, artist: &ArtistView, acts: &mut Actions) {
-        let now = (st.track.as_ref().map(|t| t.id), st.state == State::Playing);
+        let now = (st.track.as_ref().map(|t| &t.id), st.state == State::Playing);
 
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             let width = ui.available_width();
@@ -72,7 +72,7 @@ impl App {
             if popular > 0 {
                 caption(ui, left.min, "POPULAR");
                 let columns = Columns::popular(left.left(), left.width());
-                let liked = |id| self.library.likes.likes.tracks.contains(&id);
+                let liked = |id: &TrackId| self.library.likes.likes.tracks.contains(id);
                 let table = Table {
                     tracks: &page.top,
                     columns: &columns,
