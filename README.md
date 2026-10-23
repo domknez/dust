@@ -317,11 +317,16 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 src/
 ├── main.rs            entry point: run the app, or a command-line mode (cli.rs)
 ├── log.rs             DUST_LOG levels, log macros and the log file
-├── deezer/            Deezer client: session, catalogue, streaming, listen reports, stream cipher;
-│                      models.rs holds the data types every source fills
+├── model/             the types every source fills and the player and UI read: tracks (with what
+│                      only their source needs in Track::origin), cards, pages, playlists, likes,
+│                      lyrics, quality, cover art (Art, resolved to URLs by its source), errors
+├── deezer/            Deezer client: session, catalogue, streaming and playback, listen reports,
+│                      stream cipher
 ├── subsonic/          Navidrome / Subsonic client: token auth, catalogue, likes, playlists, streams
 ├── provider.rs        the source in use (Deezer or a server) behind one interface
-├── player/            playback engine thread, queue (pure, tested), decoding, listen tracking
+├── media/             decoding any source's byte stream: container reader, decoder, seeks,
+│                      resampling, stall-proof network reads
+├── player/            playback engine thread, queue (pure, tested), listen tracking, saved queue
 ├── output/            audio outputs behind the Sink trait
 │   ├── local.rs       sound card (cpal)
 │   └── airplay/       AirPlay 1 & 2 sender: discovery, RTSP, handshakes, packets, network threads,
