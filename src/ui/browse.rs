@@ -5,7 +5,7 @@ use super::history::History;
 use super::load::Load;
 use super::state::{PlayMode, View};
 use crate::deezer::Link;
-use crate::model::{AlbumInfo, ArtistPage, Error, Item, Playlist, SearchResults, Section, Track};
+use crate::model::{AlbumInfo, ArtistPage, Error, Item, ItemKind, Playlist, SearchResults, Section, Track};
 
 /// The page in the main area and its content. Replaced wholesale along with the
 /// [`Library`](super::library::Library) when the source changes.
@@ -120,14 +120,14 @@ fn own_playlists(playlists: &[Playlist], query: &str) -> Option<Section> {
         .iter()
         .filter(|p| !query.is_empty() && p.title.to_lowercase().contains(&query))
         .map(|p| Item {
-            kind: "playlist".into(),
+            kind: ItemKind::Playlist,
             id: p.id.to_string(),
             title: p.title.clone(),
             subtitle: format!("{} tracks", p.count),
             picture: p.picture.clone(),
         })
         .collect();
-    (!items.is_empty()).then(|| Section { title: "Your playlists".into(), layout: "search".into(), items })
+    (!items.is_empty()).then(|| Section { title: "Your playlists".into(), items })
 }
 
 #[cfg(test)]

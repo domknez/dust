@@ -19,7 +19,7 @@ use crate::model::{Error, Quality, Track};
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
 use crate::player::saved::QueueFiles;
-use crate::player::{Cmd, Output, PlayerHandle, Repeat, Status};
+use crate::player::{Cmd, Flow, Output, PlayerHandle, Repeat, Status};
 use crate::provider::Provider;
 use crate::settings::Prefs;
 use eframe::egui::{self, Key, Margin, Ui};
@@ -99,7 +99,7 @@ pub struct App {
     /// What the saved queue file last reflected (queue snapshot, index, Flow);
     /// None until the saved queue was offered to the player after login, so the
     /// empty startup queue never overwrites it.
-    pub(super) queue_saved: Option<(usize, usize, Option<String>)>,
+    pub(super) queue_saved: Option<(usize, usize, Option<Flow>)>,
     /// A restore was sent and the player hasn't shown the queue yet.
     pub(super) restore_pending: bool,
 }
@@ -694,7 +694,7 @@ mod tests {
     fn cached_pages_load_once_and_track_lists_each_time() {
         let mut t = logged_in();
         assert!(t.app.library.home.is_loading(), "home loads with the source");
-        t.app.library.home = Load::Ready(vec![Section { title: "Mixes".into(), layout: String::new(), items: Vec::new() }]);
+        t.app.library.home = Load::Ready(vec![Section { title: "Mixes".into(), items: Vec::new() }]);
         let jobs = t.jobs.waiting();
         t.update(Action::Open(View::Loved));
         assert!(t.app.browse.tracks_load.is_loading());

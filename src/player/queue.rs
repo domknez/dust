@@ -3,18 +3,12 @@
 
 use crate::model::Track;
 
-/// Endless Flow: the queue refills itself from Deezer as it runs out.
-#[derive(Clone, Debug, PartialEq)]
+/// Endless Flow (a music server's Radio): the queue refills itself from the source
+/// as it runs out.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Flow {
     /// Mood/genre config ("chill", ...); None for plain Flow.
     pub mood: Option<String>,
-}
-
-impl Flow {
-    /// Identifier the UI uses to highlight the active Flow tile.
-    pub fn id(&self) -> String {
-        self.mood.clone().unwrap_or_else(|| "default".into())
-    }
 }
 
 /// What removing an entry did to the current track.

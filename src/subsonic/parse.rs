@@ -2,7 +2,7 @@
 //! fields they fill, so everything falls back to the classic Subsonic fields.
 
 use super::{api, local_id};
-use crate::model::{Art, ArtistRef, Item, LyricLine, Lyrics, Origin, Playlist, Result, Section, ServerSong, Track};
+use crate::model::{Art, ArtistRef, Item, ItemKind, LyricLine, Lyrics, Origin, Playlist, Result, Section, ServerSong, Track};
 use serde_json::Value;
 
 /// The `subsonic-response` object of a reply, or the server's error.
@@ -90,7 +90,7 @@ pub fn songs(values: Vec<&Value>) -> Vec<Track> {
 pub fn album_item(v: &Value, subtitle: String) -> Option<Item> {
     let id = text(&v["id"]);
     (!id.is_empty()).then(|| Item {
-        kind: "album".into(),
+        kind: ItemKind::Album,
         id,
         title: Some(text(&v["name"])).filter(|n| !n.is_empty()).unwrap_or_else(|| text(&v["title"])),
         subtitle,
@@ -111,7 +111,7 @@ pub fn artist_item(v: &Value) -> Option<Item> {
     let id = text(&v["id"]);
     let albums = number(&v["albumCount"]);
     (!id.is_empty()).then(|| Item {
-        kind: "artist".into(),
+        kind: ItemKind::Artist,
         id,
         title: text(&v["name"]),
         subtitle: match albums {
@@ -187,7 +187,7 @@ pub fn discography(artist: &Value) -> Vec<Section> {
         .filter(|(items, _)| !items.is_empty())
         .map(|(mut dated, title)| {
             dated.sort_by_key(|d| std::cmp::Reverse(d.0));
-            Section { title: title.into(), layout: "artist".into(), items: dated.into_iter().map(|(_, item)| item).collect() }
+            Section { title: title.into(), items: dated.into_iter().map(|(_, item)| item).collect() }
         })
         .collect()
 }
@@ -275,7 +275,7 @@ mod tests {
         let r = fixture("album_list");
         let cards = albums(list(&r["albumList2"], "album"));
         assert_eq!(cards.len(), 4);
-        assert!(cards.iter().all(|c| c.kind == "album" && c.picture.as_ref().is_some_and(|p| p.as_str().starts_with("al-"))));
+        assert!(cards.iter().all(|c| c.kind == ItemKind::Album && c.picture.as_ref().is_some_and(|p| p.as_str().starts_with("al-"))));
         let pulse = cards.iter().find(|c| c.title == "Single Pulse").unwrap();
         assert_eq!(pulse.subtitle, "Square Wave Trio");
     }

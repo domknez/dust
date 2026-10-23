@@ -2,7 +2,7 @@
 //! current one, where it was, and whether it was endless Flow. Each music source
 //! keeps its own: Deezer's in `queue.json`, a music server's in `queue-<key>.json`.
 
-use super::Status;
+use super::{Flow, Status};
 use crate::model::{Art, ArtistRef, DeezerSong, Episode, Origin, ServerSong, Track};
 use crate::settings;
 use serde_json::{Value, json};
@@ -21,8 +21,8 @@ pub struct Saved {
     pub tracks: Vec<Track>,
     pub index: usize,
     pub position: f64,
-    /// Some(mood) when it was endless Flow (None = plain Flow).
-    pub flow: Option<Option<String>>,
+    /// Set when it was endless Flow.
+    pub flow: Option<Flow>,
 }
 
 /// Where the queue files are: next to the settings, or (tests) any folder.
@@ -75,12 +75,11 @@ impl QueueFiles {
 }
 
 fn encode(st: &Status) -> Value {
-    let flow = st.flow.as_ref().map(|id| if id == "default" { Value::Null } else { Value::String(id.clone()) });
     json!({
         "version": VERSION,
         "index": st.index,
         "position": st.position,
-        "flow": flow.map(|mood| json!({ "mood": mood })),
+        "flow": st.flow.as_ref().map(|flow| json!({ "mood": flow.mood })),
         "tracks": st.queue.iter().map(encode_track).collect::<Vec<_>>(),
     })
 }
@@ -94,7 +93,7 @@ fn decode(v: &Value) -> Option<Saved> {
     if index >= tracks.len() {
         return None;
     }
-    let flow = v["flow"].as_object().map(|f| f.get("mood").and_then(Value::as_str).map(str::to_string));
+    let flow = v["flow"].as_object().map(|f| Flow { mood: f.get("mood").and_then(Value::as_str).map(str::to_string) });
     Some(Saved { tracks, index, position: v["position"].as_f64().unwrap_or(0.0).max(0.0), flow })
 }
 
@@ -201,16 +200,18 @@ mod tests {
         }
     }
 
-    fn status(flow: Option<&str>) -> Status {
-        Status { queue: Arc::new(vec![track(1), track(2)]), index: 1, position: 42.5, flow: flow.map(str::to_string), ..Default::default() }
+    fn status(flow: Option<Flow>) -> Status {
+        Status { queue: Arc::new(vec![track(1), track(2)]), index: 1, position: 42.5, flow, ..Default::default() }
     }
 
     #[test]
     fn round_trips() {
         let saved = decode(&encode(&status(None))).unwrap();
         assert_eq!(saved, Saved { tracks: vec![track(1), track(2)], index: 1, position: 42.5, flow: None });
-        assert_eq!(decode(&encode(&status(Some("default")))).unwrap().flow, Some(None));
-        assert_eq!(decode(&encode(&status(Some("chill")))).unwrap().flow, Some(Some("chill".into())));
+        let plain = Flow { mood: None };
+        assert_eq!(decode(&encode(&status(Some(plain.clone())))).unwrap().flow, Some(plain));
+        let chill = Flow { mood: Some("chill".into()) };
+        assert_eq!(decode(&encode(&status(Some(chill.clone())))).unwrap().flow, Some(chill));
     }
 
     #[test]
@@ -257,7 +258,7 @@ mod tests {
     #[test]
     fn queues_saved_by_0_16_still_load() {
         let saved = decode(&serde_json::from_str(DEEZER_0_16).unwrap()).unwrap();
-        assert_eq!((saved.index, saved.position, saved.flow.clone()), (1, 61.3, Some(Some("chill".into()))));
+        assert_eq!((saved.index, saved.position, saved.flow.clone()), (1, 61.3, Some(Flow { mood: Some("chill".into()) })));
         let [song, episode] = &saved.tracks[..] else { panic!("two tracks") };
         assert_eq!((song.id, song.title.as_str(), song.album_id.as_str(), song.duration), (3135553, "One More Time", "302127", 320));
         assert_eq!(
@@ -287,9 +288,13 @@ mod tests {
         for text in [DEEZER_0_16, NAVIDROME_0_16] {
             let old: Value = serde_json::from_str(text).unwrap();
             let saved = decode(&old).unwrap();
-            let flow = saved.flow.clone().map(|mood| mood.unwrap_or_else(|| "default".into()));
-            let st =
-                Status { queue: Arc::new(saved.tracks.clone()), index: saved.index, position: saved.position, flow, ..Default::default() };
+            let st = Status {
+                queue: Arc::new(saved.tracks.clone()),
+                index: saved.index,
+                position: saved.position,
+                flow: saved.flow.clone(),
+                ..Default::default()
+            };
             let mut new = encode(&st);
             for (track, old) in new["tracks"].as_array_mut().unwrap().iter_mut().zip(old["tracks"].as_array().unwrap()) {
                 track.as_object_mut().unwrap().remove("art");

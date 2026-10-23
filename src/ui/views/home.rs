@@ -1,7 +1,7 @@
 //! Home: a greeting, the Flow panel with its moods, then Deezer's recommendation
 //! sections as horizontally scrolling rows of cards.
 
-use crate::model::{Item, Section};
+use crate::model::{Item, ItemKind, Section};
 use crate::player::{Cmd, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
@@ -68,16 +68,17 @@ pub(in crate::ui) fn card_row(
     acts: &mut Actions,
 ) {
     // Deezer's Flow, or a music server's Radio (random songs by genre) in its place.
-    let is_radio = items.iter().all(|it| it.kind == "radio");
-    let is_flow = is_radio || items.iter().all(|it| it.kind == "flow");
+    let is_radio = items.iter().all(|it| matches!(it.kind, ItemKind::Radio { .. }));
+    let is_flow = is_radio || items.iter().all(|it| matches!(it.kind, ItemKind::Flow { .. }));
     let items: Vec<&Item> = items.iter().filter(|it| is_flow || Coll::from_item(it).is_some()).collect();
     if items.is_empty() {
         return;
     }
     if is_flow {
         ui.add_space(18.0);
-        let moods: Vec<(&str, &str)> = items.iter().filter(|it| it.id != "default").map(|it| (it.id.as_str(), it.title.as_str())).collect();
-        if let Some(mood) = widgets::flow_panel(ui, &moods, st.flow.as_deref(), is_radio) {
+        let moods: Vec<(&str, &str)> = items.iter().filter_map(|it| Some((it.kind.tuning()?, it.title.as_str()))).collect();
+        let playing = st.flow.as_ref().and_then(|flow| flow.mood.as_deref());
+        if let Some(mood) = widgets::flow_panel(ui, &moods, playing, is_radio) {
             acts.push(Action::Player(Cmd::PlayFlow(mood)));
         }
         return;
@@ -111,6 +112,6 @@ pub(in crate::ui) fn card_row(
 /// Section order with the Flow section first, as on Deezer.
 fn flow_first(sections: &[Section]) -> Vec<usize> {
     let mut order: Vec<usize> = (0..sections.len()).collect();
-    order.sort_by_key(|&i| !sections[i].items.iter().any(|it| it.kind == "flow" || it.kind == "radio"));
+    order.sort_by_key(|&i| !sections[i].items.iter().any(|it| it.kind.is_endless()));
     order
 }

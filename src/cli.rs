@@ -10,7 +10,7 @@
 //! - `--debug-artist <id>`         an artist page: top tracks and card sections
 //! - `--debug-link <url>`          what a pasted Deezer link resolves to
 //! - `--debug-likes`               how many tracks, albums and artists the account likes
-//! - `--debug-tracks <kind> <id>`  what a home item plays (flow|mix|album|artist|playlist|trackmix)
+//! - `--debug-tracks <kind> <id>`  what a home item plays (mix|album|artist|playlist|trackmix, or flow [mood])
 //! - `--debug-stream <playlist> [n]`  stream resolution per track, incl. fallbacks
 //! - `--debug-decode <playlist> [quality] [start s]`  decrypt and decode 10 s of the first track (no sound)
 
@@ -215,9 +215,9 @@ fn find_speaker(target: &str) -> Device {
 
 fn debug_home(client: &Deezer) {
     for sec in client.home().expect("home") {
-        println!("\n## {} [{}] ({} items)", sec.title, sec.layout, sec.items.len());
+        println!("\n## {} ({} items)", sec.title, sec.items.len());
         for it in sec.items.iter().take(8) {
-            println!("  - {}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
+            println!("  - {:?}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
         }
     }
 }
@@ -229,7 +229,7 @@ fn debug_search(client: &Deezer, query: &str) {
     for sec in results.sections {
         println!("\n## {} ({} items)", sec.title, sec.items.len());
         for it in sec.items.iter().take(4) {
-            println!("  - {}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
+            println!("  - {:?}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
         }
     }
 }
@@ -245,7 +245,7 @@ fn debug_artist(client: &Deezer, id: &str) {
     for sec in page.sections {
         println!("\n## {} ({} items)", sec.title, sec.items.len());
         for it in sec.items.iter().take(4) {
-            println!("  - {}:{} | {} | {}", it.kind, it.id, it.title, it.subtitle);
+            println!("  - {:?}:{} | {} | {}", it.kind, it.id, it.title, it.subtitle);
         }
     }
 }
@@ -260,7 +260,7 @@ fn debug_api(client: &Deezer, method: &str, body: &str) {
 
 fn debug_tracks(client: &Deezer, kind: &str, id: &str) {
     let tracks = match kind {
-        "flow" => client.flow(Some(id).filter(|i| !i.is_empty() && *i != "default")),
+        "flow" => client.flow(Some(id).filter(|mood| !mood.is_empty())),
         "mix" => client.mix(id),
         "album" => client.album(id),
         "artist" => client.artist_top(id),

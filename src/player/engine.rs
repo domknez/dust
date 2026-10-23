@@ -192,7 +192,7 @@ impl Engine {
             Cmd::Restore { tracks, index, position, flow } => {
                 if self.queue.is_empty() && self.stream.is_none() && index < tracks.len() {
                     self.queue.replace(tracks, index);
-                    self.queue.flow = flow.map(|mood| Flow { mood });
+                    self.queue.flow = flow;
                     self.restored_at = Some(position);
                 }
             }
@@ -625,7 +625,7 @@ impl Engine {
         if let Some(snapshot) = self.queue.take_snapshot() {
             st.queue = Arc::new(snapshot);
         }
-        st.flow = self.queue.flow.as_ref().map(Flow::id);
+        st.flow = self.queue.flow.clone();
         drop(st);
         if self.playing != self.awake.is_some() {
             log_debug!("{} keeping the system awake", if self.playing { "start" } else { "stop" });
@@ -1006,11 +1006,11 @@ mod tests {
     fn restored_queue_waits_paused_then_resumes_at_its_position() {
         let (mut e, _library, _tx) = engine(FakeLibrary::default());
         let tracks = vec![track(1, 200), track(2, 200)];
-        e.handle(Cmd::Restore { tracks, index: 1, position: 80.0, flow: Some(Some("chill".into())) });
+        e.handle(Cmd::Restore { tracks, index: 1, position: 80.0, flow: Some(Flow { mood: Some("chill".into()) }) });
         {
             let st = e.status.lock().unwrap();
             assert_eq!((st.state, st.track.as_ref().map(|t| t.id), st.position), (State::Paused, Some(2), 80.0));
-            assert_eq!(st.flow.as_deref(), Some("chill"));
+            assert_eq!(st.flow, Some(Flow { mood: Some("chill".into()) }));
         }
         assert_eq!(now_playing(&e), None, "nothing streams before play");
         e.handle(Cmd::Seek(95.0));
@@ -1131,7 +1131,7 @@ mod tests {
         }
         assert!(e.playing, "Flow keeps going");
         assert!(e.queue.index() >= 3, "moved past the first batch");
-        assert_eq!(e.status.lock().unwrap().flow.as_deref(), Some("chill"));
+        assert_eq!(e.status.lock().unwrap().flow, Some(Flow { mood: Some("chill".into()) }));
     }
 
     #[test]

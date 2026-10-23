@@ -1,7 +1,7 @@
 //! Building models from gw-light JSON, which mixes strings and numbers freely.
 
 use super::images::art;
-use crate::model::{AlbumInfo, Art, ArtistPage, ArtistRef, DeezerSong, Episode, Item, Origin, Playlist, Section, Track};
+use crate::model::{AlbumInfo, Art, ArtistPage, ArtistRef, DeezerSong, Episode, Item, ItemKind, Origin, Playlist, Section, Track};
 use serde_json::Value;
 
 /// String field, tolerating numbers and nulls.
@@ -128,11 +128,7 @@ pub fn playlist(v: &Value, me: u64) -> Playlist {
 }
 
 pub fn section(v: &Value) -> Section {
-    Section {
-        title: text(&v["title"]),
-        layout: text(&v["layout"]),
-        items: v["items"].as_array().map(|a| a.iter().map(item).collect()).unwrap_or_default(),
-    }
+    Section { title: text(&v["title"]), items: v["items"].as_array().map(|a| a.iter().map(item).collect()).unwrap_or_default() }
 }
 
 /// Most cards a search section shows.
@@ -141,7 +137,7 @@ const SEARCH_SECTION_ITEMS: usize = 24;
 /// A search result list (`ARTIST`, `ALBUM`, `PLAYLIST` data) as a card section.
 pub fn search_section(title: &str, kind: &str, data: &Value) -> Section {
     let items = data.as_array().map(|a| a.iter().filter_map(|v| card_item(kind, v)).take(SEARCH_SECTION_ITEMS).collect());
-    Section { title: title.into(), layout: "search".into(), items: items.unwrap_or_default() }
+    Section { title: title.into(), items: items.unwrap_or_default() }
 }
 
 /// An artist, album or playlist from gw-light data as a card.
@@ -158,7 +154,7 @@ pub fn card_item(kind: &str, v: &Value) -> Option<Item> {
         return None;
     }
     let (title, subtitle) = english_texts(kind, &id, v, text(title), String::new());
-    Some(Item { kind: kind.into(), id, title, subtitle, picture })
+    Some(Item { kind: item_kind(kind, &id), id, title, subtitle, picture })
 }
 
 /// Most of the artist's other releases an album page lists.
@@ -179,7 +175,7 @@ pub fn album_info(page: &Value) -> AlbumInfo {
         .filter(|v| text(&v["ALB_ID"]) != id && !text(&v["ALB_ID"]).is_empty())
         .take(MORE_RELEASES)
         .map(|v| Item {
-            kind: "album".into(),
+            kind: ItemKind::Album,
             id: text(&v["ALB_ID"]),
             title: text(&v["ALB_TITLE"]),
             subtitle: year(v),
@@ -217,7 +213,7 @@ pub fn discography(data: &Value) -> Vec<Section> {
             None => kind.to_string(),
         };
         let picture = art("cover", &text(&v["ALB_PICTURE"]));
-        groups[group].1.push((date, Item { kind: "album".into(), id, title: text(&v["ALB_TITLE"]), subtitle, picture }));
+        groups[group].1.push((date, Item { kind: ItemKind::Album, id, title: text(&v["ALB_TITLE"]), subtitle, picture }));
     }
     groups
         .into_iter()
@@ -225,7 +221,7 @@ pub fn discography(data: &Value) -> Vec<Section> {
         .map(|(title, mut dated)| {
             // ISO dates sort as text; the sort is stable, so ties keep Deezer's order.
             dated.sort_by(|a, b| b.0.cmp(&a.0));
-            Section { title: title.into(), layout: "artist".into(), items: dated.into_iter().map(|(_, item)| item).collect() }
+            Section { title: title.into(), items: dated.into_iter().map(|(_, item)| item).collect() }
         })
         .collect()
 }
@@ -240,7 +236,7 @@ pub fn artist_page(page: &Value, discography_data: &Value) -> ArtistPage {
     for (title, kind, key) in [("Featured in", "playlist", "RELATED_PLAYLIST"), ("Fans also like", "artist", "RELATED_ARTISTS")] {
         let items = cards(kind, &page[key]["data"]);
         if !items.is_empty() {
-            sections.push(Section { title: title.into(), layout: "artist".into(), items });
+            sections.push(Section { title: title.into(), items });
         }
     }
     ArtistPage {
@@ -258,7 +254,24 @@ pub fn item(v: &Value) -> Item {
     // Deezer localises item texts by the listener's location, ignoring the requested
     // language; rebuild them in English from the raw data where we can.
     let (title, subtitle) = english_texts(&kind, &id, data, text(&v["title"]), text(&v["subtitle"]));
-    Item { kind, id, title, subtitle, picture }
+    Item { kind: item_kind(&kind, &id), id, title, subtitle, picture }
+}
+
+/// What a card of Deezer's `type` opens. Flow's `default` card is plain Flow, the
+/// others its moods.
+fn item_kind(kind: &str, id: &str) -> ItemKind {
+    let tuning = || Some(id.to_string()).filter(|id| id != "default");
+    match kind {
+        "album" => ItemKind::Album,
+        "artist" => ItemKind::Artist,
+        "playlist" => ItemKind::Playlist,
+        "smarttracklist" => ItemKind::Mix,
+        "track" => ItemKind::TrackMix,
+        "show" => ItemKind::Show,
+        "flow" => ItemKind::Flow { mood: tuning() },
+        "radio" => ItemKind::Radio { genre: tuning() },
+        other => ItemKind::Other(other.to_string()),
+    }
 }
 
 /// 1234567 -> "1,234,567"
@@ -400,7 +413,7 @@ mod tests {
             &json!({"SHOW_ID": "724752", "SHOW_NAME": "Lex Fridman Podcast", "SHOW_ART_MD5": "fa87", "LABEL_NAME": "Lex Fridman"}),
         )
         .unwrap();
-        assert_eq!((card.kind.as_str(), card.title.as_str(), card.subtitle.as_str()), ("show", "Lex Fridman Podcast", "Lex Fridman"));
+        assert_eq!((&card.kind, card.title.as_str(), card.subtitle.as_str()), (&ItemKind::Show, "Lex Fridman Podcast", "Lex Fridman"));
         assert_eq!(card.picture, art("talk", "fa87"));
     }
 
@@ -423,12 +436,28 @@ mod tests {
     }
 
     #[test]
+    fn home_items_have_kinds() {
+        let kind = |v: Value| item(&v).kind;
+        assert_eq!(kind(json!({"type": "playlist", "id": "1479458365"})), ItemKind::Playlist);
+        assert_eq!(kind(json!({"type": "album", "id": "302127"})), ItemKind::Album);
+        assert_eq!(kind(json!({"type": "artist", "id": "27"})), ItemKind::Artist);
+        assert_eq!(kind(json!({"type": "smarttracklist", "id": "discovery"})), ItemKind::Mix);
+        assert_eq!(kind(json!({"type": "track", "id": "4229026412"})), ItemKind::TrackMix);
+        assert_eq!(kind(json!({"type": "show", "id": "724752"})), ItemKind::Show);
+        assert_eq!(kind(json!({"type": "flow", "id": "default", "title": "Flow"})), ItemKind::Flow { mood: None });
+        assert_eq!(kind(json!({"type": "flow", "id": "chill"})), ItemKind::Flow { mood: Some("chill".into()) });
+        assert_eq!(kind(json!({"type": "channel", "id": "x"})), ItemKind::Other("channel".into()));
+        let flow = item(&json!({"type": "flow", "id": "hip-hop", "title": "Hip-hop", "pictures": [{"type": "misc", "md5": "f1"}]}));
+        assert_eq!((flow.title.as_str(), flow.kind.tuning(), flow.picture), ("Hip Hop", Some("hip-hop"), art("misc", "f1")));
+    }
+
+    #[test]
     fn search_sections() {
         let artists = json!([{"ART_ID": "27", "ART_NAME": "Daft Punk", "ART_PICTURE": "abc", "NB_FAN": 2}, {"ART_ID": "0"}]);
         let s = search_section("Artists", "artist", &artists);
         assert_eq!(s.items.len(), 1);
         let a = &s.items[0];
-        assert_eq!((a.kind.as_str(), a.id.as_str(), a.title.as_str(), a.subtitle.as_str()), ("artist", "27", "Daft Punk", "2 fans"));
+        assert_eq!((&a.kind, a.id.as_str(), a.title.as_str(), a.subtitle.as_str()), (&ItemKind::Artist, "27", "Daft Punk", "2 fans"));
         assert_eq!(a.picture, art("artist", "abc"));
         let albums = json!([{"ALB_ID": 302127, "ALB_TITLE": "Discovery", "ALB_PICTURE": "def", "ART_NAME": "Daft Punk"}]);
         let b = &search_section("Albums", "album", &albums).items[0];

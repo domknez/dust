@@ -1,6 +1,6 @@
 //! What the UI is showing and what it can open: views, collections and their sources.
 
-use crate::model::{Art, ArtistRef, Item, Playlist, Track};
+use crate::model::{Art, ArtistRef, Item, ItemKind, Playlist, Track};
 use crate::player::Cmd;
 use crate::provider::Provider;
 
@@ -113,16 +113,16 @@ impl Coll {
         }
     }
 
-    /// None for item types we don't open (flows play directly; channels, shows, ...).
+    /// None for cards we don't open (Flow and Radio play directly; channels, ...).
     pub fn from_item(it: &Item) -> Option<Self> {
-        let (source, kind) = match it.kind.as_str() {
-            "playlist" => (Source::Playlist(it.id.parse().ok()?), "PLAYLIST"),
-            "album" => (Source::Album(it.id.clone()), "ALBUM"),
-            "artist" => (Source::Artist(it.id.clone()), "ARTIST · TOP TRACKS"),
-            "smarttracklist" => (Source::Mix(it.id.clone()), "MIX"),
-            "track" => (Source::TrackMix(it.id.clone()), "TRACK MIX"),
-            "show" => (Source::Show(it.id.clone()), "PODCAST"),
-            _ => return None,
+        let (source, kind) = match &it.kind {
+            ItemKind::Playlist => (Source::Playlist(it.id.parse().ok()?), "PLAYLIST"),
+            ItemKind::Album => (Source::Album(it.id.clone()), "ALBUM"),
+            ItemKind::Artist => (Source::Artist(it.id.clone()), "ARTIST · TOP TRACKS"),
+            ItemKind::Mix => (Source::Mix(it.id.clone()), "MIX"),
+            ItemKind::TrackMix => (Source::TrackMix(it.id.clone()), "TRACK MIX"),
+            ItemKind::Show => (Source::Show(it.id.clone()), "PODCAST"),
+            ItemKind::Flow { .. } | ItemKind::Radio { .. } | ItemKind::Other(_) => return None,
         };
         Some(Coll { source, kind, title: it.title.clone(), subtitle: it.subtitle.clone(), picture: it.picture.clone() })
     }
@@ -176,8 +176,8 @@ mod tests {
     use super::*;
     use crate::model::{DeezerSong, Origin};
 
-    fn item(kind: &str, id: &str) -> Item {
-        Item { kind: kind.into(), id: id.into(), title: "T".into(), subtitle: "S".into(), picture: None }
+    fn item(kind: ItemKind, id: &str) -> Item {
+        Item { kind, id: id.into(), title: "T".into(), subtitle: "S".into(), picture: None }
     }
 
     #[test]
@@ -225,12 +225,13 @@ mod tests {
 
     #[test]
     fn items_map_to_sources() {
-        assert_eq!(Coll::from_item(&item("playlist", "42")).map(|c| c.source), Some(Source::Playlist(42)));
-        assert_eq!(Coll::from_item(&item("smarttracklist", "discovery")).map(|c| c.source), Some(Source::Mix("discovery".into())));
-        assert!(Coll::from_item(&item("artist", "27")).is_some_and(|c| c.round()));
-        assert!(Coll::from_item(&item("channel", "x")).is_none());
-        assert_eq!(Coll::from_item(&item("track", "4229026412")).map(|c| c.source), Some(Source::TrackMix("4229026412".into())));
-        assert!(Coll::from_item(&item("playlist", "not-a-number")).is_none());
-        assert_eq!(Coll::from_item(&item("show", "724752")).map(|c| c.source), Some(Source::Show("724752".into())));
+        assert_eq!(Coll::from_item(&item(ItemKind::Playlist, "42")).map(|c| c.source), Some(Source::Playlist(42)));
+        assert_eq!(Coll::from_item(&item(ItemKind::Mix, "discovery")).map(|c| c.source), Some(Source::Mix("discovery".into())));
+        assert!(Coll::from_item(&item(ItemKind::Artist, "27")).is_some_and(|c| c.round()));
+        assert!(Coll::from_item(&item(ItemKind::Other("channel".into()), "x")).is_none());
+        assert_eq!(Coll::from_item(&item(ItemKind::TrackMix, "4229026412")).map(|c| c.source), Some(Source::TrackMix("4229026412".into())));
+        assert!(Coll::from_item(&item(ItemKind::Playlist, "not-a-number")).is_none());
+        assert_eq!(Coll::from_item(&item(ItemKind::Show, "724752")).map(|c| c.source), Some(Source::Show("724752".into())));
+        assert!(Coll::from_item(&item(ItemKind::Flow { mood: None }, "default")).is_none(), "Flow plays, it doesn't open");
     }
 }

@@ -14,6 +14,8 @@ mod listens;
 mod queue;
 pub mod saved;
 
+pub use queue::Flow;
+
 use crate::model::{Quality, Track};
 use crate::output::airplay::Device;
 use crate::provider::Provider;
@@ -116,12 +118,12 @@ pub enum Cmd {
     /// Drop everything after the current track (and stop endless Flow).
     ClearUpcoming,
     /// Put back a queue saved by an earlier session, paused at a position; play
-    /// continues from there. `flow`: Some(mood) when it was endless Flow.
+    /// continues from there. `flow`: set when it was endless Flow.
     Restore {
         tracks: Vec<Track>,
         index: usize,
         position: f64,
-        flow: Option<Option<String>>,
+        flow: Option<Flow>,
     },
 }
 
@@ -159,8 +161,8 @@ pub struct Status {
     pub shuffle: bool,
     pub repeat: Repeat,
     pub sleep: Option<Sleep>,
-    /// Active Flow config ("default" for plain Flow), if playing Flow.
-    pub flow: Option<String>,
+    /// The endless Flow being played, if any.
+    pub flow: Option<Flow>,
     pub output: String,
     pub error: Option<String>,
 }
