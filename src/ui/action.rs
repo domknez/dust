@@ -210,8 +210,8 @@ impl App {
             TrackMenu::AddTo(playlist) => self.edit_playlist(ctx, Edit::Add { playlist, tracks: vec![track] }),
             TrackMenu::NewPlaylist => self.new_playlist(vec![track]),
             TrackMenu::Remove => {
-                if let Some(playlist) = self.showing_own_playlist() {
-                    self.edit_playlist(ctx, Edit::Remove { playlist: playlist.id, tracks: vec![track.id] });
+                if let Some(playlist) = self.showing_own_playlist().map(|p| p.id) {
+                    self.edit_playlist(ctx, Edit::Remove { playlist, tracks: vec![track.id] });
                 }
             }
         }

@@ -113,8 +113,8 @@ pub enum TrackMenu {
     Remove,
 }
 
-/// Right-click menu for a track: Play next, Add to queue, Add to playlist ›, and
-/// Remove from this playlist when `removable`.
+/// Right-click menu for a track: Play next, Add to queue, Add to playlist › (the
+/// own ones of `playlists`), and Remove from this playlist when `removable`.
 pub fn track_menu(resp: &Response, playlists: &[Playlist], removable: bool) -> Option<TrackMenu> {
     let mut pick = None;
     resp.context_menu(|ui| {
@@ -142,8 +142,8 @@ pub fn track_menu(resp: &Response, playlists: &[Playlist], removable: bool) -> O
     pick
 }
 
-/// "Add to playlist ›" row with a submenu: New playlist…, then the own playlists.
-/// Returns AddTo or NewPlaylist when one was chosen.
+/// "Add to playlist ›" row with a submenu: New playlist…, then those of
+/// `playlists` the account owns. Returns AddTo or NewPlaylist when one was chosen.
 pub fn add_to_playlist(ui: &mut Ui, playlists: &[Playlist]) -> Option<TrackMenu> {
     let row = menu_row(ui, Some(Icon::Plus), "Add to playlist", None, false, colors().text);
     let chevron = egui::Rect::from_center_size(pos2(row.rect.right() - 16.0, row.rect.center().y), Vec2::splat(12.0));
@@ -155,11 +155,12 @@ pub fn add_to_playlist(ui: &mut Ui, playlists: &[Playlist]) -> Option<TrackMenu>
         if menu_row(ui, Some(Icon::Plus), "New playlist…", None, false, colors().accent).clicked() {
             pick = Some(TrackMenu::NewPlaylist);
         }
-        if !playlists.is_empty() {
+        let own: Vec<&Playlist> = playlists.iter().filter(|p| p.owned).collect();
+        if !own.is_empty() {
             divider(ui);
         }
         egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-            for p in playlists {
+            for p in own {
                 if menu_row(ui, None, &p.title, None, false, colors().text).clicked() {
                     pick = Some(TrackMenu::AddTo(p.clone()));
                 }

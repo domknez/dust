@@ -8,10 +8,11 @@ use crate::ui::covers::Covers;
 use crate::ui::load::Load;
 use crate::ui::state::Coll;
 use crate::ui::style::{colors, metrics, typography as ty};
-use crate::ui::widgets::{self, CardClick, text_left};
-use eframe::egui::{self, RichText, Ui, vec2};
+use crate::ui::widgets::{self, CardClick, Grid, GridColumns, text_left};
+use eframe::egui::{self, Ui, vec2};
 
-const GAP: f32 = 18.0;
+/// Home-sized cards, as many as fit across.
+const CARDS: Grid = Grid { columns: GridColumns::Fit(metrics::HOME_CARD), gap: 18.0, row_gap: 20.0, text: metrics::CARD_TEXT };
 
 impl App {
     pub(in crate::ui) fn artists_page(&mut self, ui: &mut Ui, acts: &mut Actions) {
@@ -35,30 +36,15 @@ fn card_grid(ui: &mut Ui, covers: &mut Covers, title: &str, items: &Load<Vec<Ite
     text_left(ui.painter(), ui.cursor().min + vec2(0.0, 18.0), title, ty::PAGE_TITLE, p.text, 400.0);
     ui.add_space(52.0);
     let Some(items) = items.ready().filter(|items| !items.is_empty()) else {
-        if items.is_loading() {
-            ui.add(egui::Spinner::new().size(22.0));
-        } else if let Some(e) = items.error() {
-            ui.label(RichText::new(e).color(p.danger));
-        } else {
-            ui.label(RichText::new(empty).color(p.dim));
-        }
+        widgets::load_state(ui, items.is_loading(), items.error(), Some(empty));
         return;
     };
-    let card = metrics::HOME_CARD;
+    let colls: Vec<Coll> = items.iter().filter_map(Coll::from_item).collect();
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        let per_row = (((ui.available_width() + GAP) / (card + GAP)).floor() as usize).max(1);
-        for row in items.chunks(per_row) {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = GAP;
-                for coll in row.iter().filter_map(Coll::from_item) {
-                    match widgets::card(ui, covers, &coll) {
-                        CardClick::Open => acts.push(Action::OpenCollection(coll)),
-                        CardClick::Play(mode) => acts.push(Action::PlaySource(coll.source.clone(), mode)),
-                        CardClick::None => {}
-                    }
-                }
-            });
-            ui.add_space(14.0);
-        }
+        CARDS.add(ui, colls.len(), |ui, k| match widgets::card(ui, covers, &colls[k]) {
+            CardClick::Open => acts.push(Action::OpenCollection(colls[k].clone())),
+            CardClick::Play(mode) => acts.push(Action::PlaySource(colls[k].source.clone(), mode)),
+            CardClick::None => {}
+        });
     });
 }

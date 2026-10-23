@@ -93,11 +93,6 @@ fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
 }
 
 impl App {
-    /// The account's playlists that can be changed.
-    pub(in crate::ui) fn own_playlists(&self) -> Vec<Playlist> {
-        self.library.playlists.iter().filter(|p| p.owned).cloned().collect()
-    }
-
     pub(in crate::ui) fn edit_playlist(&mut self, ctx: &egui::Context, edit: Edit) {
         let Some(client) = self.client.clone() else { return };
         self.library.editing.task.start(ctx, move || run(&client, edit));

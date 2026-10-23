@@ -10,7 +10,7 @@ use crate::ui::state::Coll;
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, typography as ty};
 use crate::ui::widgets::{self, CardClick, text_left};
-use eframe::egui::{self, RichText, Sense, Ui, pos2, vec2};
+use eframe::egui::{self, Sense, Ui, pos2, vec2};
 
 /// Height [`card_row`] takes: spacing, section title and one row of cards.
 pub(in crate::ui) const CARD_ROW_HEIGHT: f32 = 26.0 + 20.0 + 10.0 + metrics::HOME_CARD + metrics::CARD_TEXT;
@@ -23,12 +23,8 @@ impl App {
             }
             let home = &self.library.home;
             let Some(sections) = home.ready().filter(|h| !h.is_empty()) else {
-                if home.is_loading() {
-                    ui.add_space(24.0);
-                    ui.add(egui::Spinner::new().size(22.0));
-                } else if let Some(e) = home.error() {
-                    ui.label(RichText::new(e).color(colors().danger));
-                }
+                ui.add_space(24.0);
+                widgets::load_state(ui, home.is_loading(), home.error(), None);
                 return;
             };
             for i in flow_first(sections) {
