@@ -2,6 +2,7 @@
 //! task finishes, or a track is playing (twice a second for the progress bar).
 //!
 //! - [`app`]: state, lifecycle and panel layout
+//! - [`action`]: what the listener did, applied in one place after each frame
 //! - [`views`]: one module per screen or panel
 //! - [`widgets`]: reusable painted components
 //! - [`style`]: colours, type scale, metrics, icons
@@ -13,6 +14,7 @@
 //! - [`notice`]: short messages about things that happened off the page
 //! - [`state`], [`format`], [`covers`]: supporting pieces
 
+mod action;
 mod app;
 mod browse;
 mod covers;

@@ -2,6 +2,7 @@
 
 use crate::output::airplay::Device;
 use crate::player::{Cmd, Output, Status};
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, radius, typography as ty};
@@ -18,7 +19,7 @@ const VOLUME_ROW: f32 = 30.0;
 impl App {
     /// AirPlay icon opening the menu; while a speaker plays, an outlined lime button
     /// with its name.
-    pub(in crate::ui) fn output_button(&mut self, ui: &mut Ui, st: &Status) {
+    pub(in crate::ui) fn output_button(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
         let p = colors();
         let current = st.output.as_str();
         let remote = current != Output::Local.name();
@@ -51,17 +52,15 @@ impl App {
         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         // Opening the menu searches again, so a speaker that went missing (sleep,
         // network change) turns up within a second or two.
-        if resp.clicked()
-            && let Some(discovery) = &self.discovery
-        {
-            discovery.refresh();
+        if resp.clicked() {
+            acts.push(Action::FindSpeakers);
         }
         // Stays open while the volume is dragged; picking a speaker closes it.
         let popup = egui::Popup::menu(&resp).width(MENU_WIDTH).frame(widgets::popover_frame(ui.ctx()));
         popup.close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             ui.set_width(MENU_WIDTH);
-            if let Some(output) = self.output_menu(ui, st, remote) {
-                self.select_output(output);
+            if let Some(output) = self.output_menu(ui, st, remote, acts) {
+                acts.push(Action::Output(output));
                 ui.close();
             }
         });
@@ -69,7 +68,7 @@ impl App {
 
     /// "Play on": this computer and the speakers found, one card per output; the
     /// one playing is raised and carries the volume.
-    fn output_menu(&mut self, ui: &mut Ui, st: &Status, remote: bool) -> Option<Output> {
+    fn output_menu(&mut self, ui: &mut Ui, st: &Status, remote: bool, acts: &mut Actions) -> Option<Output> {
         let p = colors();
         let devices: Vec<Device> =
             self.discovery.as_ref().map(|d| d.devices()).unwrap_or_default().into_iter().filter(|d| d.supported && !d.password).collect();
@@ -86,11 +85,11 @@ impl App {
 
         let mut pick = None;
         let local = if cfg!(target_os = "macos") { "This Mac's speakers" } else { "This computer's speakers" };
-        if self.output_row(ui, st, Output::Local.name(), local, !remote) {
+        if self.output_row(ui, st, Output::Local.name(), local, !remote, acts) {
             pick = Some(Output::Local);
         }
         for device in devices {
-            if self.output_row(ui, st, &device.name, &device.kind(), st.output == device.name) {
+            if self.output_row(ui, st, &device.name, &device.kind(), st.output == device.name, acts) {
                 pick = Some(Output::AirPlay(device));
             }
         }
@@ -104,7 +103,7 @@ impl App {
 
     /// One output: speaker tile, name and kind, a round check; the current one also
     /// shows the volume. Returns whether it was picked.
-    fn output_row(&mut self, ui: &mut Ui, st: &Status, name: &str, kind: &str, current: bool) -> bool {
+    fn output_row(&mut self, ui: &mut Ui, st: &Status, name: &str, kind: &str, current: bool, acts: &mut Actions) -> bool {
         let p = colors();
         let height = if current { ROW_HEIGHT + VOLUME_ROW } else { ROW_HEIGHT };
         let (card, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
@@ -148,7 +147,7 @@ impl App {
                 let slider = widgets::thin_slider(ui, &mut volume, ui.available_width(), true, false);
                 if slider.changed() {
                     self.volume_drag = Some(volume);
-                    self.player.send(Cmd::Volume(volume));
+                    acts.push(Action::Player(Cmd::Volume(volume)));
                 }
                 if slider.drag_stopped() || (!slider.dragged() && !slider.hovered() && self.volume_drag.is_some()) {
                     self.volume_drag = None;

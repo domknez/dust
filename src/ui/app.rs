@@ -1,6 +1,7 @@
 //! The [`App`]: UI state, its lifecycle (login, background loads, settings) and the
 //! top-level panel layout. Screens are drawn by the modules in `views/`.
 
+use super::action::Actions;
 use super::browse::Browse;
 use super::covers::Covers;
 use super::history::Visit;
@@ -68,12 +69,6 @@ pub struct App {
     pub(super) unmuted_volume: f32,
     /// In mini player mode: the full window's size, restored on the way back.
     pub(super) mini_player: Option<egui::Vec2>,
-    /// An artist name was clicked somewhere this frame; opened after drawing.
-    pub(super) pending_artist: Option<crate::deezer::ArtistRef>,
-    /// Same for an album (player bar or mini player title / cover).
-    pub(super) pending_album: Option<Coll>,
-    /// A heart outside the content area (player bar) was clicked.
-    pub(super) pending_like: Option<deezer::Likeable>,
 
     // Settings
     /// Saved preferences (quality, theme, the sidebar's playlist list, the last
@@ -139,9 +134,6 @@ impl App {
             volume_drag: None,
             unmuted_volume: volume,
             mini_player: None,
-            pending_artist: None,
-            pending_album: None,
-            pending_like: None,
             restore_output: prefs.output.clone(),
             prefs,
             discovery,
@@ -475,17 +467,10 @@ impl eframe::App for App {
             np.update(&st);
         }
         let p = colors();
+        let mut acts = Actions::default();
         if self.mini_player.is_some() {
-            egui::CentralPanel::default().frame(panel_frame(p.bar, Margin::ZERO)).show(ui, |ui| self.mini_player(ui, &st));
-            // An artist link in the mini player opens the full window on their page.
-            if let Some(artist) = self.pending_artist.take() {
-                self.toggle_mini_player(&ctx);
-                self.open_artist(&ctx, ArtistView::from_ref(&artist));
-            }
-            if let Some(album) = self.pending_album.take() {
-                self.toggle_mini_player(&ctx);
-                self.open_collection(&ctx, album);
-            }
+            egui::CentralPanel::default().frame(panel_frame(p.bar, Margin::ZERO)).show(ui, |ui| self.mini_player(ui, &st, &mut acts));
+            self.apply(&ctx, acts);
             return;
         }
         egui::Panel::bottom("player")
@@ -493,7 +478,7 @@ impl eframe::App for App {
             .resizable(false)
             .show_separator_line(false)
             .frame(panel_frame(p.bar, Margin::symmetric(20, 0)))
-            .show(ui, |ui| self.player_bar(ui, &st));
+            .show(ui, |ui| self.player_bar(ui, &st, &mut acts));
         egui::Panel::left("nav")
             .exact_size(metrics::SIDEBAR_WIDTH)
             .resizable(false)
@@ -507,26 +492,18 @@ impl eframe::App for App {
                 .show_separator_line(false)
                 .frame(panel_frame(p.sidebar, Margin { left: 14, right: 14, top: 0, bottom: 10 }))
                 .show(ui, |ui| match panel {
-                    SidePanel::Queue => self.queue_panel(ui, &st),
-                    SidePanel::Lyrics => self.lyrics_panel(ui, &st),
+                    SidePanel::Queue => self.queue_panel(ui, &st, &mut acts),
+                    SidePanel::Lyrics => self.lyrics_panel(ui, &st, &mut acts),
                 });
         }
         let margin = metrics::CONTENT_MARGIN;
         egui::CentralPanel::default()
             .frame(panel_frame(p.bg, Margin { left: margin, right: margin, top: 0, bottom: 0 }))
             .show(ui, |ui| self.content(ui, &st));
-        if let Some(artist) = self.pending_artist.take() {
-            self.open_artist(&ctx, ArtistView::from_ref(&artist));
-        }
-        if let Some(album) = self.pending_album.take() {
-            self.open_collection(&ctx, album);
-        }
         self.playlist_dialog(&ctx);
         self.settings_window(&ctx);
         self.server_dialog(&ctx);
-        if let Some(what) = self.pending_like.take() {
-            self.toggle_like(&ctx, what);
-        }
+        self.apply(&ctx, acts);
     }
 }
 

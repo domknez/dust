@@ -7,7 +7,7 @@ use crate::model::Error;
 use crate::provider::Provider;
 use crate::ui::app::App;
 use crate::ui::load::Load;
-use crate::ui::state::{Source, View};
+use crate::ui::state::{Source, View, for_playlist};
 use crate::ui::style::{colors, typography as ty};
 use crate::ui::widgets;
 use eframe::egui::{self, Key, RichText};
@@ -62,10 +62,10 @@ fn plural(n: usize) -> String {
 }
 
 fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
-    let ids = |tracks: &[Track]| tracks.iter().filter(|t| t.available && !t.is_episode()).map(|t| t.id).collect::<Vec<_>>();
+    let ids = |tracks: Vec<Track>| for_playlist(tracks).iter().map(|t| t.id).collect::<Vec<_>>();
     Ok(match edit {
         Edit::Add { playlist, tracks } => {
-            let added = client.add_to_playlist(playlist.id, &ids(&tracks))?;
+            let added = client.add_to_playlist(playlist.id, &ids(tracks))?;
             let message = match added {
                 0 => format!("Already in {}", playlist.title),
                 n => format!("Added {} to {}", plural(n), playlist.title),
@@ -73,7 +73,7 @@ fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
             Done { message, playlist: Some(playlist.id), deleted: false }
         }
         Edit::Create { title, private, tracks } => {
-            let id = client.create_playlist(&title, private, &ids(&tracks))?;
+            let id = client.create_playlist(&title, private, &ids(tracks))?;
             Done { message: format!("Created {title}"), playlist: Some(id), deleted: false }
         }
         Edit::Remove { playlist, tracks } => {

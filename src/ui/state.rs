@@ -133,6 +133,18 @@ impl Coll {
     }
 }
 
+/// The tracks of `tracks` that can be played (some can't, yet or where the
+/// listener is).
+pub fn playable(mut tracks: Vec<Track>) -> Vec<Track> {
+    tracks.retain(|t| t.available);
+    tracks
+}
+
+/// The tracks of `tracks` that can go into a playlist: playable songs, no episodes.
+pub fn for_playlist(tracks: Vec<Track>) -> Vec<Track> {
+    playable(tracks).into_iter().filter(|t| !t.is_episode()).collect()
+}
+
 /// The playable tracks of `tracks`, and where `start` lands among them (the next
 /// playable one if `start` itself isn't). None when nothing can be played.
 pub fn playable_from(tracks: &[Track], start: usize) -> Option<(Vec<Track>, usize)> {
