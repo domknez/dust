@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.19.0 (2026-10-23)
+
 - The sidebar's playlist list folds away: click *PLAYLISTS* (a chevron shows which way
   it is); dust remembers it
 - Fixed: with both Deezer and a Navidrome server connected, macOS asked for keychain
