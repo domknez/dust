@@ -1,6 +1,7 @@
 //! The main area: search field on top, then the current page.
 
 use crate::player::Status;
+use crate::ui::action::Actions;
 use crate::ui::app::App;
 use crate::ui::state::View;
 use crate::ui::style::icons::{self, Icon};
@@ -9,7 +10,7 @@ use crate::ui::widgets;
 use eframe::egui::{self, CornerRadius, Key, KeyboardShortcut, Modifiers, Rect, RichText, Sense, Ui, Vec2, pos2, vec2};
 
 impl App {
-    pub(in crate::ui) fn content(&mut self, ui: &mut Ui, st: &Status) {
+    pub(in crate::ui) fn content(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
         ui.add_space(metrics::TOP_INSET);
         ui.horizontal(|ui| {
             self.history_buttons(ui);
@@ -29,15 +30,15 @@ impl App {
         });
         ui.add_space(20.0);
         match &self.browse.view {
-            View::Home => self.home_page(ui, st),
-            View::Playlists => self.playlists_page(ui),
-            View::Search | View::Loved | View::Collection(_) => self.collection_page(ui, st),
-            View::Artists => self.artists_page(ui),
-            View::Albums => self.albums_page(ui),
-            View::Podcasts => self.podcasts_page(ui),
+            View::Home => self.home_page(ui, st, acts),
+            View::Playlists => self.playlists_page(ui, acts),
+            View::Search | View::Loved | View::Collection(_) => self.collection_page(ui, st, acts),
+            View::Artists => self.artists_page(ui, acts),
+            View::Albums => self.albums_page(ui, acts),
+            View::Podcasts => self.podcasts_page(ui, acts),
             View::Artist(artist) => {
                 let artist = artist.as_ref().clone();
-                self.artist_view(ui, st, &artist);
+                self.artist_view(ui, st, &artist, acts);
             }
         }
     }

@@ -3,43 +3,24 @@
 
 use crate::deezer::{Item, Section};
 use crate::player::{Cmd, Status};
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
-use crate::ui::load::Load;
-use crate::ui::state::{Coll, PlayMode, Source, View};
+use crate::ui::state::Coll;
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, typography as ty};
 use crate::ui::widgets::{self, CardClick, text_left};
 use eframe::egui::{self, RichText, Sense, Ui, pos2, vec2};
 
-/// What the listener picked in a row of cards this frame.
-#[derive(Default)]
-pub(in crate::ui) struct CardPicks {
-    open: Option<Coll>,
-    play: Option<(Source, PlayMode)>,
-    flow: Option<Option<String>>,
-}
-
-impl CardPicks {
-    pub(in crate::ui) fn open(&mut self, coll: Coll) {
-        self.open = Some(coll);
-    }
-
-    pub(in crate::ui) fn play(&mut self, source: Source, mode: PlayMode) {
-        self.play = Some((source, mode));
-    }
-}
-
 /// Height [`card_row`] takes: spacing, section title and one row of cards.
 pub(in crate::ui) const CARD_ROW_HEIGHT: f32 = 26.0 + 20.0 + 10.0 + metrics::HOME_CARD + metrics::CARD_TEXT;
 
 impl App {
-    pub(in crate::ui) fn home_page(&mut self, ui: &mut Ui, st: &Status) {
-        let ctx = ui.ctx().clone();
-        let mut picked = CardPicks::default();
-        let mut reload = false;
+    pub(in crate::ui) fn home_page(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            reload = self.home_header(ui);
+            if self.home_header(ui) {
+                acts.push(Action::ReloadHome);
+            }
             let home = &self.library.home;
             let Some(sections) = home.ready().filter(|h| !h.is_empty()) else {
                 if home.is_loading() {
@@ -52,16 +33,10 @@ impl App {
             };
             for i in flow_first(sections) {
                 let section = &sections[i];
-                card_row(ui, &mut self.covers, ("home-row", i), &section.title, &section.items, st, &mut picked);
+                card_row(ui, &mut self.covers, ("home-row", i), &section.title, &section.items, st, acts);
             }
             ui.add_space(24.0);
         });
-
-        if reload {
-            self.library.home = Load::Idle;
-            self.open_view(&ctx, View::Home);
-        }
-        self.apply_card_picks(&ctx, picked);
     }
 
     /// Mono line with a refresh button, then a greeting. Returns whether refresh was
@@ -83,19 +58,6 @@ impl App {
         text_left(ui.painter(), pos2(r.left(), r.center().y), &greeting, ty::PAGE_TITLE, p.text, r.width());
         reload
     }
-
-    /// Act on what was picked in [`card_row`]s.
-    pub(in crate::ui) fn apply_card_picks(&mut self, ctx: &egui::Context, picked: CardPicks) {
-        if let Some(mood) = picked.flow {
-            self.player.send(Cmd::PlayFlow(mood));
-        }
-        if let Some((source, mode)) = picked.play {
-            self.play_source(ctx, source, mode);
-        }
-        if let Some(coll) = picked.open {
-            self.open_collection(ctx, coll);
-        }
-    }
 }
 
 /// A titled, horizontally scrolling row of cards; a section of Flow moods becomes
@@ -107,7 +69,7 @@ pub(in crate::ui) fn card_row(
     title: &str,
     items: &[Item],
     st: &Status,
-    picked: &mut CardPicks,
+    acts: &mut Actions,
 ) {
     // Deezer's Flow, or a music server's Radio (random songs by genre) in its place.
     let is_radio = items.iter().all(|it| it.kind == "radio");
@@ -119,8 +81,8 @@ pub(in crate::ui) fn card_row(
     if is_flow {
         ui.add_space(18.0);
         let moods: Vec<(&str, &str)> = items.iter().filter(|it| it.id != "default").map(|it| (it.id.as_str(), it.title.as_str())).collect();
-        if let Some(pick) = widgets::flow_panel(ui, &moods, st.flow.as_deref(), is_radio) {
-            picked.flow = Some(pick);
+        if let Some(mood) = widgets::flow_panel(ui, &moods, st.flow.as_deref(), is_radio) {
+            acts.push(Action::Player(Cmd::PlayFlow(mood)));
         }
         return;
     }
@@ -140,8 +102,8 @@ pub(in crate::ui) fn card_row(
                 for item in items {
                     if let Some(coll) = Coll::from_item(item) {
                         match widgets::card(ui, covers, &coll) {
-                            CardClick::Open => picked.open = Some(coll),
-                            CardClick::Play(mode) => picked.play = Some((coll.source.clone(), mode)),
+                            CardClick::Open => acts.push(Action::OpenCollection(coll)),
+                            CardClick::Play(mode) => acts.push(Action::PlaySource(coll.source.clone(), mode)),
                             CardClick::None => {}
                         }
                     }

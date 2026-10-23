@@ -1,5 +1,6 @@
 //! The Playlists page: a grid of the account's playlists.
 
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::format::playlist_url;
 use crate::ui::state::{Coll, Source};
@@ -10,13 +11,10 @@ use eframe::egui::{self, CornerRadius, Rect, Sense, Ui, Vec2, pos2, vec2};
 const GAP: f32 = 22.0;
 
 impl App {
-    pub(in crate::ui) fn playlists_page(&mut self, ui: &mut Ui) {
-        let ctx = ui.ctx().clone();
+    pub(in crate::ui) fn playlists_page(&mut self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
         text_left(ui.painter(), ui.cursor().min + vec2(0.0, 18.0), "Playlists", ty::PAGE_TITLE, p.text, 400.0);
         ui.add_space(52.0);
-        let mut open = None;
-        let mut queue = None;
         let card = metrics::GRID_CARD;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             let per_row = (((ui.available_width() + GAP) / (card + GAP)).floor() as usize).max(1);
@@ -41,21 +39,15 @@ impl App {
                             card,
                         );
                         if let Some(mode) = widgets::queue_menu(&resp) {
-                            queue = Some((Source::Playlist(playlist.id), mode));
+                            acts.push(Action::PlaySource(Source::Playlist(playlist.id), mode));
                         }
                         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                            open = Some(Coll::from_playlist(playlist));
+                            acts.push(Action::OpenCollection(Coll::from_playlist(playlist)));
                         }
                     }
                 });
                 ui.add_space(18.0);
             }
         });
-        if let Some(coll) = open {
-            self.open_collection(&ctx, coll);
-        }
-        if let Some((source, mode)) = queue {
-            self.play_source(&ctx, source, mode);
-        }
     }
 }

@@ -6,8 +6,11 @@
 //! a page's open tab) is still changed in place while drawing.
 
 use super::app::{App, SidePanel};
-use super::state::{ArtistView, Coll};
+use super::load::Load;
+use super::playlist_edit::{Dialog, Edit};
+use super::state::{ArtistView, Coll, PlayMode, Source, View, playable};
 use super::views::SleepChoice;
+use super::widgets::TrackMenu;
 use crate::deezer::{ArtistRef, Likeable, Track};
 use crate::player::{Cmd, Output, Repeat};
 use eframe::egui;
@@ -17,8 +20,21 @@ pub enum Action {
     OpenArtist(ArtistRef),
     /// A collection's tracks; an artist gets their page.
     OpenCollection(Coll),
+    /// Load the home page again.
+    ReloadHome,
 
     // Playback
+    /// Play `tracks` from `index`, the playable ones only; with `shuffle`, shuffle
+    /// goes on and a random one starts.
+    PlayFrom {
+        tracks: Vec<Track>,
+        index: usize,
+        shuffle: bool,
+    },
+    /// A list's "Add to queue": its playable tracks, confirmed on the button.
+    QueueAll(Vec<Track>),
+    /// Fetch a collection's tracks, then play or queue them.
+    PlaySource(Source, PlayMode),
     /// Anything else for the player: pause, skip, seek, volume, queue edits.
     Player(Cmd),
     Shuffle(bool),
@@ -31,8 +47,13 @@ pub enum Action {
 
     // Library
     ToggleLike(Likeable),
+    /// A choice in a track's right-click menu.
+    TrackMenu(Box<Track>, TrackMenu),
+    EditPlaylist(Edit),
     /// Ask for a name, then create a playlist holding these tracks.
     NewPlaylist(Vec<Track>),
+    /// Ask before renaming or deleting an own playlist.
+    PlaylistDialog(Dialog),
 
     // Window
     /// Open a panel on the right, or close it if it's the one showing.
@@ -86,6 +107,16 @@ impl App {
         match action {
             Action::OpenArtist(artist) => self.open_artist(ctx, ArtistView::from_ref(&artist)),
             Action::OpenCollection(coll) => self.open_collection(ctx, coll),
+            Action::ReloadHome => {
+                self.library.home = Load::Idle;
+                self.open_view(ctx, View::Home);
+            }
+            Action::PlayFrom { tracks, index, shuffle } => self.play_from(tracks, index, shuffle),
+            Action::QueueAll(tracks) => {
+                self.player.send(Cmd::Enqueue(playable(tracks)));
+                self.queued_flash = Some(std::time::Instant::now());
+            }
+            Action::PlaySource(source, mode) => self.play_source(ctx, source, mode),
             Action::Player(cmd) => self.player.send(cmd),
             Action::Shuffle(on) => self.set_shuffle(on),
             Action::Repeat(repeat) => self.set_repeat(repeat),
@@ -97,7 +128,10 @@ impl App {
                 }
             }
             Action::ToggleLike(what) => self.toggle_like(ctx, what),
+            Action::TrackMenu(track, choice) => self.track_menu_choice(ctx, *track, choice),
+            Action::EditPlaylist(edit) => self.edit_playlist(ctx, edit),
             Action::NewPlaylist(tracks) => self.new_playlist(tracks),
+            Action::PlaylistDialog(dialog) => self.library.editing.dialog = Some(dialog),
             Action::TogglePanel(panel) => self.toggle_side_panel(panel),
             Action::ShowPanel(panel) => {
                 self.side_panel = panel;

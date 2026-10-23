@@ -9,11 +9,11 @@ use super::library::Library;
 use super::notice::Notice;
 use super::now_playing::NowPlaying;
 use super::sources::{Login, Sources};
-use super::state::{ArtistView, Coll, PlayMode, Source, View};
+use super::state::{ArtistView, Coll, PlayMode, Source, View, playable, playable_from};
 use super::style::{self, Appearance, colors, metrics};
 use super::updates::Updates;
 use crate::credentials;
-use crate::deezer::{self, Deezer, Link, Quality};
+use crate::deezer::{self, Deezer, Link, Quality, Track};
 use crate::model::Error;
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
@@ -256,6 +256,19 @@ impl App {
         self.open_view(ctx, View::Artist(Box::new(artist)));
     }
 
+    /// Play `tracks` from `start`: the playable ones, from where `start` lands among
+    /// them; with `shuffle`, shuffle goes on and a random one starts.
+    pub(super) fn play_from(&mut self, tracks: Vec<Track>, start: usize, shuffle: bool) {
+        let Some((queue, index)) = playable_from(tracks, start) else { return };
+        let index = if shuffle {
+            self.set_shuffle(true);
+            fastrand::usize(..queue.len())
+        } else {
+            index
+        };
+        self.player.send(Cmd::Play(queue, index));
+    }
+
     /// Fetch a collection and play/queue it without opening it.
     pub(super) fn play_source(&mut self, ctx: &egui::Context, source: Source, mode: PlayMode) {
         let Some(client) = self.client.clone() else { return };
@@ -382,8 +395,8 @@ impl App {
     /// so a failure is a notice.
     fn poll_quick_play(&mut self, ctx: &egui::Context, failed: &mut Vec<Error>) {
         match self.browse.quick_play.poll_take() {
-            Some(Ok((mut tracks, mode))) => {
-                tracks.retain(|t| t.available);
+            Some(Ok((tracks, mode))) => {
+                let tracks = playable(tracks);
                 if !tracks.is_empty() {
                     self.player.send(mode.command(tracks));
                 }
@@ -499,7 +512,7 @@ impl eframe::App for App {
         let margin = metrics::CONTENT_MARGIN;
         egui::CentralPanel::default()
             .frame(panel_frame(p.bg, Margin { left: margin, right: margin, top: 0, bottom: 0 }))
-            .show(ui, |ui| self.content(ui, &st));
+            .show(ui, |ui| self.content(ui, &st, &mut acts));
         self.playlist_dialog(&ctx);
         self.settings_window(&ctx);
         self.server_dialog(&ctx);

@@ -147,9 +147,9 @@ pub fn for_playlist(tracks: Vec<Track>) -> Vec<Track> {
 
 /// The playable tracks of `tracks`, and where `start` lands among them (the next
 /// playable one if `start` itself isn't). None when nothing can be played.
-pub fn playable_from(tracks: &[Track], start: usize) -> Option<(Vec<Track>, usize)> {
+pub fn playable_from(tracks: Vec<Track>, start: usize) -> Option<(Vec<Track>, usize)> {
     let index = tracks.iter().take(start).filter(|t| t.available).count();
-    let playable: Vec<Track> = tracks.iter().filter(|t| t.available).cloned().collect();
+    let playable = playable(tracks);
     (index < playable.len()).then_some((playable, index))
 }
 
@@ -221,11 +221,11 @@ mod tests {
             episode: None,
             server: None,
         };
-        let tracks = [t(1, true), t(2, false), t(3, false), t(4, true)];
+        let tracks = vec![t(1, true), t(2, false), t(3, false), t(4, true)];
         let ids = |(q, i): (Vec<Track>, usize)| (q.iter().map(|t| t.id).collect::<Vec<_>>(), i);
-        assert_eq!(playable_from(&tracks, 3).map(ids), Some((vec![1, 4], 1)));
-        assert_eq!(playable_from(&tracks, 1).map(ids), Some((vec![1, 4], 1)), "an unavailable start moves on");
-        assert_eq!(playable_from(&[t(2, false)], 0).map(ids), None);
+        assert_eq!(playable_from(tracks.clone(), 3).map(ids), Some((vec![1, 4], 1)));
+        assert_eq!(playable_from(tracks, 1).map(ids), Some((vec![1, 4], 1)), "an unavailable start moves on");
+        assert_eq!(playable_from(vec![t(2, false)], 0).map(ids), None);
     }
 
     #[test]

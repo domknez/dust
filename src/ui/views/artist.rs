@@ -2,13 +2,14 @@
 //! then popular tracks beside the discography (albums, singles & EPs, live &
 //! compilations, as tabs), then playlists featuring the artist and related artists.
 
-use super::collection::{Columns, Picked, RowMenu, header_band, track_row};
+use super::collection::{Columns, RowMenu, header_band, track_row};
 use super::home::card_row;
-use crate::deezer::{Item, Likeable, Section, Track, image_url, thousands};
-use crate::player::{Cmd, State, Status};
+use crate::deezer::{Item, Likeable, Section, image_url, thousands};
+use crate::player::{State, Status};
+use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
-use crate::ui::state::{ArtistView, Coll, PlayMode, Source, playable_from};
+use crate::ui::state::{ArtistView, Coll, Source};
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
@@ -29,10 +30,7 @@ const GRID_TEXT: f32 = 30.0;
 const DISCOGRAPHY: [(&str, &str); 3] = [("Albums", "Albums"), ("Singles & EPs", "Singles"), ("Live & compilations", "Live")];
 
 impl App {
-    pub(in crate::ui) fn artist_view(&mut self, ui: &mut Ui, st: &Status, artist: &ArtistView) {
-        let ctx = ui.ctx().clone();
-        let mut picked = Picked::default();
-        let mut show_all = false;
+    pub(in crate::ui) fn artist_view(&mut self, ui: &mut Ui, st: &Status, artist: &ArtistView, acts: &mut Actions) {
         let now = (st.track.as_ref().map(|t| t.id), st.state == State::Playing);
 
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -40,7 +38,7 @@ impl App {
             let (head, _) = ui.allocate_exact_size(vec2(width, HEADER), Sense::hover());
             self.artist_header(ui, head, artist);
             let (row, _) = ui.allocate_exact_size(vec2(width, BUTTONS), Sense::hover());
-            self.artist_buttons(ui, row, artist, &mut picked);
+            self.artist_buttons(ui, row, artist, acts);
 
             let Some(page) = self.browse.artist_page.ready() else {
                 ui.add_space(24.0);
@@ -84,13 +82,14 @@ impl App {
                 for (i, track) in top.iter().enumerate() {
                     let rect = Rect::from_min_size(left.min + vec2(0.0, 28.0 + i as f32 * columns.row), vec2(left.width(), columns.row));
                     let liked = self.library.likes.likes.tracks.contains(&track.id);
-                    track_row(ui, &mut self.covers, track, i, rect, &columns, now, liked, &menu, &mut picked);
+                    track_row(ui, &mut self.covers, &page.top, i, rect, &columns, now, liked, &menu, acts);
                 }
                 if page.top.len() > POPULAR {
                     let at = left.min + vec2(8.0, 28.0 + top.len() as f32 * columns.row + 16.0);
                     let label = format!("show all {} →", page.top.len());
-                    show_all =
-                        widgets::text_link(ui, "artist-show-all", at, &label, ty::META, colors().accent, colors().text, left.width()).0;
+                    if widgets::text_link(ui, "artist-show-all", at, &label, ty::META, colors().accent, colors().text, left.width()).0 {
+                        acts.push(Action::OpenCollection(top_tracks(artist)));
+                    }
                 }
             }
             if !discography.is_empty() {
@@ -100,61 +99,16 @@ impl App {
                     self.browse.discography_tab = i;
                 }
                 let grid = Rect::from_min_max(right.min + vec2(0.0, 40.0), right.max);
-                match release_grid(ui, &mut self.covers, grid, items) {
-                    Some(GridPick::Open(coll)) => picked.album = Some(coll),
-                    Some(GridPick::Play(coll, mode)) => picked.cards.play(coll.source, mode),
-                    None => {}
-                }
+                release_grid(ui, &mut self.covers, grid, items, acts);
             }
             // Playlists featuring them, related artists.
             for (i, section) in page.sections.iter().enumerate() {
                 if !DISCOGRAPHY.iter().any(|(title, _)| section.title == *title) {
-                    card_row(ui, &mut self.covers, ("artist-row", i), &section.title, &section.items, st, &mut picked.cards);
+                    card_row(ui, &mut self.covers, ("artist-row", i), &section.title, &section.items, st, acts);
                 }
             }
             ui.add_space(28.0);
         });
-
-        self.apply_card_picks(&ctx, picked.cards);
-        let top: &[Track] = self.browse.artist_page.ready().map_or(&[], |p| &p.top);
-        if let Some((i, shuffle)) = picked.play
-            && let Some((queue, i)) = playable_from(top, i)
-        {
-            let i = if shuffle {
-                self.set_shuffle(true);
-                fastrand::usize(..queue.len())
-            } else {
-                i
-            };
-            self.player.send(Cmd::Play(queue, i));
-        } else if let Some((i, choice)) = picked.menu
-            && let Some(track) = top.get(i).cloned()
-        {
-            self.track_menu_choice(&ctx, track, choice);
-        }
-        if picked.toggle {
-            self.player.send(Cmd::Toggle);
-        }
-        if show_all {
-            let picture = artist.picture.clone().map(|md5| ("artist".to_string(), md5));
-            let coll = Coll {
-                source: Source::TopTracks(artist.id.clone()),
-                kind: "POPULAR TRACKS",
-                title: artist.name.clone(),
-                subtitle: String::new(),
-                picture,
-            };
-            self.open_collection(&ctx, coll);
-        }
-        if let Some(album) = picked.album {
-            self.open_collection(&ctx, album);
-        }
-        if let Some(what) = picked.like {
-            self.toggle_like(&ctx, what);
-        }
-        if let Some(other) = picked.artist {
-            self.open_artist(&ctx, ArtistView::from_ref(&other));
-        }
     }
 
     /// Dark band: tag, fans and releases, a very large name, and the picture in a
@@ -193,24 +147,36 @@ impl App {
         text_left(ui.painter(), pos2(x, head.bottom() - 58.0), name, ty::ARTIST_NAME, p.text, width);
     }
 
-    fn artist_buttons(&mut self, ui: &mut Ui, row: Rect, artist: &ArtistView, picked: &mut Picked) {
+    fn artist_buttons(&self, ui: &mut Ui, row: Rect, artist: &ArtistView, acts: &mut Actions) {
         ui.painter().hline(row.x_range(), row.bottom(), egui::Stroke::new(1.0, colors().line));
-        let has_top = self.browse.artist_page.ready().is_some_and(|pg| !pg.top.is_empty());
+        let top = self.browse.artist_page.ready().map_or(&[][..], |pg| &pg.top[..]);
+        let has_top = !top.is_empty();
         let buttons = Rect::from_min_size(pos2(row.left(), row.center().y - 22.0), vec2(row.width(), 44.0));
         ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
             if has_top && widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {
-                picked.play = Some((0, false));
+                acts.push(Action::PlayFrom { tracks: top.to_vec(), index: 0, shuffle: false });
             }
             if has_top && widgets::pill(ui, "Shuffle", None, false).clicked() {
-                picked.play = Some((0, true));
+                acts.push(Action::PlayFrom { tracks: top.to_vec(), index: 0, shuffle: true });
             }
             let what = Likeable::Artist(artist.id.clone());
             let following = self.library.likes.likes.contains(&what);
             let (label, icon) = if following { ("Following", Icon::Heart) } else { ("Follow", Icon::HeartOutline) };
             if widgets::pill(ui, label, Some(icon), false).clicked() {
-                picked.like = Some(what);
+                acts.push(Action::ToggleLike(what));
             }
         });
+    }
+}
+
+/// The artist's popular tracks as a plain list ("show all").
+fn top_tracks(artist: &ArtistView) -> Coll {
+    Coll {
+        source: Source::TopTracks(artist.id.clone()),
+        kind: "POPULAR TRACKS",
+        title: artist.name.clone(),
+        subtitle: String::new(),
+        picture: artist.picture.clone().map(|md5| ("artist".to_string(), md5)),
     }
 }
 
@@ -256,16 +222,10 @@ fn grid_height(count: usize, width: f32) -> f32 {
     rows * (tile_size(width) + GRID_TEXT + GRID_GAP)
 }
 
-enum GridPick {
-    Open(Coll),
-    Play(Coll, PlayMode),
-}
-
 /// Releases as a grid of covers with title and year; a lime outline on hover.
-fn release_grid(ui: &Ui, covers: &mut Covers, area: Rect, items: &[Item]) -> Option<GridPick> {
+fn release_grid(ui: &Ui, covers: &mut Covers, area: Rect, items: &[Item], acts: &mut Actions) {
     let p = colors();
     let size = tile_size(area.width());
-    let mut pick = None;
     for (k, item) in items.iter().enumerate() {
         let Some(coll) = Coll::from_item(item) else { continue };
         let (col, row) = ((k % GRID_COLUMNS) as f32, (k / GRID_COLUMNS) as f32);
@@ -288,13 +248,12 @@ fn release_grid(ui: &Ui, covers: &mut Covers, area: Rect, items: &[Item]) -> Opt
         ui.painter().text(pos2(art.right(), y), Align2::RIGHT_CENTER, year, ty::META.font(), p.dim);
         text_left(ui.painter(), pos2(art.left(), y), &item.title, ty::BODY.strong(), p.text, size - year_width - 8.0);
         if let Some(mode) = widgets::queue_menu(&resp) {
-            pick = Some(GridPick::Play(coll.clone(), mode));
+            acts.push(Action::PlaySource(coll.source.clone(), mode));
         }
         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-            pick = Some(GridPick::Open(coll));
+            acts.push(Action::OpenCollection(coll));
         }
     }
-    pick
 }
 
 /// A dashed circle around the artist's picture.
