@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.19.1 (2026-10-23)
+
 - Fixed: the Dark choice in Settings showed a circle instead of a moon
 
 ## 0.19.0 (2026-10-23)
