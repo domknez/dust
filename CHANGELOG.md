@@ -4,6 +4,9 @@
 
 - The sidebar's playlist list folds away: click *PLAYLISTS* (a chevron shows which way
   it is); dust remembers it
+- Fixed: with both Deezer and a Navidrome server connected, macOS asked for keychain
+  access twice at start. Both logins now live in one keychain item (moved there on the
+  first start, which may ask one last time for each)
 
 ## 0.18.0 (2026-10-22)
 
