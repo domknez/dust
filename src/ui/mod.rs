@@ -27,6 +27,8 @@ mod widgets;
 
 use app::App;
 use eframe::egui;
+/// The theme preference, kept in [`crate::settings::Prefs`].
+pub use style::Appearance;
 use style::metrics;
 
 /// Open the main window and run the app until it closes.

@@ -66,12 +66,11 @@ impl App {
         let fold = ui.interact(fold, ui.id().with("fold-playlists"), Sense::click());
         let caption_color = if fold.hovered() { colors().text } else { colors().dim };
         text_left(ui.painter(), pos2(row.left() + 10.0, row.center().y), &caption, ty::OVERLINE, caption_color, row.width() - 40.0);
-        let open = ui.ctx().animate_bool(ui.id().with("playlists-open"), self.playlists_open);
+        let open = ui.ctx().animate_bool(ui.id().with("playlists-open"), self.prefs.sidebar_playlists);
         disclosure(ui.painter(), pos2(row.left() + width + 22.0, row.center().y), 8.0, open, caption_color);
-        let hint = if self.playlists_open { "Hide playlists" } else { "Show playlists" };
+        let hint = if self.prefs.sidebar_playlists { "Hide playlists" } else { "Show playlists" };
         if fold.on_hover_text(hint).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-            self.playlists_open = !self.playlists_open;
-            crate::settings::set("sidebar_playlists", if self.playlists_open { "open" } else { "closed" });
+            self.prefs.update(|p| p.sidebar_playlists = !p.sidebar_playlists);
         }
         let plus = Rect::from_center_size(pos2(row.right() - 12.0, row.center().y), Vec2::splat(22.0));
         let resp = ui.interact(plus, ui.id().with("new-playlist"), Sense::click());
@@ -92,7 +91,7 @@ impl App {
         let mut open = None;
         let mut queue = None;
         let height = (ui.available_height() - FOOTER - self.update_button_height()).max(0.0);
-        if !self.playlists_open {
+        if !self.prefs.sidebar_playlists {
             // Keep the account card at the bottom.
             ui.allocate_space(vec2(ui.available_width(), height));
             return;
@@ -154,7 +153,7 @@ impl App {
         avatar(ui, pos2(rect.left() + 24.0, rect.center().y), 14.0, &name, ty::META);
         let width = rect.width() - 80.0;
         text_left(ui.painter(), pos2(rect.left() + 48.0, rect.center().y - 8.0), &name, ty::BODY.strong(), p.text, width);
-        let quality = if self.features().quality { self.quality.label().to_lowercase() } else { self.source_host() };
+        let quality = if self.features().quality { self.prefs.quality.label().to_lowercase() } else { self.source_host() };
         text_left(ui.painter(), pos2(rect.left() + 48.0, rect.center().y + 9.0), &quality, ty::META, p.faint, width);
         self.account_menu(&resp, &name);
     }

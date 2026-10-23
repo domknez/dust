@@ -2,7 +2,6 @@
 //! then offer "Restart to update" in the sidebar. A staged update that was never
 //! applied installs when dust quits.
 
-use crate::settings;
 use crate::ui::app::App;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, radius, typography as ty};
@@ -72,7 +71,6 @@ impl Updates {
 
     pub fn set_auto(&mut self, auto: bool) {
         self.auto = auto;
-        settings::set("auto_update", if auto { "true" } else { "false" });
     }
 
     /// Start a check now (menu "Check now", or when one is due).

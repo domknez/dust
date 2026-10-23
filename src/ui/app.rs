@@ -18,7 +18,7 @@ use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
 use crate::player::{Cmd, Output, PlayerHandle, Repeat, Status, saved};
 use crate::provider::Provider;
-use crate::settings;
+use crate::settings::Prefs;
 use eframe::egui::{self, Key, Margin, Ui};
 
 /// What the panel on the right shows.
@@ -114,13 +114,9 @@ pub struct App {
     pub(super) pending_like: Option<deezer::Likeable>,
 
     // Settings
-    pub(super) quality: Quality,
-    pub(super) appearance: Appearance,
-    pub(super) report_listens: bool,
-    /// The sidebar's playlist list is shown (its caption folds it away).
-    pub(super) playlists_open: bool,
-    /// Last volume written to settings.
-    saved_volume: f32,
+    /// Saved preferences (quality, theme, the sidebar's playlist list, the last
+    /// volume written...); change them with [`Prefs::update`].
+    pub(super) prefs: Prefs,
     /// Speaker (by name) to reselect once discovery finds it.
     pub(super) restore_output: Option<String>,
 
@@ -147,27 +143,21 @@ pub struct App {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let ctx = &cc.egui_ctx;
-        let saved = settings::load();
-        let appearance = saved.get("theme").and_then(|k| Appearance::from_key(k)).unwrap_or(Appearance::System);
-        let quality = saved.get("quality").and_then(|k| Quality::from_key(k)).unwrap_or(Quality::Mp3_320);
-        let report_listens = saved.get("report_listens").is_none_or(|v| v != "false");
-        let playlists_open = saved.get("sidebar_playlists").is_none_or(|v| v != "closed");
-        let volume = saved.get("volume").and_then(|v| v.parse::<f32>().ok()).map_or(0.5, |v| v.clamp(0.0, 1.0));
-        let restore_output = saved.get("output").filter(|o| !o.is_empty()).cloned();
-        let auto_update = saved.get("auto_update").is_none_or(|v| v != "false");
+        let prefs = Prefs::load();
+        let volume = prefs.volume;
         style::install_fonts(ctx);
-        style::apply(ctx, appearance.is_dark(ctx));
+        style::apply(ctx, prefs.theme.is_dark(ctx));
 
         let player = PlayerHandle::spawn(ctx.clone(), volume);
-        player.send(Cmd::Shuffle(saved.get("shuffle").is_some_and(|v| v == "true")));
-        player.send(Cmd::Repeat(saved.get("repeat").map_or(Repeat::Off, |k| Repeat::from_key(k))));
+        player.send(Cmd::Shuffle(prefs.shuffle));
+        player.send(Cmd::Repeat(prefs.repeat));
         let repaint = ctx.clone();
         let discovery =
             Discovery::start(move || repaint.request_repaint()).inspect_err(|e| log_warn!("AirPlay discovery unavailable: {e}")).ok();
         let mut app = Self {
             _remote_control: start_remote_control(player.clone()),
             now_playing: NowPlaying::start(cc, player.clone()),
-            updates: Updates::new(auto_update),
+            updates: Updates::new(prefs.auto_update),
             history: History::default(),
             editing: PlaylistEditing::default(),
             queued_flash: None,
@@ -219,12 +209,8 @@ impl App {
             pending_artist: None,
             pending_album: None,
             pending_like: None,
-            quality,
-            appearance,
-            report_listens,
-            playlists_open,
-            saved_volume: volume,
-            restore_output,
+            restore_output: prefs.output.clone(),
+            prefs,
             discovery,
             covers: Covers::new(ctx),
             logo: crate::icon::logo_texture(ctx),
@@ -378,38 +364,35 @@ impl App {
     // ------------------------------------------------------------ settings
 
     pub(super) fn set_quality(&mut self, quality: Quality) {
-        self.quality = quality;
         self.player.send(Cmd::Quality(quality));
-        settings::set("quality", quality.key());
+        self.prefs.update(|p| p.quality = quality);
     }
 
     pub(super) fn set_appearance(&mut self, appearance: Appearance) {
-        self.appearance = appearance;
-        settings::set("theme", appearance.key());
+        self.prefs.update(|p| p.theme = appearance);
     }
 
     pub(super) fn toggle_report_listens(&mut self) {
-        self.report_listens = !self.report_listens;
-        self.player.send(Cmd::ReportListens(self.report_listens));
-        settings::set("report_listens", if self.report_listens { "true" } else { "false" });
+        self.prefs.update(|p| p.report_listens = !p.report_listens);
+        self.player.send(Cmd::ReportListens(self.prefs.report_listens));
     }
 
     pub(super) fn set_shuffle(&mut self, on: bool) {
         self.player.send(Cmd::Shuffle(on));
-        settings::set("shuffle", if on { "true" } else { "false" });
+        self.prefs.update(|p| p.shuffle = on);
     }
 
     pub(super) fn set_repeat(&mut self, repeat: Repeat) {
         self.player.send(Cmd::Repeat(repeat));
-        settings::set("repeat", repeat.key());
+        self.prefs.update(|p| p.repeat = repeat);
     }
 
     pub(super) fn select_output(&mut self, output: Output) {
         let remembered = match &output {
-            Output::Local => String::new(),
-            Output::AirPlay(d) => d.name.clone(),
+            Output::Local => None,
+            Output::AirPlay(d) => Some(d.name.clone()),
         };
-        settings::set("output", &remembered);
+        self.prefs.update(|p| p.output = remembered);
         self.restore_output = None;
         self.player.send(Cmd::Output(output));
     }
@@ -444,9 +427,8 @@ impl App {
     /// Save volume once it settles (not on every slider step) and reselect the
     /// remembered speaker as soon as it shows up on the network.
     fn persist_playback(&mut self, st: &Status) {
-        if self.volume_drag.is_none() && (st.volume - self.saved_volume).abs() > 0.001 {
-            self.saved_volume = st.volume;
-            settings::set("volume", &format!("{:.3}", st.volume));
+        if self.volume_drag.is_none() && (st.volume - self.prefs.volume).abs() > 0.001 {
+            self.prefs.update(|p| p.volume = st.volume);
         }
         if let Some(name) = &self.restore_output
             && let Some(device) = self.discovery.as_ref().and_then(|d| d.devices().into_iter().find(|d| &d.name == name))
@@ -558,7 +540,7 @@ impl App {
 
     /// Follow the chosen appearance (and the OS setting live when on System).
     fn sync_appearance(&self, ctx: &egui::Context) {
-        let dark = self.appearance.is_dark(ctx);
+        let dark = self.prefs.theme.is_dark(ctx);
         if dark != style::palette::is_dark() {
             style::apply(ctx, dark);
         }

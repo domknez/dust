@@ -62,7 +62,7 @@ impl App {
         } else {
             ("Report plays to the server", "Play counts and \"Recently played\" (and Last.fm, if the server scrobbles)")
         };
-        if widgets::menu_row(ui, None, title, Some(sub), self.report_listens, colors().text).clicked() {
+        if widgets::menu_row(ui, None, title, Some(sub), self.prefs.report_listens, colors().text).clicked() {
             self.toggle_report_listens();
         }
         ui.add_space(12.0);
@@ -70,6 +70,7 @@ impl App {
         let auto = self.updates.auto;
         if widgets::menu_row(ui, None, "Check automatically", Some("Asks GitHub about new versions"), auto, colors().text).clicked() {
             self.updates.set_auto(!auto);
+            self.prefs.update(|p| p.auto_update = !auto);
         }
         let status = self.updates.status();
         if widgets::menu_row(ui, Some(Icon::Refresh), "Check now", Some(&status), false, colors().text).clicked() {
@@ -95,7 +96,7 @@ impl App {
             };
             (icon, a.label())
         });
-        let current = Appearance::ALL.iter().position(|a| *a == self.appearance).unwrap_or(0);
+        let current = Appearance::ALL.iter().position(|a| *a == self.prefs.theme).unwrap_or(0);
         if let Some(i) = widgets::segmented(ui, &options, current) {
             self.set_appearance(Appearance::ALL[i]);
         }
@@ -109,7 +110,7 @@ impl App {
                 Quality::Mp3_320 => "High quality",
                 Quality::Flac => "Lossless · needs a HiFi plan",
             };
-            if widgets::menu_row(ui, None, quality.label(), Some(description), self.quality == quality, colors().text).clicked() {
+            if widgets::menu_row(ui, None, quality.label(), Some(description), self.prefs.quality == quality, colors().text).clicked() {
                 self.set_quality(quality);
             }
         }

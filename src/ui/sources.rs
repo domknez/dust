@@ -13,13 +13,9 @@ use crate::credentials;
 use crate::deezer::Deezer;
 use crate::player::{Cmd, saved};
 use crate::provider::Provider;
-use crate::settings;
+use crate::settings::SourcePref;
 use crate::subsonic::{Server, Subsonic};
 use eframe::egui::{self, Key, RichText, vec2};
-
-/// Settings values of the sources ([`Provider::key`] is empty for Deezer).
-const DEEZER: &str = "deezer";
-const NAVIDROME: &str = "navidrome";
 
 /// The "Connect to Navidrome" form.
 #[derive(Default)]
@@ -33,7 +29,7 @@ pub struct ServerForm {
     focused: bool,
 }
 
-/// Both sources' logins and which one the listener used last.
+/// Both sources' logins.
 pub struct Sources {
     pub deezer: Option<Deezer>,
     pub server: Option<Subsonic>,
@@ -42,18 +38,16 @@ pub struct Sources {
     pub(super) connecting: Task<Subsonic>,
     pub(super) connecting_new: Option<Server>,
     pub form: Option<ServerForm>,
-    /// The source in use last time ("deezer" or "navidrome").
-    preferred: String,
-    /// The preferred source (or one the listener picked) is in use, so a login
-    /// finishing later doesn't switch away from it. Until then another source may
-    /// stand in, without becoming the preferred one.
+    /// The preferred source ([`crate::settings::Prefs::source`], or one the
+    /// listener picked) is in use, so a login finishing later doesn't switch away
+    /// from it. Until then another source may stand in, without becoming the
+    /// preferred one.
     settled: bool,
 }
 
 impl Sources {
     pub fn new() -> Self {
-        let preferred = settings::load().get("source").cloned().unwrap_or_else(|| DEEZER.into());
-        Sources { deezer: None, server: None, connecting: None, connecting_new: None, form: None, preferred, settled: false }
+        Sources { deezer: None, server: None, connecting: None, connecting_new: None, form: None, settled: false }
     }
 
     pub fn connecting(&self) -> bool {
@@ -61,10 +55,10 @@ impl Sources {
     }
 }
 
-fn setting(provider: &Provider) -> &'static str {
+fn setting(provider: &Provider) -> SourcePref {
     match provider {
-        Provider::Deezer(_) => DEEZER,
-        Provider::Subsonic(_) => NAVIDROME,
+        Provider::Deezer(_) => SourcePref::Deezer,
+        Provider::Subsonic(_) => SourcePref::Navidrome,
     }
 }
 
@@ -85,7 +79,7 @@ impl App {
     /// Use a source that just became available if nothing is in use yet, or if it's
     /// the one used last time and that hasn't been settled.
     fn offer(&mut self, ctx: &egui::Context, provider: Provider) {
-        let preferred = setting(&provider) == self.sources.preferred;
+        let preferred = setting(&provider) == self.prefs.source;
         let same = self.client.as_ref().is_some_and(|c| c.key() == provider.key());
         if self.client.is_none() || same || (preferred && !self.sources.settled) {
             self.activate(ctx, provider, preferred);
@@ -131,15 +125,14 @@ impl App {
         let new = provider.key();
         if chosen {
             self.sources.settled = true;
-            self.sources.preferred = setting(&provider).into();
-            settings::set("source", setting(&provider));
+            self.prefs.update(|p| p.source = setting(&provider));
         }
         if let Provider::Subsonic(server) = &provider {
             server.activate();
         }
         self.player.send(Cmd::Client(provider.clone()));
-        self.player.send(Cmd::Quality(self.quality));
-        self.player.send(Cmd::ReportListens(self.report_listens));
+        self.player.send(Cmd::Quality(self.prefs.quality));
+        self.player.send(Cmd::ReportListens(self.prefs.report_listens));
         if old != Some(new) {
             if let Some(old) = old {
                 self.save_queue_now(old);
