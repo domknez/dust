@@ -9,6 +9,8 @@
   try again. Tracks that really can't be played are still skipped
 - Fixed: if playback broke down, the controls silently did nothing; dust now says so.
   Crashes are written to the log file too (what failed, where, on which thread)
+- Fixed: on this computer's speakers, the start of a track (or of the audio after a
+  seek) could be cut off
 
 ## 0.19.1 (2026-10-23)
 
