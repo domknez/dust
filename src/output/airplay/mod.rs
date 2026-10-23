@@ -10,6 +10,7 @@
 //!
 //! - [`discovery`]: finding speakers over mDNS
 //! - [`sink`]: [`AirPlaySink`], the audio output
+//! - [`control`]: the worker that sends a session's pause, flush and volume requests
 //! - [`negotiate`]: the AirPlay 1 / AirPlay 2 session handshakes
 //! - [`rtsp`]: the (optionally encrypted) RTSP client
 //! - [`packets`]: wire formats (ALAC frames, RTP, sync and timing packets)
@@ -19,6 +20,7 @@
 //! - [`volume`]: AirPlay's dB volume scale, both ways
 
 pub mod ap2;
+mod control;
 pub mod dacp;
 mod discovery;
 mod negotiate;

@@ -334,7 +334,8 @@ src/
 ├── output/            audio outputs behind the Sink trait (output::open sets one up), resampling
 │   ├── local.rs       sound card (cpal)
 │   └── airplay/       AirPlay 1 & 2 sender: discovery, RTSP, handshakes, packets, network threads,
-│                      ap2/ (pairing, plists, PTP clock), dacp (speaker remote control)
+│                      the control worker (pause, flush, volume), ap2/ (pairing, plists, PTP
+│                      clock), dacp (speaker remote control), the dB volume scale
 ├── ui/
 │   ├── app.rs         UI state, lifecycle and panel layout
 │   ├── sources.rs     the logged-in sources: starting stored logins, switching, logging out,

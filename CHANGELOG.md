@@ -7,6 +7,10 @@
   the last one has finished. Endless Flow and Radio fetch their next batch ahead too
 - The player bar and the Now Playing widget change to the next track when you hear it
   start; on an AirPlay speaker they used to change a few seconds early
+- AirPlay speakers respond more smoothly: pausing, seeking, skipping and volume changes
+  no longer hold up the player while the speaker answers (up to a couple of seconds on a
+  slow network), and a dragged volume slider or the sleep timer's fade sends the
+  speaker only the latest level
 
 - Fixed: errors from a Navidrome server said "Deezer" ("Couldn't reach Deezer: ..."); they
   now name the server
