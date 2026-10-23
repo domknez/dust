@@ -3,9 +3,9 @@
 use super::crypto::{CHUNK, StripeReader};
 use super::models::{Format, Quality, Track};
 use super::parse::text;
-use super::prefetch::Prefetch;
 use super::session::CALL_TIMEOUT;
 use super::{Deezer, Error, Result, api, http};
+use crate::media::Prefetch;
 use serde_json::{Value, json};
 use std::io::Read;
 

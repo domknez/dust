@@ -7,7 +7,7 @@
 
 use super::{Server, Subsonic};
 use crate::deezer::{Likeable, Track};
-use crate::player::library::{Decoded, Playback};
+use crate::media::{Decoded, Playback};
 
 fn server() -> Subsonic {
     let spec = std::env::var("DUST_TEST_SUBSONIC").expect("DUST_TEST_SUBSONIC=url|user|password");

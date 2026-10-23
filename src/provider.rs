@@ -6,8 +6,9 @@
 use crate::deezer::{
     AlbumInfo, ArtistPage, Deezer, Item, Likeable, Likes, Link, Listen, Lyrics, Playlist, Quality, SearchResults, Section, Track,
 };
+use crate::media::{OpenError, Playback};
 use crate::model::{Error, Result};
-use crate::player::library::{Library, OpenError, Playback};
+use crate::player::library::Library;
 use crate::subsonic::Subsonic;
 
 /// A logged-in music source. Cheap to clone and share between threads.
@@ -265,21 +266,29 @@ fn unsupported(what: &str) -> Error {
 impl Library for Provider {
     fn open(&self, track: &Track, quality: Quality, at: f64) -> std::result::Result<Box<dyn Playback>, OpenError> {
         match self {
-            Provider::Deezer(d) => d.open(track, quality, at),
-            Provider::Subsonic(s) => s.open_track(track, at).map(|stream| Box::new(stream) as Box<dyn Playback>),
+            Provider::Deezer(d) => d.open_track(track, quality, at),
+            Provider::Subsonic(s) => s.open_track(track, at),
         }
+        .map(|stream| Box::new(stream) as Box<dyn Playback>)
     }
 
     fn flow(&self, mood: Option<&str>) -> std::result::Result<Vec<Track>, String> {
         match self {
-            Provider::Deezer(d) => Library::flow(d, mood),
+            Provider::Deezer(d) => d.flow(mood).map_err(|e| e.to_string()),
             Provider::Subsonic(s) => s.radio(mood).map_err(|e| e.to_string()),
         }
     }
 
     fn report_listen_start(&self, song_id: u64) {
         match self {
-            Provider::Deezer(d) => Library::report_listen_start(d, song_id),
+            Provider::Deezer(d) => {
+                let client = d.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = client.report_listen_start(song_id) {
+                        log_debug!("listen start report failed: {e}");
+                    }
+                });
+            }
             Provider::Subsonic(s) => {
                 let client = s.clone();
                 let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
@@ -294,7 +303,13 @@ impl Library for Provider {
 
     fn report_listen(&self, listen: Listen) {
         match self {
-            Provider::Deezer(d) => Library::report_listen(d, listen),
+            Provider::Deezer(d) => {
+                let client = d.clone();
+                std::thread::spawn(move || match client.report_listen(&listen) {
+                    Ok(()) => log_debug!("reported listen of {} ({} s, skipped: {})", listen.song_id, listen.listened_secs, listen.skipped),
+                    Err(e) => log_warn!("listen report failed: {e}"),
+                });
+            }
             Provider::Subsonic(s) => {
                 // Counts as a play once heard through, or for four minutes (as
                 // Last.fm scrobbling does).

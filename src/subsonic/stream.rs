@@ -2,11 +2,9 @@
 //! others (Opus, WMA, ...) are converted to MP3 by the server as they play.
 
 use super::{Subsonic, api, http};
-use crate::deezer::prefetch::Prefetch;
 use crate::deezer::{Format, ServerSong, Track};
+use crate::media::{OpenError, Opened, Opener, Prefetch, Stream, StreamInfo};
 use crate::model::{Error, Result};
-use crate::player::library::OpenError;
-use crate::player::stream::{Opened, Opener, Stream, StreamInfo};
 use std::sync::Arc;
 use std::time::Duration;
 

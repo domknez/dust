@@ -2,11 +2,12 @@
 //! into the active output, and publishes a [`Status`] snapshot for the UI.
 
 use super::awake::{self, Awake};
-use super::library::{Decoded, OpenError, Playback, SharedLibrary};
+use super::library::SharedLibrary;
 use super::listens::ListenTracker;
 use super::queue::{Flow, Queue, Removed};
 use super::{Cmd, Output, Repeat, SLEEP_FADE, Sleep, State, Status};
 use crate::deezer::{Quality, Track};
+use crate::media::{Decoded, OpenError, Playback};
 use crate::output::airplay::AirPlaySink;
 use crate::output::local::LocalSink;
 use crate::output::{RATE, Sink};

@@ -9,7 +9,7 @@
 //! - [`listens`]: listen reports (history, Flow, Last.fm scrobbling)
 //! - [`models`] / [`parse`]: data types and their construction from API JSON
 //! - [`crypto`]: the `BF_CBC_STRIPE` stream cipher
-//! - [`prefetch`]: stall-proof network reads for streams
+//! - [`playback`]: opening songs and episodes for the player
 //! - [`links`]: Deezer links pasted into search
 //! - [`session`]: cookies, CSRF token and the raw gw-light transport
 
@@ -21,8 +21,8 @@ mod listens;
 mod lyrics;
 mod models;
 mod parse;
+mod playback;
 mod playlists;
-pub(crate) mod prefetch;
 pub(crate) mod session;
 mod streaming;
 
@@ -35,7 +35,6 @@ pub use models::{
     image_url,
 };
 pub use parse::thousands;
-pub use streaming::StreamSource;
 
 // Child modules use these as `super::{Error, Result}`.
 use crate::model::{Error, Result, Service};

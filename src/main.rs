@@ -13,6 +13,7 @@ mod deezer;
 mod icon;
 #[cfg(feature = "login-window")]
 mod login;
+mod media;
 mod model;
 mod output;
 mod player;

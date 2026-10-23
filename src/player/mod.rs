@@ -4,7 +4,6 @@
 //! - [`engine`]: the playback loop and command handling
 //! - [`queue`]: queue bookkeeping (pure, unit-tested)
 //! - [`library`]: what the engine needs from a music source (a seam for tests)
-//! - [`stream`]: opening and decoding a track (Deezer song, podcast, server file)
 //! - [`listens`]: listen tracking and reporting to Deezer
 //! - [`awake`]: keeping the OS from throttling dust while it plays
 
@@ -13,9 +12,7 @@ mod engine;
 pub mod library;
 mod listens;
 mod queue;
-mod resample;
 pub mod saved;
-pub mod stream;
 
 use crate::deezer::{Quality, Track};
 use crate::output::airplay::Device;

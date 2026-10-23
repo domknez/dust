@@ -1,9 +1,9 @@
-//! One playing track: its byte stream (a decrypted Deezer song, a podcast's own
-//! file, or a song file from a music server), container reader and decoder.
+//! One playing track: its byte stream (from any source), container reader and
+//! decoder.
 
-use super::library::{Decoded, OpenError, Playback};
+use super::playback::{Decoded, OpenError, Playback};
 use super::resample::Resampler;
-use crate::deezer::{Deezer, Format, StreamSource};
+use crate::deezer::Format;
 use crate::output::RATE;
 use std::io::Read;
 use std::sync::Arc;
@@ -14,9 +14,6 @@ use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::io::{MediaSourceStream, ReadOnlySource};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::units::TimeBase;
-
-/// Bytes per second per kbps (1000 / 8).
-const BYTES_PER_KBPS: f64 = 125.0;
 
 /// A track's bytes, opened at (about) a position.
 pub struct Opened {
@@ -47,34 +44,6 @@ pub struct StreamInfo {
     pub jumps: bool,
 }
 
-/// A Deezer song or podcast episode.
-struct DeezerBytes {
-    client: Deezer,
-    source: StreamSource,
-}
-
-impl Opener for DeezerBytes {
-    fn open(&self, at: f64) -> Result<Opened, OpenError> {
-        let source = &self.source;
-        if source.format == Format::Podcast {
-            // Jumps by an estimated byte offset; skips from the start if it can't.
-            let (bytes, start) = self.client.open_direct(&source.url, at, source.duration)?;
-            return Ok(Opened { bytes, base: start, skip_until: if start > 0.0 { 0.0 } else { at } });
-        }
-        // CBR MP3 maps time to bytes, so jump with an HTTP range; FLAC must start at 0.
-        let (offset, skip_until) = match source.format {
-            Format::Mp3(kbps) if at > 0.0 => ((at * kbps as f64 * BYTES_PER_KBPS) as u64, 0.0),
-            _ => (0, at),
-        };
-        let (bytes, offset) = self.client.open_stream(source, offset)?;
-        let base = match source.format {
-            Format::Mp3(kbps) => offset as f64 / (kbps as f64 * BYTES_PER_KBPS),
-            Format::Flac | Format::Podcast | Format::File => 0.0,
-        };
-        Ok(Opened { bytes, base, skip_until })
-    }
-}
-
 pub struct Stream {
     opener: Arc<dyn Opener>,
     info: StreamInfo,
@@ -98,18 +67,6 @@ pub struct Stream {
 }
 
 impl Stream {
-    /// Open a Deezer song or podcast episode at track time `at` (seconds).
-    pub fn open_deezer(client: &Deezer, source: StreamSource, at: f64) -> Result<Stream, OpenError> {
-        let info = StreamInfo {
-            song_id: source.song_id,
-            format: source.format,
-            extension: if source.format == Format::Flac { "flac" } else { "mp3" }.into(),
-            any_rate: source.format == Format::Podcast,
-            jumps: matches!(source.format, Format::Mp3(_) | Format::Podcast),
-        };
-        Stream::open(Arc::new(DeezerBytes { client: client.clone(), source }), info, at)
-    }
-
     /// Open the bytes from `opener` at track time `at` (seconds).
     pub fn open(opener: Arc<dyn Opener>, info: StreamInfo, at: f64) -> Result<Stream, OpenError> {
         // Anything that goes wrong after the bytes arrive is the file's: skip it.

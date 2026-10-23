@@ -292,10 +292,10 @@ fn debug_stream(client: &Deezer, playlist: u64, count: usize) {
 /// End-to-end check of the playback pipeline: resolve, download, decrypt and decode
 /// ~10 s of the first playable track, without an audio device.
 fn debug_decode(client: &Deezer, playlist: u64, quality: Quality, start: f64) {
-    use crate::player::library::{Decoded, Library};
+    use crate::media::{Decoded, Playback};
     for track in client.playlist(playlist).expect("playlist").iter().take(5) {
         log_info!("opening {} – {}", track.artist, track.title);
-        let mut playback = match Library::open(client, track, quality, start) {
+        let mut playback = match client.open_track(track, quality, start) {
             Ok(p) => p,
             Err(e) => {
                 println!("{} – {}: {e}", track.artist, track.title);
