@@ -1,5 +1,7 @@
 //! A playable track, whichever source it comes from.
 
+use super::Art;
+
 /// An artist named on a track or album, so the name can link to their page.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArtistRef {
@@ -20,8 +22,8 @@ pub struct Track {
     /// The album's id, so the album name and cover can open it; empty if unknown.
     pub album_id: String,
     pub duration: u32,
-    /// Album cover id (md5) on Deezer's image CDN.
-    pub cover: String,
+    /// The album's cover (a podcast's artwork for an episode).
+    pub art: Option<Art>,
     /// Streamable now. False e.g. for tracks of an album that isn't out yet.
     pub available: bool,
     /// When it becomes streamable (`YYYY-MM-DD`), if the source says; empty otherwise.
@@ -67,7 +69,7 @@ pub struct DeezerSong {
 }
 
 /// What a podcast episode has beyond a track's fields. Its `artist` is the show
-/// and its `cover` the show's artwork.
+/// and its `art` the show's artwork.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Episode {
     /// The show's own audio file (plain, no Deezer encryption).

@@ -1,6 +1,6 @@
 //! What the UI is showing and what it can open: views, collections and their sources.
 
-use crate::model::{ArtistRef, Item, Playlist, Track};
+use crate::model::{Art, ArtistRef, Item, Playlist, Track};
 use crate::player::Cmd;
 use crate::provider::Provider;
 
@@ -26,8 +26,8 @@ pub enum View {
 pub struct ArtistView {
     pub id: String,
     pub name: String,
-    /// Picture md5 (`artist` kind on the image CDN), if known yet.
-    pub picture: Option<String>,
+    /// The artist's picture, if known yet.
+    pub picture: Option<Art>,
 }
 
 impl ArtistView {
@@ -73,7 +73,7 @@ pub struct Coll {
     pub kind: &'static str,
     pub title: String,
     pub subtitle: String,
-    pub picture: Option<(String, String)>,
+    pub picture: Option<Art>,
 }
 
 impl Coll {
@@ -84,7 +84,7 @@ impl Coll {
             kind: "ALBUM",
             title: track.album.clone(),
             subtitle: track.artist.clone(),
-            picture: (!track.cover.is_empty()).then(|| ("cover".to_string(), track.cover.clone())),
+            picture: track.art.clone(),
         })
     }
 
@@ -96,7 +96,7 @@ impl Coll {
                 kind: "PODCAST",
                 title: track.artist.clone(),
                 subtitle: String::new(),
-                picture: (!track.cover.is_empty()).then(|| ("talk".to_string(), track.cover.clone())),
+                picture: track.art.clone(),
             }),
             Some(_) => None,
             None => Self::album_of(track),
@@ -190,14 +190,14 @@ mod tests {
             album: "Discovery".into(),
             album_id: "302127".into(),
             duration: 320,
-            cover: "abc".into(),
+            art: Art::new("cover/abc"),
             available: true,
             available_from: String::new(),
             origin: Origin::Deezer(DeezerSong::default()),
         };
         let coll = Coll::album_of(&track).unwrap();
         assert_eq!((coll.source, coll.title.as_str(), coll.subtitle.as_str()), (Source::Album("302127".into()), "Discovery", "Daft Punk"));
-        assert_eq!(coll.picture, Some(("cover".into(), "abc".into())));
+        assert_eq!(coll.picture, Art::new("cover/abc"));
         assert!(Coll::album_of(&Track { album_id: String::new(), ..track }).is_none());
     }
 
@@ -211,7 +211,7 @@ mod tests {
             album: String::new(),
             album_id: String::new(),
             duration: 1,
-            cover: String::new(),
+            art: None,
             available,
             available_from: String::new(),
             origin: Origin::Deezer(DeezerSong::default()),

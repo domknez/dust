@@ -8,7 +8,7 @@
 //! - [`lyrics`]: synced and plain song lyrics
 //! - [`listens`]: listen reports (history, Flow, Last.fm scrobbling)
 //! - [`parse`]: the model types ([`crate::model`]) from API JSON
-//! - [`images`]: artwork URLs
+//! - [`images`]: pictures on the image CDN
 //! - [`crypto`]: the `BF_CBC_STRIPE` stream cipher
 //! - [`playback`]: opening songs and episodes for the player
 //! - [`links`]: Deezer links pasted into search
@@ -28,7 +28,7 @@ pub(crate) mod session;
 mod streaming;
 
 pub use client::Deezer;
-pub use images::image_url;
+pub use images::art_url;
 pub use links::{Link, is_link};
 
 // Child modules use these as `super::{Error, Result}`.

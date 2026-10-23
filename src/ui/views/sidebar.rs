@@ -2,7 +2,6 @@
 
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
-use crate::ui::format::playlist_url;
 use crate::ui::state::{Coll, Source, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
@@ -102,7 +101,7 @@ impl App {
                 }
                 let art_size = metrics::SIDEBAR_ART;
                 let art = Rect::from_min_size(pos2(rect.left() + 10.0, rect.center().y - art_size / 2.0), Vec2::splat(art_size));
-                widgets::cover(ui, &mut self.covers, playlist_url(playlist, metrics::THUMB_PX).as_deref(), art, 3);
+                widgets::cover(ui, &mut self.covers, playlist.picture.as_ref(), metrics::THUMB_PX, art, 3);
                 let count = playlist.count.to_string();
                 let count_width = ui.painter().layout_no_wrap(count.clone(), ty::META.font(), p.faint).size().x;
                 ui.painter().text(pos2(rect.right() - 10.0, rect.center().y), Align2::RIGHT_CENTER, count, ty::META.font(), p.faint);

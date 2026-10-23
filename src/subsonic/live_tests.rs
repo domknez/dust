@@ -14,9 +14,7 @@ fn server() -> Subsonic {
     let mut parts = spec.splitn(3, '|');
     let mut next = || parts.next().expect("url|user|password").to_string();
     let server = Server { url: next(), user: next(), password: next() };
-    let client = Subsonic::connect(&server).expect("connect");
-    client.activate();
-    client
+    Subsonic::connect(&server).expect("connect")
 }
 
 /// Every song in the library, through its albums.

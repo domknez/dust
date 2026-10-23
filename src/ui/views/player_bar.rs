@@ -5,7 +5,7 @@ use crate::model::Likeable;
 use crate::player::{Cmd, Repeat, State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::{App, SidePanel};
-use crate::ui::format::{cover_url, mmss};
+use crate::ui::format::mmss;
 use crate::ui::state::Coll;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
@@ -58,7 +58,7 @@ impl App {
         let art_size = metrics::NOW_PLAYING_ART;
         if let Some(track) = &st.track {
             let art = Rect::from_min_size(pos2(area.left(), area.center().y - art_size / 2.0), Vec2::splat(art_size));
-            widgets::cover(ui, &mut self.covers, cover_url(track, metrics::NOW_PLAYING_PX).as_deref(), art, radius::ROW);
+            widgets::cover(ui, &mut self.covers, track.art.as_ref(), metrics::NOW_PLAYING_PX, art, radius::ROW);
             let x = art.right() + 14.0;
             // Room for the text, leaving space for the heart.
             let width = area.right() - 36.0 - x;

@@ -2,6 +2,7 @@
 //! (macOS Control Center, Windows media overlay, Linux MPRIS).
 
 use crate::player::{Cmd, PlayerHandle, State, Status};
+use crate::ui::covers::Covers;
 use souvlaki::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig, SeekDirection};
 use std::time::{Duration, Instant};
 
@@ -31,13 +32,13 @@ impl NowPlaying {
     }
 
     /// Mirror the player into the OS session; cheap when nothing changed.
-    pub fn update(&mut self, st: &Status) {
+    pub fn update(&mut self, covers: &Covers, st: &Status) {
         let track_id = st.track.as_ref().map(|t| t.id);
         if track_id != self.track {
             self.track = track_id;
             let metadata = match &st.track {
                 Some(t) => {
-                    let cover = crate::ui::format::cover_url(t, COVER_SIZE);
+                    let cover = t.art.as_ref().and_then(|art| covers.url(art, COVER_SIZE));
                     let metadata = MediaMetadata {
                         title: Some(&t.title),
                         artist: Some(&t.artist),

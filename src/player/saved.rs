@@ -3,7 +3,7 @@
 //! keeps its own: Deezer's in `queue.json`, a music server's in `queue-<key>.json`.
 
 use super::Status;
-use crate::model::{ArtistRef, DeezerSong, Episode, Origin, ServerSong, Track};
+use crate::model::{Art, ArtistRef, DeezerSong, Episode, Origin, ServerSong, Track};
 use crate::settings;
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -98,8 +98,10 @@ fn decode(v: &Value) -> Option<Saved> {
     Some(Saved { tracks, index, position: v["position"].as_f64().unwrap_or(0.0).max(0.0), flow })
 }
 
-/// A track as saved. The shape is the one dust has always written: every
-/// source's fields side by side, empty or null for the ones a track doesn't have.
+/// A track as saved: every source's fields side by side, empty or null for the
+/// ones a track doesn't have (the shape dust has always written). The picture is
+/// `art`, as its source names it; files from 0.16 and before have `cover` instead
+/// (see [`legacy_art`]).
 fn encode_track(t: &Track) -> Value {
     let (song, episode, server) = match &t.origin {
         Origin::Deezer(song) => (Some(song), None, None),
@@ -115,7 +117,7 @@ fn encode_track(t: &Track) -> Value {
         "album_id": t.album_id,
         "duration": t.duration,
         "token": song.map(|s| s.token.as_str()).unwrap_or_default(),
-        "cover": t.cover,
+        "art": t.art.as_ref().map(Art::as_str),
         "fallback": song.and_then(|s| s.fallback.as_ref()).map(|(id, token)| json!({"id": id, "token": token})),
         "available": t.available,
         "available_from": t.available_from,
@@ -154,12 +156,28 @@ fn decode_track(v: &Value) -> Option<Track> {
         album: s("album"),
         album_id: s("album_id"),
         duration: v["duration"].as_u64().unwrap_or(0) as u32,
-        cover: s("cover"),
+        art: match v["art"].as_str() {
+            Some(name) => Art::new(name),
+            None => legacy_art(&s("cover"), &origin),
+        },
         // Files from before 0.10 didn't record it; those tracks were playable then.
         available: v["available"].as_bool().unwrap_or(true),
         available_from: s("available_from"),
         origin,
     })
+}
+
+/// The picture of a track saved by dust 0.16 or before, from its `cover`: a
+/// server's cover art id behind `sub:`, else the md5 of a Deezer album cover (a
+/// show's artwork for an episode) on Deezer's image CDN, whose [`Art`] is
+/// `<family>/<md5>`.
+fn legacy_art(cover: &str, origin: &Origin) -> Option<Art> {
+    match origin {
+        Origin::Server(_) => Art::new(cover.strip_prefix("sub:").unwrap_or(cover)),
+        _ if cover.is_empty() => None,
+        Origin::Episode(_) => Art::new(format!("talk/{cover}")),
+        Origin::Deezer(_) => Art::new(format!("cover/{cover}")),
+    }
 }
 
 #[cfg(test)]
@@ -176,7 +194,7 @@ mod tests {
             album: "Album".into(),
             album_id: "302127".into(),
             duration: 200,
-            cover: "md5".into(),
+            art: Art::new("cover/md5"),
             available: true,
             available_from: String::new(),
             origin: Origin::Deezer(DeezerSong { token: "tok".into(), fallback: Some((9, "tok2".into())) }),
@@ -259,18 +277,26 @@ mod tests {
         assert_eq!(saved.flow, None);
         let song = &saved.tracks[0];
         assert_eq!(song.origin, Origin::Server(ServerSong { id: "qPyR7XLJOiu93qWw1n06xy".into(), suffix: "wav".into() }));
-        assert_eq!(song.cover, "sub:al-5F81DCwcfjVByziJAH9maf_0");
+        assert_eq!(song.art, Art::new("al-5F81DCwcfjVByziJAH9maf_0"));
     }
 
     #[test]
-    fn queues_are_written_as_0_16_wrote_them() {
-        // An older dust reading a newer file (after a downgrade) finds what it knows.
+    fn queues_keep_what_0_16_reads() {
+        // An older dust reading a newer file (after a downgrade) finds every field
+        // it knows but the picture, which it does without.
         for text in [DEEZER_0_16, NAVIDROME_0_16] {
             let old: Value = serde_json::from_str(text).unwrap();
             let saved = decode(&old).unwrap();
             let flow = saved.flow.clone().map(|mood| mood.unwrap_or_else(|| "default".into()));
-            let st = Status { queue: Arc::new(saved.tracks), index: saved.index, position: saved.position, flow, ..Default::default() };
-            assert_eq!(encode(&st), old);
+            let st =
+                Status { queue: Arc::new(saved.tracks.clone()), index: saved.index, position: saved.position, flow, ..Default::default() };
+            let mut new = encode(&st);
+            for (track, old) in new["tracks"].as_array_mut().unwrap().iter_mut().zip(old["tracks"].as_array().unwrap()) {
+                track.as_object_mut().unwrap().remove("art");
+                track["cover"] = old["cover"].clone();
+            }
+            assert_eq!(new, old);
+            assert_eq!(decode(&encode(&st)).unwrap().tracks, saved.tracks, "and the new file reads back the same");
         }
     }
 

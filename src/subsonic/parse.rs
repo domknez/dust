@@ -1,8 +1,8 @@
 //! Models from the Subsonic API's JSON (`f=json`). Servers differ in which optional
 //! fields they fill, so everything falls back to the classic Subsonic fields.
 
-use super::{COVER_PREFIX, api, local_id};
-use crate::model::{ArtistRef, Item, LyricLine, Lyrics, Origin, Playlist, Result, Section, ServerSong, Track};
+use super::{api, local_id};
+use crate::model::{Art, ArtistRef, Item, LyricLine, Lyrics, Origin, Playlist, Result, Section, ServerSong, Track};
 use serde_json::Value;
 
 /// The `subsonic-response` object of a reply, or the server's error.
@@ -37,9 +37,9 @@ pub fn list<'a>(v: &'a Value, key: &str) -> Vec<&'a Value> {
     }
 }
 
-/// `sub:<id>` for a cover art id, the way pictures are recorded (see [`COVER_PREFIX`]).
-fn cover(v: &Value) -> Option<String> {
-    Some(text(&v["coverArt"])).filter(|c| !c.is_empty()).map(|c| format!("{COVER_PREFIX}{c}"))
+/// The picture of a song, album, artist or playlist: its cover art id.
+pub fn cover(v: &Value) -> Option<Art> {
+    Art::new(text(&v["coverArt"]))
 }
 
 /// The artists credited on a song or album: OpenSubsonic's list, else the single
@@ -74,7 +74,7 @@ pub fn song(v: &Value) -> Option<Track> {
         album: text(&v["album"]),
         album_id: text(&v["albumId"]),
         duration: number(&v["duration"]) as u32,
-        cover: cover(v).unwrap_or_default(),
+        art: cover(v),
         available: true,
         available_from: String::new(),
         origin: Origin::Server(ServerSong { id, suffix: text(&v["suffix"]).to_lowercase() }),
@@ -94,7 +94,7 @@ pub fn album_item(v: &Value, subtitle: String) -> Option<Item> {
         id,
         title: Some(text(&v["name"])).filter(|n| !n.is_empty()).unwrap_or_else(|| text(&v["title"])),
         subtitle,
-        picture: cover(v).map(|c| ("cover".into(), c)),
+        picture: cover(v),
     })
 }
 
@@ -119,7 +119,7 @@ pub fn artist_item(v: &Value) -> Option<Item> {
             1 => "1 album".into(),
             n => format!("{n} albums"),
         },
-        picture: cover(v).map(|c| ("artist".into(), c)),
+        picture: cover(v),
     })
 }
 
@@ -144,7 +144,7 @@ pub fn playlist(v: &Value, user: &str) -> Option<(String, Playlist)> {
         count: number(&v["songCount"]) as u32,
         owned: owner.is_empty() || owner == user,
         private: v["public"] != true,
-        picture: cover(v).map(|c| ("playlist".into(), c)),
+        picture: cover(v),
     };
     Some((id, playlist))
 }
@@ -264,7 +264,7 @@ mod tests {
         assert_eq!((t.title.as_str(), t.artist.as_str(), t.album.as_str(), t.duration), ("Pulse", "Square Wave Trio", "Single Pulse", 20));
         assert_eq!(t.album_id, "5F81DCwcfjVByziJAH9maf");
         assert_eq!(t.artists, vec![ArtistRef { id: "1cX14wrZBmbXZQpEQ79FiO".into(), name: "Square Wave Trio".into() }]);
-        assert_eq!(t.cover, "sub:al-5F81DCwcfjVByziJAH9maf_0");
+        assert_eq!(t.art, Art::new("al-5F81DCwcfjVByziJAH9maf_0"));
         assert_eq!(t.origin, Origin::Server(ServerSong { id: "qPyR7XLJOiu93qWw1n06xy".into(), suffix: "wav".into() }));
         assert_eq!(t.id, local_id("qPyR7XLJOiu93qWw1n06xy"));
         assert!(t.available);
@@ -275,9 +275,7 @@ mod tests {
         let r = fixture("album_list");
         let cards = albums(list(&r["albumList2"], "album"));
         assert_eq!(cards.len(), 4);
-        assert!(
-            cards.iter().all(|c| c.kind == "album" && c.picture.as_ref().is_some_and(|(k, p)| k == "cover" && p.starts_with("sub:al-")))
-        );
+        assert!(cards.iter().all(|c| c.kind == "album" && c.picture.as_ref().is_some_and(|p| p.as_str().starts_with("al-"))));
         let pulse = cards.iter().find(|c| c.title == "Single Pulse").unwrap();
         assert_eq!(pulse.subtitle, "Square Wave Trio");
     }
@@ -293,7 +291,7 @@ mod tests {
         let all: Vec<Item> = list(&r["artists"], "index").into_iter().flat_map(|i| artists_items(list(i, "artist"))).collect();
         assert_eq!(all.iter().map(|a| a.title.as_str()).collect::<Vec<_>>(), ["Sine Collective", "Square Wave Trio"]);
         assert_eq!(all[0].subtitle, "3 albums");
-        assert_eq!(all[1].picture, Some(("artist".into(), "sub:ar-1cX14wrZBmbXZQpEQ79FiO_0".into())));
+        assert_eq!(all[1].picture, Art::new("ar-1cX14wrZBmbXZQpEQ79FiO_0"));
     }
 
     #[test]

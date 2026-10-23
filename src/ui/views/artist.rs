@@ -4,7 +4,6 @@
 
 use super::collection::header_band;
 use super::home::card_row;
-use crate::deezer::image_url;
 use crate::model::{Item, Likeable, Section};
 use crate::player::{State, Status};
 use crate::ui::action::{Action, Actions};
@@ -126,8 +125,7 @@ impl App {
         let center = pos2(head.right() - 30.0 - diameter / 2.0, head.center().y + 4.0);
         let art = Rect::from_center_size(center, Vec2::splat(diameter));
         let picture = page.and_then(|pg| pg.picture.clone()).or_else(|| artist.picture.clone());
-        let url = picture.map(|md5| image_url("artist", &md5, metrics::HEADER_PX));
-        widgets::cover(ui, &mut self.covers, url.as_deref(), art, (diameter / 2.0) as u8);
+        widgets::cover(ui, &mut self.covers, picture.as_ref(), metrics::HEADER_PX, art, (diameter / 2.0) as u8);
         dashed_ring(ui.painter(), center, diameter / 2.0 + 10.0, p.accent);
 
         let x = head.left() + 4.0;
@@ -174,7 +172,7 @@ fn top_tracks(artist: &ArtistView) -> Coll {
         kind: "POPULAR TRACKS",
         title: artist.name.clone(),
         subtitle: String::new(),
-        picture: artist.picture.clone().map(|md5| ("artist".to_string(), md5)),
+        picture: artist.picture.clone(),
     }
 }
 
@@ -219,8 +217,7 @@ fn release(ui: &mut Ui, covers: &mut Covers, item: &Item, acts: &mut Actions) {
     let size = rect.width();
     let art = Rect::from_min_size(rect.min, Vec2::splat(size));
     let resp = ui.interact(rect, ui.id().with(("release", &item.id)), Sense::click());
-    let url = item.picture.as_ref().map(|(k, m)| image_url(k, m, metrics::GRID_CARD_PX));
-    widgets::cover(ui, covers, url.as_deref(), art, radius::CARD);
+    widgets::cover(ui, covers, item.picture.as_ref(), metrics::GRID_CARD_PX, art, radius::CARD);
     if resp.hovered() {
         let ring = art.expand(3.0);
         ui.painter().rect_stroke(ring, CornerRadius::same(radius::CONTROL), egui::Stroke::new(1.5, p.accent), egui::StrokeKind::Inside);

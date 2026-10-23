@@ -1,6 +1,6 @@
 //! What browsing shows: cards, sections of cards and the pages built from them.
 
-use super::Track;
+use super::{Art, Track};
 
 /// One card on a page (home, search, an artist's page): a playlist, album, artist,
 /// mix, flow, ...
@@ -10,8 +10,7 @@ pub struct Item {
     pub id: String,
     pub title: String,
     pub subtitle: String,
-    /// (`cover`|`playlist`|`artist`|..., md5) on Deezer's image CDN.
-    pub picture: Option<(String, String)>,
+    pub picture: Option<Art>,
 }
 
 /// A titled row of cards.
@@ -27,8 +26,7 @@ pub struct Section {
 #[derive(Clone, Debug, Default)]
 pub struct ArtistPage {
     pub name: String,
-    /// Picture md5 on the image CDN (`artist` kind).
-    pub picture: Option<String>,
+    pub picture: Option<Art>,
     pub fans: u64,
     pub top: Vec<Track>,
     pub sections: Vec<Section>,

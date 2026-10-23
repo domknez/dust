@@ -1,7 +1,6 @@
-//! Display formatting and artwork URLs.
+//! Display formatting.
 
-use crate::deezer::image_url;
-use crate::model::{Playlist, Track};
+use crate::model::Track;
 
 /// 245.3 -> "4:05"
 pub fn mmss(secs: f64) -> String {
@@ -39,14 +38,6 @@ pub fn thousands(n: u64) -> String {
     out
 }
 
-pub fn cover_url(t: &Track, size: u32) -> Option<String> {
-    (!t.cover.is_empty()).then(|| image_url(if t.is_episode() { "talk" } else { "cover" }, &t.cover, size))
-}
-
-pub fn playlist_url(p: &Playlist, size: u32) -> Option<String> {
-    p.picture.as_ref().map(|(kind, md5)| image_url(kind, md5, size))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,7 +69,7 @@ mod tests {
             album: String::new(),
             album_id: String::new(),
             duration: d,
-            cover: String::new(),
+            art: None,
             available: true,
             available_from: String::new(),
             origin: Origin::Deezer(DeezerSong::default()),

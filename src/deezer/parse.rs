@@ -1,6 +1,7 @@
 //! Building models from gw-light JSON, which mixes strings and numbers freely.
 
-use crate::model::{AlbumInfo, ArtistPage, ArtistRef, DeezerSong, Episode, Item, Origin, Playlist, Section, Track};
+use super::images::art;
+use crate::model::{AlbumInfo, Art, ArtistPage, ArtistRef, DeezerSong, Episode, Item, Origin, Playlist, Section, Track};
 use serde_json::Value;
 
 /// String field, tolerating numbers and nulls.
@@ -21,9 +22,10 @@ pub fn number(v: &Value) -> u64 {
     }
 }
 
-/// (kind, md5) picture reference, if both are present.
-fn picture(kind: &Value, md5: &Value) -> Option<(String, String)> {
-    Some((text(kind), text(md5))).filter(|(k, m)| !k.is_empty() && !m.is_empty())
+/// A picture from its family (`cover`, `playlist`, ...) and md5 fields, if both
+/// are present.
+pub fn picture(family: &Value, md5: &Value) -> Option<Art> {
+    art(&text(family), &text(md5))
 }
 
 pub fn track(v: &Value) -> Option<Track> {
@@ -57,7 +59,7 @@ pub fn track(v: &Value) -> Option<Track> {
         album: text(&v["ALB_TITLE"]),
         album_id: Some(text(&v["ALB_ID"])).filter(|id| id != "0").unwrap_or_default(),
         duration: number(&v["DURATION"]) as u32,
-        cover: text(&v["ALB_PICTURE"]),
+        art: art("cover", &text(&v["ALB_PICTURE"])),
         available: !blocked,
         available_from,
         origin: Origin::Deezer(DeezerSong { token, fallback }),
@@ -82,7 +84,7 @@ pub fn episode(v: &Value) -> Option<Track> {
         album: show,
         album_id: String::new(),
         duration: number(&v["DURATION"]) as u32,
-        cover: text(&v["SHOW_ART_MD5"]),
+        art: art("talk", &text(&v["SHOW_ART_MD5"])),
         available: v["AVAILABLE"].as_bool() != Some(false),
         available_from: String::new(),
         origin: Origin::Episode(Episode { url, show_id: text(&v["SHOW_ID"]), published }),
@@ -145,10 +147,10 @@ pub fn search_section(title: &str, kind: &str, data: &Value) -> Section {
 /// An artist, album or playlist from gw-light data as a card.
 pub fn card_item(kind: &str, v: &Value) -> Option<Item> {
     let (id, title, picture) = match kind {
-        "artist" => (&v["ART_ID"], &v["ART_NAME"], picture(&"artist".into(), &v["ART_PICTURE"])),
-        "album" => (&v["ALB_ID"], &v["ALB_TITLE"], picture(&"cover".into(), &v["ALB_PICTURE"])),
+        "artist" => (&v["ART_ID"], &v["ART_NAME"], art("artist", &text(&v["ART_PICTURE"]))),
+        "album" => (&v["ALB_ID"], &v["ALB_TITLE"], art("cover", &text(&v["ALB_PICTURE"]))),
         "playlist" => (&v["PLAYLIST_ID"], &v["TITLE"], picture(&v["PICTURE_TYPE"], &v["PLAYLIST_PICTURE"])),
-        "show" => (&v["SHOW_ID"], &v["SHOW_NAME"], picture(&"talk".into(), &v["SHOW_ART_MD5"])),
+        "show" => (&v["SHOW_ID"], &v["SHOW_NAME"], art("talk", &text(&v["SHOW_ART_MD5"]))),
         _ => return None,
     };
     let id = text(id);
@@ -181,7 +183,7 @@ pub fn album_info(page: &Value) -> AlbumInfo {
             id: text(&v["ALB_ID"]),
             title: text(&v["ALB_TITLE"]),
             subtitle: year(v),
-            picture: picture(&"cover".into(), &v["ALB_PICTURE"]),
+            picture: art("cover", &text(&v["ALB_PICTURE"])),
         })
         .collect();
     AlbumInfo { year: year(data), label: text(&data["LABEL_NAME"]), more }
@@ -214,7 +216,7 @@ pub fn discography(data: &Value) -> Vec<Section> {
             Some(year) => format!("{year} · {kind}"),
             None => kind.to_string(),
         };
-        let picture = picture(&"cover".into(), &v["ALB_PICTURE"]);
+        let picture = art("cover", &text(&v["ALB_PICTURE"]));
         groups[group].1.push((date, Item { kind: "album".into(), id, title: text(&v["ALB_TITLE"]), subtitle, picture }));
     }
     groups
@@ -243,7 +245,7 @@ pub fn artist_page(page: &Value, discography_data: &Value) -> ArtistPage {
     }
     ArtistPage {
         name: text(&data["ART_NAME"]),
-        picture: Some(text(&data["ART_PICTURE"])).filter(|p| !p.is_empty()),
+        picture: art("artist", &text(&data["ART_PICTURE"])),
         fans: number(&data["NB_FAN"]),
         top: tracks(&page["TOP"]["data"]),
         sections,
@@ -351,7 +353,7 @@ mod tests {
         assert_eq!((info.year.as_str(), info.label.as_str()), ("2021", "Roadrunner Records"));
         assert_eq!(info.more.len(), 1, "the album itself is left out");
         assert_eq!((info.more[0].title.as_str(), info.more[0].subtitle.as_str()), ("Magma", "2016"));
-        assert_eq!(info.more[0].picture, Some(("cover".into(), "abc".into())));
+        assert_eq!(info.more[0].picture, art("cover", "abc"));
         assert_eq!(album_info(&serde_json::json!({})), AlbumInfo::default());
     }
     use serde_json::json;
@@ -374,8 +376,8 @@ mod tests {
     fn episodes_and_shows() {
         let t = episode(&episode_json("935346132", "2026-09-17 00:40:49")).unwrap();
         assert_eq!(
-            (t.id, t.title.as_str(), t.artist.as_str(), t.duration, t.cover.as_str()),
-            (935346132, "Episode 935346132", "Lex Fridman Podcast", 13430, "fa87")
+            (t.id, t.title.as_str(), t.artist.as_str(), t.duration, t.art.as_ref().map(Art::as_str)),
+            (935346132, "Episode 935346132", "Lex Fridman Podcast", 13430, Some("talk/fa87"))
         );
         assert!(t.available && t.album_id.is_empty() && t.artists.is_empty());
         let e = t.episode().unwrap();
@@ -399,7 +401,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!((card.kind.as_str(), card.title.as_str(), card.subtitle.as_str()), ("show", "Lex Fridman Podcast", "Lex Fridman"));
-        assert_eq!(card.picture, Some(("talk".into(), "fa87".into())));
+        assert_eq!(card.picture, art("talk", "fa87"));
     }
 
     #[test]
@@ -427,10 +429,10 @@ mod tests {
         assert_eq!(s.items.len(), 1);
         let a = &s.items[0];
         assert_eq!((a.kind.as_str(), a.id.as_str(), a.title.as_str(), a.subtitle.as_str()), ("artist", "27", "Daft Punk", "2 fans"));
-        assert_eq!(a.picture, Some(("artist".into(), "abc".into())));
+        assert_eq!(a.picture, art("artist", "abc"));
         let albums = json!([{"ALB_ID": 302127, "ALB_TITLE": "Discovery", "ALB_PICTURE": "def", "ART_NAME": "Daft Punk"}]);
         let b = &search_section("Albums", "album", &albums).items[0];
-        assert_eq!((b.id.as_str(), b.subtitle.as_str(), b.picture.as_ref().map(|p| p.0.as_str())), ("302127", "Daft Punk", Some("cover")));
+        assert_eq!((b.id.as_str(), b.subtitle.as_str(), b.picture.as_ref().map(Art::as_str)), ("302127", "Daft Punk", Some("cover/def")));
         let playlists = json!([{"PLAYLIST_ID": "9", "TITLE": "Mix", "PICTURE_TYPE": "playlist", "PLAYLIST_PICTURE": "f", "NB_SONG": 3}]);
         assert_eq!(search_section("Playlists", "playlist", &playlists).items[0].subtitle, "3 tracks");
         assert!(search_section("Artists", "artist", &json!(null)).items.is_empty());

@@ -1,17 +1,19 @@
 //! Artwork: covers from the cache, or placeholder tiles.
 
+use crate::model::Art;
 use crate::ui::covers::Covers;
 use crate::ui::style::colors;
 use crate::ui::style::icons::{self, Icon};
 use eframe::egui::{self, Color32, CornerRadius, Rect, Ui};
 
-/// Rounded cover image, or a subtle placeholder while it loads.
-pub fn cover(ui: &Ui, covers: &mut Covers, url: Option<&str>, rect: Rect, radius: u8) {
+/// Rounded cover image (`art` fetched at `size` px), or a subtle placeholder while
+/// it loads.
+pub fn cover(ui: &Ui, covers: &mut Covers, art: Option<&Art>, size: u32, rect: Rect, radius: u8) {
     // Off-screen artwork is neither fetched nor kept alive, so the cache can evict it.
     if !ui.is_rect_visible(rect) {
         return;
     }
-    match url.and_then(|u| covers.get(u)) {
+    match art.and_then(|a| covers.art(a, size)) {
         Some(texture) => egui::Image::from_texture((texture, rect.size())).corner_radius(radius).paint_at(ui, rect),
         None => {
             ui.painter().rect_filled(rect, CornerRadius::same(radius), colors().surface);

@@ -143,9 +143,7 @@ impl App {
             self.sources.settled = true;
             self.prefs.update(|p| p.source = setting(&provider));
         }
-        if let Provider::Subsonic(server) = &provider {
-            server.activate();
-        }
+        self.covers.set_resolver(std::sync::Arc::new(provider.clone()));
         self.player.send(Cmd::Client(provider.clone()));
         self.player.send(Cmd::Quality(self.prefs.quality));
         self.player.send(Cmd::ReportListens(self.prefs.report_listens));
@@ -424,6 +422,17 @@ mod tests {
         assert_eq!((in_use(&t), t.app.prefs.source), (Some("Navidrome"), SourcePref::Navidrome));
         t.app.deezer_ready(deezer());
         assert_eq!(in_use(&t), Some("Navidrome"), "Deezer logging in again doesn't undo the pick");
+    }
+
+    #[test]
+    fn covers_come_from_the_source_in_use() {
+        let mut t = TestApp::new("source=deezer\n");
+        let art = crate::model::Art::new("al-5F81DCwcfjVByziJAH9maf_0").unwrap();
+        assert_eq!(t.app.covers.url(&art, 120), None, "no source yet");
+        t.app.deezer_ready(deezer());
+        assert!(t.app.covers.url(&art, 120).unwrap().starts_with("https://cdn-images.dzcdn.net/images/al-5F81DCwcfjVByziJAH9maf_0/"));
+        t.update(Action::SwitchSource(Provider::Subsonic(navidrome())));
+        assert!(t.app.covers.url(&art, 120).unwrap().starts_with("http://nas:4533/rest/getCoverArt?"));
     }
 
     #[test]

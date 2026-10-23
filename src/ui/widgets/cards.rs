@@ -3,10 +3,9 @@
 use super::art::cover;
 use super::menu::queue_menu;
 use super::text::{artist_links, text_left};
-use crate::deezer::image_url;
 use crate::model::{ArtistRef, Track};
 use crate::ui::covers::Covers;
-use crate::ui::format::{cover_url, mmss};
+use crate::ui::format::mmss;
 use crate::ui::state::{Coll, PlayMode};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
@@ -26,8 +25,7 @@ pub fn card(ui: &mut Ui, covers: &mut Covers, coll: &Coll) -> CardClick {
     let (rect, resp) = ui.allocate_exact_size(vec2(w, w + metrics::CARD_TEXT), Sense::click());
     let art = Rect::from_min_size(rect.min, Vec2::splat(w));
     let corner = if coll.round() { (w / 2.0) as u8 } else { radius::CARD };
-    let url = coll.picture.as_ref().map(|(k, m)| image_url(k, m, metrics::HOME_CARD_PX));
-    cover(ui, covers, url.as_deref(), art, corner);
+    cover(ui, covers, coll.picture.as_ref(), metrics::HOME_CARD_PX, art, corner);
     let mut click = CardClick::None;
     if resp.hovered() {
         ui.painter().rect_filled(art, CornerRadius::same(corner), colors().veil);
@@ -140,7 +138,7 @@ fn sound_bars(painter: &egui::Painter, area: Rect) {
 /// One track in the queue panel. Returns the artist whose name was clicked.
 pub fn queue_row(ui: &Ui, covers: &mut Covers, rect: Rect, t: &Track, current: bool, show_time: bool) -> Option<ArtistRef> {
     let art = Rect::from_min_size(pos2(rect.left() + 6.0, rect.center().y - metrics::LIST_ART / 2.0), Vec2::splat(metrics::LIST_ART));
-    cover(ui, covers, cover_url(t, metrics::THUMB_PX).as_deref(), art, radius::THUMB);
+    cover(ui, covers, t.art.as_ref(), metrics::THUMB_PX, art, radius::THUMB);
     let x = art.right() + 12.0;
     let width = rect.right() - x - 52.0;
     let p = colors();

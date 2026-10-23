@@ -659,7 +659,7 @@ mod tests {
             album: String::new(),
             album_id: String::new(),
             duration: secs,
-            cover: String::new(),
+            art: None,
             available: true,
             available_from: String::new(),
             origin: Origin::Deezer(DeezerSong::default()),

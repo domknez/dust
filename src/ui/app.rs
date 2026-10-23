@@ -265,7 +265,6 @@ impl App {
         self.browse.search.clear();
         match link {
             Link::Album { id, title, artist, picture } => {
-                let picture = picture.map(|md5| ("cover".to_string(), md5));
                 self.open_collection(Coll { source: Source::Album(id), kind: "ALBUM", title, subtitle: artist, picture });
             }
             Link::Artist { id } => self.open_artist(ArtistView { id, name: String::new(), picture: None }),
@@ -278,8 +277,7 @@ impl App {
     /// Open a collection; artists get their full page instead of a track list.
     pub(super) fn open_collection(&mut self, coll: Coll) {
         if let Source::Artist(id) = &coll.source {
-            let picture = coll.picture.as_ref().map(|(_, md5)| md5.clone());
-            return self.open_artist(ArtistView { id: id.clone(), name: coll.title.clone(), picture });
+            return self.open_artist(ArtistView { id: id.clone(), name: coll.title.clone(), picture: coll.picture.clone() });
         }
         self.open_view(View::Collection(Box::new(coll)));
     }
@@ -517,7 +515,7 @@ impl eframe::App for App {
         self.persist_playback(&st);
         self.save_queue_if_changed(&st);
         if let Some(np) = &mut self.now_playing {
-            np.update(&st);
+            np.update(&self.covers, &st);
         }
         let p = colors();
         if self.mini_player.is_some() {
@@ -635,7 +633,7 @@ pub(super) mod testing {
             album: String::new(),
             album_id: String::new(),
             duration: 180,
-            cover: String::new(),
+            art: None,
             available,
             available_from: String::new(),
             origin: Origin::Deezer(DeezerSong::default()),

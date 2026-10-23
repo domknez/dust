@@ -3,10 +3,11 @@
 //! has (Flow, podcasts, track mixes, Deezer links) is flagged in [`Features`] so the
 //! UI can leave it out.
 
-use crate::deezer::{Deezer, Link};
+use crate::deezer::{self, Deezer, Link};
 use crate::media::{OpenError, Playback};
 use crate::model::{
-    AlbumInfo, ArtistPage, Error, Item, Likeable, Likes, Listen, Lyrics, Playlist, Quality, Result, SearchResults, Section, Track,
+    AlbumInfo, Art, ArtResolver, ArtistPage, Error, Item, Likeable, Likes, Listen, Lyrics, Playlist, Quality, Result, SearchResults,
+    Section, Track,
 };
 use crate::player::library::Library;
 use crate::subsonic::Subsonic;
@@ -255,6 +256,16 @@ impl Provider {
     pub fn adopt(&self, tracks: &[Track]) {
         if let Provider::Subsonic(s) = self {
             s.remember_tracks(tracks);
+        }
+    }
+}
+
+/// Pictures come from the source that named them.
+impl ArtResolver for Provider {
+    fn art_url(&self, art: &Art, size: u32) -> String {
+        match self {
+            Provider::Deezer(_) => deezer::art_url(art, size),
+            Provider::Subsonic(s) => s.art_url(art, size),
         }
     }
 }

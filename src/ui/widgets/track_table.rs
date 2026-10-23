@@ -8,7 +8,7 @@ use crate::model::{Likeable, Playlist, Track};
 use crate::player::Cmd;
 use crate::ui::action::{Action, Actions};
 use crate::ui::covers::Covers;
-use crate::ui::format::{cover_url, mmss, release_date};
+use crate::ui::format::{mmss, release_date};
 use crate::ui::state::Coll;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
@@ -139,7 +139,7 @@ fn track_row(ui: &mut Ui, covers: &mut Covers, table: &Table, i: usize, rect: Re
     }
     if let Some((x, size)) = columns.art {
         let art = Rect::from_min_size(pos2(x, cy - size / 2.0), Vec2::splat(size));
-        cover(ui, covers, cover_url(track, metrics::THUMB_PX).as_deref(), art, radius::THUMB);
+        cover(ui, covers, track.art.as_ref(), metrics::THUMB_PX, art, radius::THUMB);
         if !available {
             // Faded artwork, like the text.
             ui.painter().rect_filled(art, CornerRadius::same(radius::THUMB), p.bg.gamma_multiply(0.65));

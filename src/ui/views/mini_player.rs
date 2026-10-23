@@ -7,7 +7,7 @@ use super::player_bar::{TICK, transport_buttons};
 use crate::player::{Cmd, Output, State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
-use crate::ui::format::{cover_url, mmss};
+use crate::ui::format::mmss;
 use crate::ui::state::Coll;
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, radius, typography as ty};
@@ -104,7 +104,7 @@ impl App {
         let width = controls.left() - 12.0 - x;
         match &st.track {
             Some(track) => {
-                widgets::cover(ui, &mut self.covers, cover_url(track, metrics::NOW_PLAYING_PX).as_deref(), art, radius::ROW);
+                widgets::cover(ui, &mut self.covers, track.art.as_ref(), metrics::NOW_PLAYING_PX, art, radius::ROW);
                 let title_pos = pos2(x, cy - 9.0);
                 match Coll::origin_of(track) {
                     // The title opens the album (or podcast) in the full window.

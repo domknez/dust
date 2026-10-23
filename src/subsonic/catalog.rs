@@ -114,7 +114,7 @@ impl Subsonic {
             }
         }
         let top = self.top_songs(&name, artist).unwrap_or_default();
-        let picture = Some(text(&artist["coverArt"])).filter(|c| !c.is_empty()).map(|c| format!("{}{c}", super::COVER_PREFIX));
+        let picture = parse::cover(artist);
         Ok(ArtistPage { name, picture, fans: 0, top, sections })
     }
 

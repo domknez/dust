@@ -4,7 +4,6 @@ use crate::model::Playlist;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
-use crate::ui::format::playlist_url;
 use crate::ui::state::{Coll, Source};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, Grid, GridColumns, text_left};
@@ -31,7 +30,7 @@ fn playlist_card(ui: &mut Ui, covers: &mut Covers, playlist: &Playlist, acts: &m
     let card = metrics::GRID_CARD;
     let (rect, resp) = ui.allocate_exact_size(vec2(card, card + 54.0), Sense::click());
     let art = Rect::from_min_size(rect.min, Vec2::splat(card));
-    widgets::cover(ui, covers, playlist_url(playlist, metrics::GRID_CARD_PX).as_deref(), art, radius::CARD);
+    widgets::cover(ui, covers, playlist.picture.as_ref(), metrics::GRID_CARD_PX, art, radius::CARD);
     if resp.hovered() {
         ui.painter().rect_filled(art, CornerRadius::same(radius::CARD), p.veil);
         widgets::play_knob(ui, pos2(art.right() - 30.0, art.bottom() - 30.0), 20.0);

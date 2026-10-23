@@ -1,8 +1,7 @@
 //! Track lists: search results, Loved tracks and opened collections. A header
 //! (artwork, title, Play/Shuffle) scrolls with a virtualised track table.
 
-use crate::deezer::image_url;
-use crate::model::{ArtistRef, Item, Likeable, Playlist};
+use crate::model::{Art, ArtistRef, Item, Likeable, Playlist};
 use crate::player::{State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
@@ -36,7 +35,7 @@ struct Header {
     kind: &'static str,
     title: String,
     subtitle: String,
-    art: Option<String>,
+    art: Option<Art>,
     /// Placeholder tile when there is no artwork.
     tile: Option<(Icon, Color32)>,
     round: bool,
@@ -115,7 +114,7 @@ impl App {
                 kind: coll.kind,
                 title: coll.title.clone(),
                 subtitle: coll.subtitle.clone(),
-                art: coll.picture.as_ref().map(|(k, m)| image_url(k, m, metrics::HEADER_PX)),
+                art: coll.picture.clone(),
                 tile: None,
                 round: coll.round(),
             },
@@ -174,9 +173,9 @@ impl App {
         let art_rect = Rect::from_min_size(head.min + vec2(0.0, 18.0), Vec2::splat(metrics::HEADER_ART));
         let corner = if round { (metrics::HEADER_ART / 2.0) as u8 } else { radius::CONTROL };
         match (art, tile) {
-            (Some(url), _) => widgets::cover(ui, &mut self.covers, Some(&url), art_rect, corner),
+            (Some(art), _) => widgets::cover(ui, &mut self.covers, Some(&art), metrics::HEADER_PX, art_rect, corner),
             (None, Some((icon, color))) => widgets::tile(ui, art_rect, icon, color, radius::CONTROL),
-            _ => widgets::cover(ui, &mut self.covers, None, art_rect, radius::CONTROL),
+            _ => widgets::cover(ui, &mut self.covers, None, metrics::HEADER_PX, art_rect, radius::CONTROL),
         }
         let x = art_rect.right() + 28.0;
         let width = head.right() - x;
@@ -306,8 +305,7 @@ fn more_releases(ui: &mut Ui, covers: &mut Covers, column: Rect, caption: &str, 
             ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.hover);
         }
         let art = Rect::from_min_size(pos2(rect.left() + 2.0, rect.center().y - 21.0), Vec2::splat(42.0));
-        let url = item.picture.as_ref().map(|(k, m)| image_url(k, m, metrics::THUMB_PX));
-        widgets::cover(ui, covers, url.as_deref(), art, radius::THUMB);
+        widgets::cover(ui, covers, item.picture.as_ref(), metrics::THUMB_PX, art, radius::THUMB);
         let x = art.right() + 10.0;
         let width = rect.right() - x - 4.0;
         text_left(ui.painter(), pos2(x, rect.center().y - 8.0), &item.title, ty::ITEM, p.text, width);

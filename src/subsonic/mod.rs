@@ -17,17 +17,14 @@ mod live_tests;
 mod parse;
 mod stream;
 
-use crate::model::{Error, Origin, Result, Service, Track};
+use crate::model::{Art, Error, Origin, Result, Service, Track};
 use md5::{Digest, Md5};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Cover pictures from a server are recorded as `sub:<cover art id>` where Deezer
-/// keeps an image hash; [`crate::deezer::image_url`] turns them into server URLs.
-pub const COVER_PREFIX: &str = "sub:";
 /// API version we speak (Navidrome supports it, plus the OpenSubsonic extensions).
 const API_VERSION: &str = "1.16.1";
 const CLIENT: &str = "dust";
@@ -71,16 +68,6 @@ struct Inner {
 /// A connected server. Cheap to clone and share between threads.
 #[derive(Clone)]
 pub struct Subsonic(Arc<Inner>);
-
-/// The connected server whose cover art the UI shows (see [`cover_url`]).
-static ACTIVE: RwLock<Option<Subsonic>> = RwLock::new(None);
-
-/// URL of a cover picture on the active server, `size` px square; empty when no
-/// server is active (the cover then fails to load and shows its placeholder).
-pub fn cover_url(id: &str, size: u32) -> String {
-    let active = ACTIVE.read().unwrap();
-    active.as_ref().map(|s| s.url("getCoverArt", &[("id", id), ("size", &size.to_string())])).unwrap_or_default()
-}
 
 /// dust's number for a server id: a stable 64-bit FNV-1a hash (never 0).
 pub fn local_id(id: &str) -> u64 {
@@ -133,11 +120,6 @@ impl Subsonic {
         }))
     }
 
-    /// Make this the server whose cover art the UI shows.
-    pub fn activate(&self) {
-        *ACTIVE.write().unwrap() = Some(self.clone());
-    }
-
     /// The user name, shown as the account.
     pub fn name(&self) -> &str {
         &self.0.user
@@ -146,6 +128,12 @@ impl Subsonic {
     /// The server's address without the scheme, e.g. `music.example.com`.
     pub fn host(&self) -> &str {
         self.0.base.split_once("://").map_or(&self.0.base, |(_, rest)| rest)
+    }
+
+    /// The URL of a cover picture (its [`Art`] is the server's cover art id), `size`
+    /// px square.
+    pub fn art_url(&self, art: &Art, size: u32) -> String {
+        self.url("getCoverArt", &[("id", art.as_str()), ("size", &size.to_string())])
     }
 
     /// Full URL of an API method, with authentication.
@@ -276,6 +264,14 @@ mod tests {
     fn token_is_md5_of_password_and_salt() {
         // The example from the Subsonic API documentation.
         assert_eq!(hex(&Md5::digest(b"sesamec19b2d")), "26719a1196d2a940705a59634eb18eab");
+    }
+
+    #[test]
+    fn cover_art_comes_from_the_server() {
+        let server = Subsonic::offline("nas:4533", "me");
+        let url = server.art_url(&Art::new("al-5F81DCwcfjVByziJAH9maf_0").unwrap(), 300);
+        assert!(url.starts_with("http://nas:4533/rest/getCoverArt?u=me&"), "{url}");
+        assert!(url.ends_with("&id=al-5F81DCwcfjVByziJAH9maf_0&size=300"), "{url}");
     }
 
     #[test]
