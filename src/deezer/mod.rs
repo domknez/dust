@@ -16,7 +16,6 @@
 mod catalog;
 mod client;
 mod crypto;
-mod error;
 mod links;
 mod listens;
 mod lyrics;
@@ -38,6 +37,15 @@ pub use models::{
 pub use parse::thousands;
 pub use streaming::StreamSource;
 
-pub use error::Error;
+// Child modules use these as `super::{Error, Result}`.
+use crate::model::{Error, Result, Service};
 
-pub type Result<T> = std::result::Result<T, Error>;
+/// A failed request to Deezer, as an error naming Deezer.
+fn http(e: ureq::Error) -> Error {
+    Service::Deezer.http(e)
+}
+
+/// Deezer answered with an error.
+fn api(message: impl Into<String>) -> Error {
+    Service::Deezer.api(message)
+}

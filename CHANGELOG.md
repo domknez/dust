@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed: errors from a Navidrome server said "Deezer" ("Couldn't reach Deezer: ..."); they
+  now name the server
+
 ## 0.19.1 (2026-10-23)
 
 - Fixed: the Dark choice in Settings showed a circle instead of a moon

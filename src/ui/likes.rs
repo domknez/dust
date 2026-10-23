@@ -2,7 +2,8 @@
 //! hearts across the UI. A toggle shows at once and is sent in the background;
 //! if Deezer refuses, it is rolled back and the error shown.
 
-use crate::deezer::{Error, Likeable, Likes};
+use crate::deezer::{Likeable, Likes};
+use crate::model::Error;
 use crate::provider::Provider;
 use crate::ui::app::App;
 use eframe::egui;

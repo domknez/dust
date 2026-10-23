@@ -12,7 +12,8 @@ use super::style::{self, Appearance, colors, metrics};
 use super::tasks::{self, Task};
 use super::updates::Updates;
 use crate::credentials;
-use crate::deezer::{self, AlbumInfo, ArtistPage, Deezer, Error, Item, Likes, Link, Playlist, Quality, SearchResults, Section, Track};
+use crate::deezer::{self, AlbumInfo, ArtistPage, Deezer, Item, Likes, Link, Playlist, Quality, SearchResults, Section, Track};
+use crate::model::Error;
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
 use crate::player::{Cmd, Output, PlayerHandle, Repeat, Status, saved};
@@ -247,7 +248,7 @@ impl App {
     pub(super) fn log_in_with_browser(&mut self, ctx: &egui::Context) {
         self.login_error = None;
         self.remember_login = true;
-        self.login = tasks::spawn(ctx, || Deezer::login(&crate::login::obtain_arl().map_err(crate::deezer::Error::Other)?));
+        self.login = tasks::spawn(ctx, || Deezer::login(&crate::login::obtain_arl().map_err(Error::Other)?));
     }
 
     fn on_logged_in(&mut self, ctx: &egui::Context, client: Deezer) {

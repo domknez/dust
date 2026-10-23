@@ -2,7 +2,8 @@
 //! a list or the queue), remove tracks, rename, delete. Dialogs ask for names and
 //! confirm deletes; a short notice reports what happened.
 
-use crate::deezer::{Error, Playlist, Track};
+use crate::deezer::{Playlist, Track};
+use crate::model::Error;
 use crate::provider::Provider;
 use crate::ui::app::App;
 use crate::ui::state::{Source, View};

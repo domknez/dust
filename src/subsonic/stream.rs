@@ -1,9 +1,10 @@
 //! Song files from the server. Formats dust decodes are streamed as they are;
 //! others (Opus, WMA, ...) are converted to MP3 by the server as they play.
 
-use super::Subsonic;
+use super::{Subsonic, api, http};
 use crate::deezer::prefetch::Prefetch;
-use crate::deezer::{Error, Format, Result, ServerSong, Track};
+use crate::deezer::{Format, ServerSong, Track};
+use crate::model::{Error, Result};
 use crate::player::stream::{Opened, Opener, Stream, StreamInfo};
 use std::sync::Arc;
 use std::time::Duration;
@@ -81,7 +82,7 @@ impl ServerBytes {
 
     fn get(&self, url: &str) -> Result<Box<dyn std::io::Read + Send + Sync>> {
         let req = self.client.0.agent.get(url).config().timeout_global(None).timeout_recv_response(Some(STALL)).build();
-        let resp = req.call()?;
+        let resp = req.call().map_err(http)?;
         check_audio(&resp)?;
         Ok(Box::new(Prefetch::new(resp.into_body().into_reader(), STALL)))
     }
@@ -89,7 +90,7 @@ impl ServerBytes {
     /// Bytes from `offset`; whether the server honoured the range.
     fn get_range(&self, url: &str, offset: u64) -> Result<(Box<dyn std::io::Read + Send + Sync>, bool)> {
         let req = self.client.0.agent.get(url).config().timeout_global(None).timeout_recv_response(Some(STALL)).build();
-        let resp = req.header("Range", &format!("bytes={offset}-")).call()?;
+        let resp = req.header("Range", &format!("bytes={offset}-")).call().map_err(http)?;
         check_audio(&resp)?;
         let partial = resp.status() == 206;
         Ok((Box::new(Prefetch::new(resp.into_body().into_reader(), STALL)), partial))
@@ -100,7 +101,7 @@ impl ServerBytes {
 fn check_audio(resp: &ureq::http::Response<ureq::Body>) -> Result<()> {
     let ctype = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or_default();
     if ctype.contains("json") || ctype.contains("xml") {
-        return Err(Error::Api("the server sent no audio for this song".into()));
+        return Err(api("the server sent no audio for this song"));
     }
     Ok(())
 }

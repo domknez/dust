@@ -1,6 +1,6 @@
 //! What the UI is showing and what it can open: views, collections and their sources.
 
-use crate::deezer::{self, ArtistRef, Item, Playlist, Track};
+use crate::deezer::{ArtistRef, Item, Playlist, Track};
 use crate::player::Cmd;
 use crate::provider::Provider;
 
@@ -53,7 +53,7 @@ pub enum Source {
 }
 
 impl Source {
-    pub fn fetch(&self, client: &Provider) -> deezer::Result<Vec<Track>> {
+    pub fn fetch(&self, client: &Provider) -> crate::model::Result<Vec<Track>> {
         match self {
             Source::Playlist(id) => client.playlist(*id),
             Source::Album(id) => client.album(id),

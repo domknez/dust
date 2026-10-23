@@ -2,7 +2,7 @@
 //! remove tracks, rename, delete.
 
 use super::models::Playlist;
-use super::{Deezer, Error, Result, parse};
+use super::{Deezer, Result, api, parse};
 use serde_json::{Value, json};
 
 /// Deezer's playlist visibility (`STATUS`).
@@ -18,7 +18,7 @@ impl Deezer {
     pub fn create_playlist(&self, title: &str, private: bool, tracks: &[u64]) -> Result<u64> {
         let status = if private { PRIVATE } else { PUBLIC };
         let r = self.call("playlist.create", json!({"title": title, "description": "", "status": status, "songs": songs(tracks)}))?;
-        Some(parse::number(&r)).filter(|&id| id != 0).ok_or_else(|| Error::Api("playlist.create: no id in reply".into()))
+        Some(parse::number(&r)).filter(|&id| id != 0).ok_or_else(|| api("playlist.create: no id in reply"))
     }
 
     /// Append the tracks that aren't in the playlist yet (Deezer rejects a batch

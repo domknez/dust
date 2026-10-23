@@ -4,9 +4,9 @@
 //! UI can leave it out.
 
 use crate::deezer::{
-    AlbumInfo, ArtistPage, Deezer, Error, Item, Likeable, Likes, Link, Listen, Lyrics, Playlist, Quality, Result, SearchResults, Section,
-    Track,
+    AlbumInfo, ArtistPage, Deezer, Item, Likeable, Likes, Link, Listen, Lyrics, Playlist, Quality, SearchResults, Section, Track,
 };
+use crate::model::{Error, Result};
 use crate::player::library::{Library, Playback};
 use crate::subsonic::Subsonic;
 
@@ -259,7 +259,7 @@ impl Provider {
 }
 
 fn unsupported(what: &str) -> Error {
-    Error::Other(format!("{what} are only on Deezer"))
+    Error::Unsupported(what.into())
 }
 
 impl Library for Provider {

@@ -33,7 +33,7 @@ impl Deezer {
         match self.call("song.getLyrics", json!({"sng_id": song_id.to_string()})) {
             Ok(r) => Ok(lyrics(&r)),
             // Deezer answers "no lyrics" with a DATA_ERROR.
-            Err(Error::Api(e)) if e.contains("DATA_ERROR") => Ok(None),
+            Err(Error::Api { message: e, .. }) if e.contains("DATA_ERROR") => Ok(None),
             Err(e) => Err(e),
         }
     }

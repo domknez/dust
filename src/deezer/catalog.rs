@@ -202,7 +202,7 @@ impl Deezer {
         };
         match self.call(method, body) {
             // Already liked: the outcome we wanted.
-            Err(Error::Api(e)) if liked && e.contains("ERROR_DATA_EXISTS") => Ok(()),
+            Err(Error::Api { message: e, .. }) if liked && e.contains("ERROR_DATA_EXISTS") => Ok(()),
             other => other.map(|_| ()),
         }
     }

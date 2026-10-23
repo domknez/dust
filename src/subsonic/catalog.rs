@@ -3,7 +3,8 @@
 
 use super::Subsonic;
 use super::parse::{self, list, text};
-use crate::deezer::{AlbumInfo, ArtistPage, Error, Item, Likeable, Likes, Lyrics, Playlist, Result, SearchResults, Section, Track};
+use crate::deezer::{AlbumInfo, ArtistPage, Item, Likeable, Likes, Lyrics, Playlist, SearchResults, Section, Track};
+use crate::model::{Error, Result};
 use serde_json::Value;
 
 /// Cards per home shelf.

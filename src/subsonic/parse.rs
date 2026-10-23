@@ -1,18 +1,19 @@
 //! Models from the Subsonic API's JSON (`f=json`). Servers differ in which optional
 //! fields they fill, so everything falls back to the classic Subsonic fields.
 
-use super::{COVER_PREFIX, local_id};
-use crate::deezer::{ArtistRef, Error, Item, LyricLine, Lyrics, Playlist, Result, Section, ServerSong, Track};
+use super::{COVER_PREFIX, api, local_id};
+use crate::deezer::{ArtistRef, Item, LyricLine, Lyrics, Playlist, Section, ServerSong, Track};
+use crate::model::Result;
 use serde_json::Value;
 
 /// The `subsonic-response` object of a reply, or the server's error.
 pub fn response(mut body: Value) -> Result<Value> {
-    let r = body.get_mut("subsonic-response").map(Value::take).ok_or_else(|| Error::Api("not a Subsonic server".into()))?;
+    let r = body.get_mut("subsonic-response").map(Value::take).ok_or_else(|| api("not a Subsonic server"))?;
     if r["status"] == "ok" {
         return Ok(r);
     }
     let message = text(&r["error"]["message"]);
-    Err(Error::Api(if message.is_empty() { format!("server error {}", r["error"]["code"]) } else { message }))
+    Err(api(if message.is_empty() { format!("server error {}", r["error"]["code"]) } else { message }))
 }
 
 pub fn text(v: &Value) -> String {
@@ -227,6 +228,7 @@ fn lyrics_from(synced: Vec<LyricLine>, plain: Vec<String>) -> Option<Lyrics> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Error;
     use serde_json::json;
 
     /// A recorded reply from a test Navidrome 0.58 (see the fixtures folder).
@@ -251,10 +253,10 @@ mod tests {
     fn errors_carry_the_servers_message() {
         let body: Value = serde_json::from_str(include_str!("fixtures/error_auth.json")).unwrap();
         match response(body) {
-            Err(Error::Api(m)) => assert_eq!(m, "Wrong username or password"),
+            Err(Error::Api { message: m, .. }) => assert_eq!(m, "Wrong username or password"),
             other => panic!("{other:?}"),
         }
-        assert!(matches!(response(json!({"hello": 1})), Err(Error::Api(_))));
+        assert!(matches!(response(json!({"hello": 1})), Err(Error::Api { .. })));
     }
 
     #[test]

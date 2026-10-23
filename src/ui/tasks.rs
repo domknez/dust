@@ -1,7 +1,7 @@
 //! Background work for the UI: run a closure on a thread, poll for its result
 //! each frame, and wake the UI when it finishes.
 
-use crate::deezer::Error;
+use crate::model::Error;
 use eframe::egui;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
