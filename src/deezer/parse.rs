@@ -258,7 +258,8 @@ pub fn item(v: &Value) -> Item {
 }
 
 /// What a card of Deezer's `type` opens. Flow's `default` card is plain Flow, the
-/// others its moods.
+/// others its moods. Deezer's own radios (`radio`, on item-highlight sections) are
+/// not a music server's genre Radio: dust doesn't open them.
 fn item_kind(kind: &str, id: &str) -> ItemKind {
     let tuning = || Some(id.to_string()).filter(|id| id != "default");
     match kind {
@@ -269,7 +270,6 @@ fn item_kind(kind: &str, id: &str) -> ItemKind {
         "track" => ItemKind::TrackMix,
         "show" => ItemKind::Show,
         "flow" => ItemKind::Flow { mood: tuning() },
-        "radio" => ItemKind::Radio { genre: tuning() },
         other => ItemKind::Other(other.to_string()),
     }
 }
@@ -447,6 +447,7 @@ mod tests {
         assert_eq!(kind(json!({"type": "flow", "id": "default", "title": "Flow"})), ItemKind::Flow { mood: None });
         assert_eq!(kind(json!({"type": "flow", "id": "chill"})), ItemKind::Flow { mood: Some("chill".into()) });
         assert_eq!(kind(json!({"type": "channel", "id": "x"})), ItemKind::Other("channel".into()));
+        assert_eq!(kind(json!({"type": "radio", "id": "37151"})), ItemKind::Other("radio".into()), "not the Radio panel");
         let flow = item(&json!({"type": "flow", "id": "hip-hop", "title": "Hip-hop", "pictures": [{"type": "misc", "md5": "f1"}]}));
         assert_eq!((flow.title.as_str(), flow.kind.tuning(), flow.picture), ("Hip Hop", Some("hip-hop"), art("misc", "f1")));
     }
