@@ -39,6 +39,11 @@ impl Queue {
         self.tracks.get(self.index)
     }
 
+    /// The entry at `i`.
+    pub fn get(&self, i: usize) -> Option<&Track> {
+        self.tracks.get(i)
+    }
+
     pub fn index(&self) -> usize {
         self.index
     }

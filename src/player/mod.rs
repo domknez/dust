@@ -5,12 +5,14 @@
 //! - [`queue`]: queue bookkeeping (pure, unit-tested)
 //! - [`library`]: what the engine needs from a music source (a seam for tests)
 //! - [`listens`]: listen tracking and reporting to the source
+//! - [`preload`]: opening the next track ahead, off the player thread
 //! - [`awake`]: keeping the OS from throttling dust while it plays
 
 pub mod awake;
 mod engine;
 pub mod library;
 mod listens;
+mod preload;
 mod queue;
 pub mod saved;
 

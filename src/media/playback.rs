@@ -42,8 +42,9 @@ pub enum Decoded {
     End,
 }
 
-/// One track being decoded.
-pub trait Playback {
+/// One track being decoded. `Send`: the player opens the next track on a worker
+/// thread and takes it over when the current one ends.
+pub trait Playback: Send {
     /// Song id actually streamed (differs from the track's on regional fallbacks).
     fn song_id(&self) -> TrackId;
     fn format(&self) -> Format;

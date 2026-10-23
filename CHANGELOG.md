@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Songs follow each other without a pause: dust opens the next track about ten seconds
+  before the current one ends and plays it straight after, instead of loading it once
+  the last one has finished. Endless Flow and Radio fetch their next batch ahead too
+- The player bar and the Now Playing widget change to the next track when you hear it
+  start; on an AirPlay speaker they used to change a few seconds early
+
 - Fixed: errors from a Navidrome server said "Deezer" ("Couldn't reach Deezer: ..."); they
   now name the server
 - Fixed: when the network dropped, dust skipped through the queue as if the tracks
