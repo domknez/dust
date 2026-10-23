@@ -11,6 +11,9 @@
   Crashes are written to the log file too (what failed, where, on which thread)
 - Fixed: on this computer's speakers, the start of a track (or of the audio after a
   seek) could be cut off
+- Fixed: logging out or switching source while something was still loading (your
+  playlists, likes, a playlist change) could let it land afterwards, on the login
+  screen or the other source; what the old source was loading is now dropped
 
 ## 0.19.1 (2026-10-23)
 

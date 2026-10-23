@@ -20,7 +20,7 @@ impl App {
         let card = metrics::GRID_CARD;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             let per_row = (((ui.available_width() + GAP) / (card + GAP)).floor() as usize).max(1);
-            for row in self.playlists.chunks(per_row) {
+            for row in self.library.playlists.chunks(per_row) {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = GAP;
                     for playlist in row {

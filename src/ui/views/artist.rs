@@ -42,11 +42,11 @@ impl App {
             let (row, _) = ui.allocate_exact_size(vec2(width, BUTTONS), Sense::hover());
             self.artist_buttons(ui, row, artist, &mut picked);
 
-            let Some(page) = &self.artist_page else {
+            let Some(page) = &self.browse.artist_page else {
                 ui.add_space(24.0);
-                if self.artist_task.is_some() {
+                if self.browse.artist_task.is_some() {
                     ui.add(egui::Spinner::new().size(22.0));
-                } else if let Some(e) = &self.list_error {
+                } else if let Some(e) = &self.browse.list_error {
                     ui.label(RichText::new(e).color(colors().danger));
                 }
                 return;
@@ -60,7 +60,7 @@ impl App {
             let right_width = if two { width - GAP - left_width } else { width };
             let top = page.top.iter().take(POPULAR).collect::<Vec<_>>();
             let popular_height = if top.is_empty() { 0.0 } else { 36.0 + top.len() as f32 * metrics::POPULAR_ROW + 34.0 };
-            let tab = self.discography_tab.min(discography.len().saturating_sub(1));
+            let tab = self.browse.discography_tab.min(discography.len().saturating_sub(1));
             let items = discography.get(tab).map_or(&[][..], |(_, s)| &s.items[..]);
             let grid_height = if discography.is_empty() { 0.0 } else { 40.0 + grid_height(items.len(), right_width) };
             let (area, _) = if two {
@@ -83,7 +83,7 @@ impl App {
                 let menu = RowMenu { playlists: &own, removable: false };
                 for (i, track) in top.iter().enumerate() {
                     let rect = Rect::from_min_size(left.min + vec2(0.0, 28.0 + i as f32 * columns.row), vec2(left.width(), columns.row));
-                    let liked = self.likes.likes.tracks.contains(&track.id);
+                    let liked = self.library.likes.likes.tracks.contains(&track.id);
                     track_row(ui, &mut self.covers, track, i, rect, &columns, now, liked, &menu, &mut picked);
                 }
                 if page.top.len() > POPULAR {
@@ -97,7 +97,7 @@ impl App {
                 caption(ui, right.min, "DISCOGRAPHY");
                 let labels: Vec<&str> = discography.iter().map(|(tab, _)| *tab).collect();
                 if let Some(i) = tabs(ui, pos2(right.right(), right.top() + 10.0), &labels, tab) {
-                    self.discography_tab = i;
+                    self.browse.discography_tab = i;
                 }
                 let grid = Rect::from_min_max(right.min + vec2(0.0, 40.0), right.max);
                 match release_grid(ui, &mut self.covers, grid, items) {
@@ -116,7 +116,7 @@ impl App {
         });
 
         self.apply_card_picks(&ctx, picked.cards);
-        let top: &[Track] = self.artist_page.as_ref().map_or(&[], |p| &p.top);
+        let top: &[Track] = self.browse.artist_page.as_ref().map_or(&[], |p| &p.top);
         if let Some((i, shuffle)) = picked.play
             && let Some((queue, i)) = playable_from(top, i)
         {
@@ -161,7 +161,7 @@ impl App {
     /// dashed lime ring on the right.
     fn artist_header(&mut self, ui: &mut Ui, head: Rect, artist: &ArtistView) {
         let p = colors();
-        let page = self.artist_page.as_ref();
+        let page = self.browse.artist_page.as_ref();
         header_band(ui.painter(), head);
         // Faint vertical rules, like the mockup's backdrop.
         let mut x = head.left() + 48.0;
@@ -195,7 +195,7 @@ impl App {
 
     fn artist_buttons(&mut self, ui: &mut Ui, row: Rect, artist: &ArtistView, picked: &mut Picked) {
         ui.painter().hline(row.x_range(), row.bottom(), egui::Stroke::new(1.0, colors().line));
-        let has_top = self.artist_page.as_ref().is_some_and(|pg| !pg.top.is_empty());
+        let has_top = self.browse.artist_page.as_ref().is_some_and(|pg| !pg.top.is_empty());
         let buttons = Rect::from_min_size(pos2(row.left(), row.center().y - 22.0), vec2(row.width(), 44.0));
         ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
             if has_top && widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {
@@ -205,7 +205,7 @@ impl App {
                 picked.play = Some((0, true));
             }
             let what = Likeable::Artist(artist.id.clone());
-            let following = self.likes.likes.contains(&what);
+            let following = self.library.likes.likes.contains(&what);
             let (label, icon) = if following { ("Following", Icon::Heart) } else { ("Follow", Icon::HeartOutline) };
             if widgets::pill(ui, label, Some(icon), false).clicked() {
                 picked.like = Some(what);

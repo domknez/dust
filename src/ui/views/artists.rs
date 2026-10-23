@@ -14,26 +14,26 @@ const GAP: f32 = 18.0;
 
 impl App {
     pub(in crate::ui) fn artists_page(&mut self, ui: &mut Ui) {
-        let loading = self.followed_task.is_some();
+        let loading = self.library.followed_task.is_some();
         let mut picked = CardPicks::default();
-        card_grid(ui, &mut self.covers, "Artists", &self.followed, loading, "Artists you follow show up here.", &mut picked);
+        card_grid(ui, &mut self.covers, "Artists", &self.library.followed, loading, "Artists you follow show up here.", &mut picked);
         let ctx = ui.ctx().clone();
         self.apply_card_picks(&ctx, picked);
     }
 
     pub(in crate::ui) fn albums_page(&mut self, ui: &mut Ui) {
-        let loading = self.favorite_albums_task.is_some();
+        let loading = self.library.favorite_albums_task.is_some();
         let mut picked = CardPicks::default();
-        card_grid(ui, &mut self.covers, "Albums", &self.favorite_albums, loading, "Albums you like show up here.", &mut picked);
+        card_grid(ui, &mut self.covers, "Albums", &self.library.favorite_albums, loading, "Albums you like show up here.", &mut picked);
         let ctx = ui.ctx().clone();
         self.apply_card_picks(&ctx, picked);
     }
 
     pub(in crate::ui) fn podcasts_page(&mut self, ui: &mut Ui) {
-        let loading = self.favorite_shows_task.is_some();
+        let loading = self.library.favorite_shows_task.is_some();
         let empty = "Podcasts you follow on Deezer show up here. Find more with Search.";
         let mut picked = CardPicks::default();
-        card_grid(ui, &mut self.covers, "Podcasts", &self.favorite_shows, loading, empty, &mut picked);
+        card_grid(ui, &mut self.covers, "Podcasts", &self.library.favorite_shows, loading, empty, &mut picked);
         let ctx = ui.ctx().clone();
         self.apply_card_picks(&ctx, picked);
     }

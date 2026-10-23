@@ -18,16 +18,16 @@ impl App {
             if let Some(e) = &st.error {
                 ui.add_space(12.0);
                 ui.label(RichText::new(e).color(colors().danger).font(ty::SECONDARY.font()));
-            } else if self.editing.busy() {
+            } else if self.library.editing.busy() {
                 ui.add_space(12.0);
                 ui.add(egui::Spinner::new().size(14.0));
-            } else if let Some(notice) = self.editing.notice() {
+            } else if let Some(notice) = self.library.editing.notice() {
                 ui.add_space(12.0);
                 ui.label(RichText::new(notice).color(colors().accent).font(ty::SECONDARY.font()));
             }
         });
         ui.add_space(20.0);
-        match &self.view {
+        match &self.browse.view {
             View::Home => self.home_page(ui, st),
             View::Playlists => self.playlists_page(ui),
             View::Search | View::Loved | View::Collection(_) => self.collection_page(ui, st),
@@ -48,8 +48,8 @@ impl App {
         let shortcut = if cfg!(target_os = "macos") { ("⌘←", "⌘→") } else { ("Alt+←", "Alt+→") };
         ui.spacing_mut().item_spacing.x = 2.0;
         for (icon, enabled, hint, back) in [
-            (Icon::ChevronLeft, self.history.can_go_back(), format!("Back ({})", shortcut.0), true),
-            (Icon::ChevronRight, self.history.can_go_forward(), format!("Forward ({})", shortcut.1), false),
+            (Icon::ChevronLeft, self.browse.history.can_go_back(), format!("Back ({})", shortcut.0), true),
+            (Icon::ChevronRight, self.browse.history.can_go_forward(), format!("Forward ({})", shortcut.1), false),
         ] {
             let color = if enabled { p.dim } else { p.faint.gamma_multiply(0.6) };
             let resp = widgets::icon_button(ui, icon, 16.0, color);
@@ -86,7 +86,7 @@ impl App {
         icons::paint(ui.painter(), icon, Icon::Search, if focused { p.accent } else { p.dim });
         // The shortcut, as a key cap, while the field is idle.
         let mut right = rect.right() - 12.0;
-        if !focused && self.search.is_empty() {
+        if !focused && self.browse.search.is_empty() {
             let keys = if cfg!(target_os = "macos") { "⌘F" } else { "Ctrl+F" };
             let width = ui.painter().layout_no_wrap(keys.to_string(), ty::META.font(), p.dim).size().x + 10.0;
             let cap = Rect::from_center_size(pos2(rect.right() - 10.0 - width / 2.0, rect.center().y), vec2(width, 20.0));
@@ -96,7 +96,7 @@ impl App {
         }
         let input = Rect::from_min_max(pos2(rect.left() + 34.0, rect.top() + 9.0), pos2(right, rect.bottom() - 7.0));
         let hint = if self.features().links { "Search, or paste a Deezer link" } else { "Search your library" };
-        let field = egui::TextEdit::singleline(&mut self.search).id(id).hint_text(hint).frame(egui::Frame::new()).text_color(p.text);
+        let field = egui::TextEdit::singleline(&mut self.browse.search).id(id).hint_text(hint).frame(egui::Frame::new()).text_color(p.text);
         let edit = ui.put(input, field);
         if pill.hovered() || edit.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Text);

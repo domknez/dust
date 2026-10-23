@@ -60,28 +60,28 @@ const NAV_MODIFIER: Modifiers = if cfg!(target_os = "macos") { Modifiers::COMMAN
 impl App {
     /// The page on screen now, as a history entry.
     pub(in crate::ui) fn current_visit(&self) -> Visit {
-        let query = if self.view == View::Search { self.searched.clone() } else { String::new() };
-        Visit { view: self.view.clone(), query }
+        let query = if self.browse.view == View::Search { self.browse.searched.clone() } else { String::new() };
+        Visit { view: self.browse.view.clone(), query }
     }
 
     pub(in crate::ui) fn go_back(&mut self, ctx: &egui::Context) {
         let current = self.current_visit();
-        if let Some(visit) = self.history.back(current) {
+        if let Some(visit) = self.browse.history.back(current) {
             self.revisit(ctx, visit);
         }
     }
 
     pub(in crate::ui) fn go_forward(&mut self, ctx: &egui::Context) {
         let current = self.current_visit();
-        if let Some(visit) = self.history.forward(current) {
+        if let Some(visit) = self.browse.history.forward(current) {
             self.revisit(ctx, visit);
         }
     }
 
     fn revisit(&mut self, ctx: &egui::Context, visit: Visit) {
         if visit.view == View::Search {
-            self.search = visit.query.clone();
-            self.searched = visit.query;
+            self.browse.search = visit.query.clone();
+            self.browse.searched = visit.query;
         }
         self.show_view(ctx, visit.view);
     }

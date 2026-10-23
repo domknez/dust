@@ -25,16 +25,16 @@ impl Default for LikeState {
 
 impl App {
     pub(in crate::ui) fn is_liked(&self, what: &Likeable) -> bool {
-        self.likes.likes.contains(what)
+        self.library.likes.likes.contains(what)
     }
 
     /// Flip a like: shown immediately, confirmed by Deezer in the background.
     pub(in crate::ui) fn toggle_like(&mut self, ctx: &egui::Context, what: Likeable) {
         let Some(client) = self.client.clone() else { return };
         let liked = !self.is_liked(&what);
-        self.likes.likes.set(&what, liked);
+        self.library.likes.likes.set(&what, liked);
         self.like_changed(&what);
-        let (tx, ctx) = (self.likes.done_tx.clone(), ctx.clone());
+        let (tx, ctx) = (self.library.likes.done_tx.clone(), ctx.clone());
         std::thread::spawn(move || {
             let result = client.set_liked(&what, liked);
             let _ = tx.send((what, liked, result));
@@ -45,12 +45,12 @@ impl App {
     /// Collect toggle results; undo the ones Deezer refused.
     pub(in crate::ui) fn poll_likes(&mut self) {
         loop {
-            match self.likes.done.try_recv() {
+            match self.library.likes.done.try_recv() {
                 Ok((what, liked, Err(e))) => {
                     log_warn!("like {what:?}: {e}");
-                    self.likes.likes.set(&what, !liked);
+                    self.library.likes.likes.set(&what, !liked);
                     self.like_changed(&what);
-                    self.list_error = Some(format!("Couldn't update your likes: {e}"));
+                    self.browse.list_error = Some(format!("Couldn't update your likes: {e}"));
                 }
                 Ok(_) => {}
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => return,
@@ -61,8 +61,8 @@ impl App {
     /// Lists built from likes are out of date now; reload them when next shown.
     fn like_changed(&mut self, what: &Likeable) {
         match what {
-            Likeable::Artist(_) => self.followed.clear(),
-            Likeable::Album(_) => self.favorite_albums.clear(),
+            Likeable::Artist(_) => self.library.followed.clear(),
+            Likeable::Album(_) => self.library.favorite_albums.clear(),
             Likeable::Track(_) => {}
         }
     }

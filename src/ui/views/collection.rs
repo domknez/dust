@@ -129,15 +129,16 @@ impl Columns {
 impl App {
     pub(in crate::ui) fn collection_page(&mut self, ui: &mut Ui, st: &Status) {
         let (playing_id, playing) = (st.track.as_ref().map(|t| t.id), st.state == State::Playing);
-        let header_height = if self.view == View::Search { self.search_header_height() } else { COLLECTION_HEADER };
-        let count = self.tracks.len();
+        let header_height = if self.browse.view == View::Search { self.search_header_height() } else { COLLECTION_HEADER };
+        let count = self.browse.tracks.len();
         let album = self.showing_album();
         let mut picked = Picked::default();
 
         egui::ScrollArea::vertical().auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
             let width = ui.available_width();
             // An album gets its artist's other releases beside the tracks when there's room.
-            let more = self.album_info.as_ref().filter(|i| album && !i.more.is_empty() && width >= MORE_MIN_WIDTH).map(|i| i.more.clone());
+            let more =
+                self.browse.album_info.as_ref().filter(|i| album && !i.more.is_empty() && width >= MORE_MIN_WIDTH).map(|i| i.more.clone());
             let table_width = if more.is_some() { width - MORE_WIDTH - 32.0 } else { width };
             let origin = ui.max_rect().min;
             let columns = if album { Columns::album(origin.x, table_width) } else { Columns::list(origin.x, table_width) };
@@ -145,7 +146,7 @@ impl App {
             ui.set_height(header_height + (count as f32 * columns.row).max(more_height) + 24.0);
             let head = Rect::from_min_size(origin, vec2(width, header_height));
             ui.scope_builder(UiBuilder::new().max_rect(head), |ui| {
-                if self.view == View::Search {
+                if self.browse.view == View::Search {
                     self.search_header(ui, head, st, &mut picked.cards);
                 } else {
                     self.collection_header(ui, head, &mut picked);
@@ -166,11 +167,11 @@ impl App {
             }
 
             let below_header = Rect::from_min_size(origin + vec2(0.0, header_height + 24.0), vec2(width, 40.0));
-            if self.loading_tracks() {
+            if self.browse.loading_tracks() {
                 ui.put(below_header, egui::Spinner::new().size(22.0));
                 return;
             }
-            if let Some(e) = &self.list_error {
+            if let Some(e) = &self.browse.list_error {
                 text_left(ui.painter(), below_header.min, e, ty::TITLE, colors().danger, width);
                 return;
             }
@@ -182,8 +183,19 @@ impl App {
             let menu = RowMenu { playlists: &own, removable: self.showing_own_playlist().is_some() };
             for i in first..last {
                 let rect = Rect::from_min_size(origin + vec2(0.0, header_height + i as f32 * row), vec2(table_width, row));
-                let liked = self.likes.likes.tracks.contains(&self.tracks[i].id);
-                track_row(ui, &mut self.covers, &self.tracks[i], i, rect, &columns, (playing_id, playing), liked, &menu, &mut picked);
+                let liked = self.library.likes.likes.tracks.contains(&self.browse.tracks[i].id);
+                track_row(
+                    ui,
+                    &mut self.covers,
+                    &self.browse.tracks[i],
+                    i,
+                    rect,
+                    &columns,
+                    (playing_id, playing),
+                    liked,
+                    &menu,
+                    &mut picked,
+                );
             }
         });
 
@@ -201,34 +213,34 @@ impl App {
         if let Some(what) = picked.like {
             self.toggle_like(&ctx, what);
         }
-        if picked.queue_all && !self.tracks.is_empty() {
-            let playable: Vec<Track> = self.tracks.iter().filter(|t| t.available).cloned().collect();
+        if picked.queue_all && !self.browse.tracks.is_empty() {
+            let playable: Vec<Track> = self.browse.tracks.iter().filter(|t| t.available).cloned().collect();
             self.player.send(Cmd::Enqueue(playable));
             self.queued_flash = Some(std::time::Instant::now());
         }
         if let Some((i, choice)) = picked.menu {
-            let track = self.tracks[i].clone();
+            let track = self.browse.tracks[i].clone();
             self.track_menu_choice(&ctx, track, choice);
         }
         match picked.header_menu {
             Some(HeaderMenu::AddAll(TrackMenu::AddTo(playlist))) => {
-                self.edit_playlist(&ctx, Edit::Add { playlist, tracks: self.tracks.clone() });
+                self.edit_playlist(&ctx, Edit::Add { playlist, tracks: self.browse.tracks.clone() });
             }
-            Some(HeaderMenu::AddAll(_)) => self.new_playlist(self.tracks.iter().filter(|t| t.available).cloned().collect()),
+            Some(HeaderMenu::AddAll(_)) => self.new_playlist(self.browse.tracks.iter().filter(|t| t.available).cloned().collect()),
             Some(HeaderMenu::Rename) => {
                 if let Some(playlist) = self.showing_own_playlist() {
-                    self.editing.dialog = Some(Dialog::Rename { title: playlist.title.clone(), playlist });
+                    self.library.editing.dialog = Some(Dialog::Rename { title: playlist.title.clone(), playlist });
                 }
             }
             Some(HeaderMenu::Delete) => {
                 if let Some(playlist) = self.showing_own_playlist() {
-                    self.editing.dialog = Some(Dialog::Delete { playlist });
+                    self.library.editing.dialog = Some(Dialog::Delete { playlist });
                 }
             }
             None => {}
         }
         if let Some((i, shuffle)) = picked.play
-            && let Some((queue, i)) = playable_from(&self.tracks, i)
+            && let Some((queue, i)) = playable_from(&self.browse.tracks, i)
         {
             let i = if shuffle {
                 self.set_shuffle(true);
@@ -241,7 +253,7 @@ impl App {
     }
 
     fn header(&self) -> Header {
-        match &self.view {
+        match &self.browse.view {
             View::Loved => Header {
                 kind: "COLLECTION",
                 title: "Loved tracks".into(),
@@ -263,32 +275,34 @@ impl App {
     }
 
     fn search_header_height(&self) -> f32 {
-        let rows = self.search_sections.len() as f32;
+        let rows = self.browse.search_sections.len() as f32;
         let tracks_title = if rows > 0.0 { SEARCH_TRACKS_TITLE } else { 0.0 };
         SEARCH_TOP + rows * CARD_ROW_HEIGHT + tracks_title + CAPTIONS
     }
 
     fn search_header(&mut self, ui: &mut Ui, head: Rect, st: &Status, picked: &mut CardPicks) {
         let p = colors();
-        let title = if self.searched.is_empty() { "Search".to_string() } else { format!("“{}”", self.searched) };
+        let title = if self.browse.searched.is_empty() { "Search".to_string() } else { format!("“{}”", self.browse.searched) };
         text_left(ui.painter(), head.min + vec2(0.0, 22.0), &title, ty::PAGE_TITLE, p.text, head.width());
-        let counts: Vec<String> = std::iter::once((self.tracks.len(), "tracks"))
-            .chain(self.search_sections.iter().map(|s| (s.items.len(), s.title.as_str())))
+        let counts: Vec<String> = std::iter::once((self.browse.tracks.len(), "tracks"))
+            .chain(self.browse.search_sections.iter().map(|s| (s.items.len(), s.title.as_str())))
             .filter(|(n, _)| *n > 0)
             .map(|(n, what)| format!("{n} {}", what.to_lowercase()))
             .collect();
         text_left(ui.painter(), head.min + vec2(0.0, 54.0), &counts.join(" · "), ty::BODY, p.dim, head.width());
-        if self.search_sections.is_empty() {
+        if self.browse.search_sections.is_empty() {
             return;
         }
-        let rows =
-            Rect::from_min_size(head.min + vec2(0.0, SEARCH_TOP), vec2(head.width(), self.search_sections.len() as f32 * CARD_ROW_HEIGHT));
+        let rows = Rect::from_min_size(
+            head.min + vec2(0.0, SEARCH_TOP),
+            vec2(head.width(), self.browse.search_sections.len() as f32 * CARD_ROW_HEIGHT),
+        );
         ui.scope_builder(UiBuilder::new().max_rect(rows), |ui| {
-            for (i, section) in self.search_sections.iter().enumerate() {
+            for (i, section) in self.browse.search_sections.iter().enumerate() {
                 card_row(ui, &mut self.covers, ("search-row", i), &section.title, &section.items, st, picked);
             }
         });
-        if !self.tracks.is_empty() {
+        if !self.browse.tracks.is_empty() {
             let y = rows.bottom() + 22.0 + 14.0;
             text_left(ui.painter(), pos2(head.left(), y), "TRACKS", ty::OVERLINE, p.dim, head.width());
         }
@@ -296,10 +310,10 @@ impl App {
 
     /// The artist of an album page when every track lists them (not compilations).
     fn album_artist(&self) -> Option<ArtistRef> {
-        let View::Collection(coll) = &self.view else { return None };
+        let View::Collection(coll) = &self.browse.view else { return None };
         let Source::Album(_) = coll.source else { return None };
-        let main = self.tracks.first()?.artists.first()?.clone();
-        self.tracks.iter().all(|t| t.artists.iter().any(|a| a.id == main.id)).then_some(main)
+        let main = self.browse.tracks.first()?.artists.first()?.clone();
+        self.browse.tracks.iter().all(|t| t.artists.iter().any(|a| a.id == main.id)).then_some(main)
     }
 
     fn collection_header(&mut self, ui: &mut Ui, head: Rect, picked: &mut Picked) {
@@ -315,20 +329,21 @@ impl App {
         }
         let x = art_rect.right() + 28.0;
         let width = head.right() - x;
-        let count = self.tracks.len();
+        let count = self.browse.tracks.len();
         let podcast = self.showing_podcast();
 
         // ALBUM  2021 · 11 TRACKS · 51:52
         let tag = widgets::tag(ui.painter(), pos2(x, head.top() + 46.0), kind);
-        let year = self.album_info.as_ref().map(|i| i.year.clone()).filter(|y| !y.is_empty());
-        let stats = (count > 0).then(|| format!("{count} {} · {}", if podcast { "EPISODES" } else { "TRACKS" }, total_clock(&self.tracks)));
+        let year = self.browse.album_info.as_ref().map(|i| i.year.clone()).filter(|y| !y.is_empty());
+        let stats =
+            (count > 0).then(|| format!("{count} {} · {}", if podcast { "EPISODES" } else { "TRACKS" }, total_clock(&self.browse.tracks)));
         let meta = [year, stats].into_iter().flatten().collect::<Vec<_>>().join(" · ");
         text_left(ui.painter(), pos2(tag.right() + 10.0, tag.center().y), &meta, ty::META, p.dim, x + width - tag.right() - 10.0);
         text_left(ui.painter(), pos2(x, head.top() + 102.0), &title, ty::HERO, p.text, width);
 
         // The album's artist (linked) and label, or the list's subtitle.
         let line = pos2(x, head.top() + 150.0);
-        let label = self.album_info.as_ref().map(|i| i.label.clone()).filter(|l| !l.is_empty());
+        let label = self.browse.album_info.as_ref().map(|i| i.label.clone()).filter(|l| !l.is_empty());
         match self.album_artist() {
             Some(artist) => {
                 let (clicked, right) = widgets::artist_links(ui, line, &[artist], "", ty::ITEM.strong(), p.text, p.text, width);
@@ -364,11 +379,11 @@ impl App {
                 }
             }
             // Albums can be liked from their header.
-            if let View::Collection(coll) = &self.view
+            if let View::Collection(coll) = &self.browse.view
                 && let Source::Album(id) = &coll.source
             {
                 let what = Likeable::Album(id.clone());
-                if heart_square(ui, self.likes.likes.contains(&what)).clicked() {
+                if heart_square(ui, self.library.likes.likes.contains(&what)).clicked() {
                     picked.like = Some(what);
                 }
             }
@@ -590,19 +605,19 @@ fn unavailable_note(track: &Track) -> String {
 impl App {
     /// The own playlist on screen, if that's what is shown.
     pub(in crate::ui) fn showing_own_playlist(&self) -> Option<Playlist> {
-        let View::Collection(coll) = &self.view else { return None };
+        let View::Collection(coll) = &self.browse.view else { return None };
         let Source::Playlist(id) = coll.source else { return None };
-        self.playlists.iter().find(|p| p.id == id && p.owned).cloned()
+        self.library.playlists.iter().find(|p| p.id == id && p.owned).cloned()
     }
 
     /// Whether an album's tracks are on screen.
     fn showing_album(&self) -> bool {
-        matches!(&self.view, View::Collection(coll) if matches!(coll.source, Source::Album(_)))
+        matches!(&self.browse.view, View::Collection(coll) if matches!(coll.source, Source::Album(_)))
     }
 
     /// Whether a podcast's episodes are on screen.
     fn showing_podcast(&self) -> bool {
-        matches!(&self.view, View::Collection(coll) if matches!(coll.source, Source::Show(_)))
+        matches!(&self.browse.view, View::Collection(coll) if matches!(coll.source, Source::Show(_)))
     }
 
     /// Act on a track's right-click menu.

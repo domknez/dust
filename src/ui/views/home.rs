@@ -39,24 +39,24 @@ impl App {
         let mut reload = false;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             reload = self.home_header(ui);
-            if self.home.is_empty() {
-                if self.home_task.is_some() {
+            if self.library.home.is_empty() {
+                if self.library.home_task.is_some() {
                     ui.add_space(24.0);
                     ui.add(egui::Spinner::new().size(22.0));
-                } else if let Some(e) = &self.list_error {
+                } else if let Some(e) = &self.browse.list_error {
                     ui.label(RichText::new(e).color(colors().danger));
                 }
                 return;
             }
-            for i in flow_first(&self.home) {
-                let section = &self.home[i];
+            for i in flow_first(&self.library.home) {
+                let section = &self.library.home[i];
                 card_row(ui, &mut self.covers, ("home-row", i), &section.title, &section.items, st, &mut picked);
             }
             ui.add_space(24.0);
         });
 
         if reload {
-            self.home.clear();
+            self.library.home.clear();
             self.open_view(&ctx, View::Home);
         }
         self.apply_card_picks(&ctx, picked);

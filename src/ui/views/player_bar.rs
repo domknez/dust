@@ -68,7 +68,7 @@ impl App {
             let heart = pos2(x + used + 22.0, area.center().y);
             // Episodes can't be liked.
             let what = Likeable::Track(track.id);
-            let liked = self.likes.likes.contains(&what);
+            let liked = self.library.likes.likes.contains(&what);
             if !track.is_episode() && widgets::heart_at(ui, heart, "now-playing", liked, 16.0).clicked() {
                 self.pending_like = Some(what);
             }

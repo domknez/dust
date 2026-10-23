@@ -11,9 +11,11 @@
 //! - [`state`], [`tasks`], [`format`], [`covers`]: supporting pieces
 
 mod app;
+mod browse;
 mod covers;
 mod format;
 mod history;
+mod library;
 mod likes;
 mod now_playing;
 mod playlist_edit;

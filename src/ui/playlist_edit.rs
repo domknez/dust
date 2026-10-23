@@ -104,45 +104,45 @@ fn run(client: &Provider, edit: Edit) -> Result<Done, Error> {
 impl App {
     /// The account's playlists that can be changed.
     pub(in crate::ui) fn own_playlists(&self) -> Vec<Playlist> {
-        self.playlists.iter().filter(|p| p.owned).cloned().collect()
+        self.library.playlists.iter().filter(|p| p.owned).cloned().collect()
     }
 
     pub(in crate::ui) fn edit_playlist(&mut self, ctx: &egui::Context, edit: Edit) {
         let Some(client) = self.client.clone() else { return };
-        self.editing.task = tasks::spawn(ctx, move || run(&client, edit));
+        self.library.editing.task = tasks::spawn(ctx, move || run(&client, edit));
     }
 
     /// Ask for a name, then create a playlist with `tracks`.
     pub(in crate::ui) fn new_playlist(&mut self, tracks: Vec<Track>) {
-        self.editing.dialog = Some(Dialog::Create { title: String::new(), private: false, tracks });
+        self.library.editing.dialog = Some(Dialog::Create { title: String::new(), private: false, tracks });
     }
 
     /// Collect a finished edit: notice, refreshed sidebar, reloaded page.
     pub(in crate::ui) fn poll_playlist_edits(&mut self, ctx: &egui::Context) {
-        let Some(result) = tasks::poll(&mut self.editing.task) else { return };
+        let Some(result) = tasks::poll(&mut self.library.editing.task) else { return };
         let done = match result {
             Ok(done) => done,
             Err(e) => {
-                self.editing.notice = Some((format!("Couldn't change the playlist: {e}"), Instant::now()));
+                self.library.editing.notice = Some((format!("Couldn't change the playlist: {e}"), Instant::now()));
                 return;
             }
         };
-        self.editing.notice = Some((done.message, Instant::now()));
+        self.library.editing.notice = Some((done.message, Instant::now()));
         if let Some(client) = self.client.clone() {
-            self.playlists_task = tasks::spawn(ctx, move || client.playlists());
+            self.library.playlists_task = tasks::spawn(ctx, move || client.playlists());
         }
-        let showing = matches!(&self.view, View::Collection(c) if done.playlist.is_some_and(|id| c.source == Source::Playlist(id)));
+        let showing = matches!(&self.browse.view, View::Collection(c) if done.playlist.is_some_and(|id| c.source == Source::Playlist(id)));
         if showing && done.deleted {
             self.open_view(ctx, View::Playlists);
         } else if showing {
-            self.show_view(ctx, self.view.clone());
+            self.show_view(ctx, self.browse.view.clone());
         }
         ctx.request_repaint_after(NOTICE_FOR);
     }
 
     /// The open dialog, if any (call once per frame).
     pub(in crate::ui) fn playlist_dialog(&mut self, ctx: &egui::Context) {
-        let Some(mut dialog) = self.editing.dialog.take() else { return };
+        let Some(mut dialog) = self.library.editing.dialog.take() else { return };
         let p = colors();
         let private_playlists = self.features().private_playlists;
         let service = self.client.as_ref().map_or("Deezer", Provider::service);
@@ -201,7 +201,7 @@ impl App {
         close |= modal.should_close();
         match submit {
             Some(edit) => self.edit_playlist(ctx, edit),
-            None if !close => self.editing.dialog = Some(dialog),
+            None if !close => self.library.editing.dialog = Some(dialog),
             None => {}
         }
     }

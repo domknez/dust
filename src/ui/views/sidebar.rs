@@ -38,20 +38,20 @@ impl App {
         let mut go = None;
         ui.spacing_mut().item_spacing.y = 1.0;
         let home = &NAV_SHORTCUTS[0];
-        if widgets::sidebar_item(ui, home.1, Some(&shortcut(home.0)), self.view == home.2).clicked() {
+        if widgets::sidebar_item(ui, home.1, Some(&shortcut(home.0)), self.browse.view == home.2).clicked() {
             go = Some(View::Home);
         }
-        if widgets::sidebar_item(ui, "Search", Some(SEARCH_KEYS), self.view == View::Search).clicked() {
+        if widgets::sidebar_item(ui, "Search", Some(SEARCH_KEYS), self.browse.view == View::Search).clicked() {
             // Search opens empty; the query field is in the main area.
             let current = self.current_visit();
-            self.history.leave(current, &crate::ui::history::Visit { view: View::Search, query: String::new() });
-            self.view = View::Search;
-            self.tracks.clear();
-            self.searched.clear();
+            self.browse.history.leave(current, &crate::ui::history::Visit { view: View::Search, query: String::new() });
+            self.browse.view = View::Search;
+            self.browse.tracks.clear();
+            self.browse.searched.clear();
         }
         let podcasts = self.features().podcasts;
         for (key, label, view) in NAV_SHORTCUTS[1..].iter().filter(|(_, _, v)| podcasts || *v != View::Podcasts) {
-            if widgets::sidebar_item(ui, label, Some(&shortcut(*key)), self.view == *view).clicked() {
+            if widgets::sidebar_item(ui, label, Some(&shortcut(*key)), self.browse.view == *view).clicked() {
                 go = Some(view.clone());
             }
         }
@@ -60,7 +60,7 @@ impl App {
         // empty playlist.
         ui.add_space(18.0);
         let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
-        let caption = format!("PLAYLISTS / {}", self.playlists.len());
+        let caption = format!("PLAYLISTS / {}", self.library.playlists.len());
         let width = ui.painter().layout_no_wrap(caption.clone(), ty::OVERLINE.font(), colors().dim).size().x;
         let fold = Rect::from_min_max(row.min, pos2((row.left() + width + 34.0).min(row.right() - 28.0), row.bottom()));
         let fold = ui.interact(fold, ui.id().with("fold-playlists"), Sense::click());
@@ -97,12 +97,12 @@ impl App {
             return;
         }
         egui::ScrollArea::vertical().max_height(height).auto_shrink([false, false]).show(ui, |ui| {
-            if self.playlists_task.is_some() {
+            if self.library.playlists_task.is_some() {
                 ui.spinner();
             }
             ui.spacing_mut().item_spacing.y = 1.0;
-            for playlist in &self.playlists {
-                let selected = matches!(&self.view, View::Collection(c) if c.source == Source::Playlist(playlist.id));
+            for playlist in &self.library.playlists {
+                let selected = matches!(&self.browse.view, View::Collection(c) if c.source == Source::Playlist(playlist.id));
                 let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::SIDEBAR_PLAYLIST_ROW), Sense::click());
                 if selected || resp.hovered() {
                     ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), if selected { p.raised } else { p.hover });

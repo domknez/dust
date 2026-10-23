@@ -3,7 +3,9 @@
 //! logging out of one.
 
 use super::app::App;
-use super::likes::{self, LikeState};
+use super::browse::Browse;
+use super::library::Library;
+use super::likes;
 use super::state::View;
 use super::style::icons::Icon;
 use super::style::{colors, radius, typography as ty};
@@ -142,9 +144,9 @@ impl App {
             self.restore_queue(&provider);
         }
         let c = provider.clone();
-        self.playlists_task = tasks::spawn(ctx, move || c.playlists());
+        self.library.playlists_task = tasks::spawn(ctx, move || c.playlists());
         let c = provider.clone();
-        self.likes_task = tasks::spawn(ctx, move || likes::load(&c));
+        self.library.likes_task = tasks::spawn(ctx, move || likes::load(&c));
         self.client = Some(provider);
         self.open_view(ctx, View::Home);
     }
@@ -193,30 +195,12 @@ impl App {
         }
     }
 
-    /// Forget what the previous source showed.
+    /// Forget what the previous source had and showed. Its loads in flight go too,
+    /// so none of their results can land on the next source (or the login screen).
     fn clear_content(&mut self) {
-        self.tracks.clear();
-        self.album_info = None;
-        self.search_sections.clear();
-        self.playlists.clear();
-        self.home.clear();
-        self.followed.clear();
-        self.favorite_albums.clear();
-        self.favorite_shows.clear();
-        self.artist_page = None;
-        self.likes = LikeState::default();
-        self.history = Default::default();
+        self.library = Library::default();
+        self.browse = Browse::default();
         self.lyrics = Default::default();
-        self.tracks_task = None;
-        self.search_task = None;
-        self.link_task = None;
-        self.home_task = None;
-        self.artist_task = None;
-        self.followed_task = None;
-        self.favorite_albums_task = None;
-        self.favorite_shows_task = None;
-        self.quick_play = None;
-        self.list_error = None;
     }
 
     /// What the source in use offers (everything while none is).
