@@ -85,7 +85,8 @@ including cover art.
   (or follow the system) with one lime accent, Space Grotesk text and titles and
   JetBrains Mono for labels, times and counts
 - **Secure sign-in:** "Log in with Deezer" opens Deezer's own login page; the session is
-  kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service)
+  kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service),
+  in one item with the Navidrome login, so the keychain asks for access once
 - Runs on macOS, Linux and Windows
 
 ## Navidrome / Subsonic
