@@ -10,7 +10,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// What goes into the log file.
@@ -78,6 +78,23 @@ pub fn to_file() {
         }
         Err(e) => eprintln!("dust: no log file at {}: {e}", path.display()),
     }
+}
+
+/// Record panics in the log file (message, place and thread), then hand them on
+/// to the usual handling. Without this a crash nobody saw in a terminal leaves no
+/// trace (release builds abort right after).
+pub fn install_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if let Some(file) = FILE.get() {
+            let message = info.payload_as_str().unwrap_or("(no message)");
+            let place = info.location().map_or_else(|| "?".into(), |l| format!("{}:{}:{}", l.file(), l.line(), l.column()));
+            let line = format!("{} [panic] {}: {message} at {place}\n", utc_now(), thread_name());
+            // The lock may be poisoned by an earlier panic; the file is still fine.
+            let _ = file.lock().unwrap_or_else(PoisonError::into_inner).write_all(line.as_bytes());
+        }
+        previous(info);
+    }));
 }
 
 /// Open the log for appending, moving a too-big one aside first.

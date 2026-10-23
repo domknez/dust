@@ -7,6 +7,8 @@
 - Fixed: when the network dropped, dust skipped through the queue as if the tracks
   couldn't be played. It now stops at the track with the error shown; press play to
   try again. Tracks that really can't be played are still skipped
+- Fixed: if playback broke down, the controls silently did nothing; dust now says so.
+  Crashes are written to the log file too (what failed, where, on which thread)
 
 ## 0.19.1 (2026-10-23)
 

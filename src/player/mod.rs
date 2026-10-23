@@ -22,7 +22,7 @@ use crate::output::airplay::Device;
 use crate::provider::Provider;
 use eframe::egui;
 use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 /// Where audio goes.
 #[derive(Clone, Debug, PartialEq)]
@@ -168,6 +168,9 @@ pub struct Status {
     pub error: Option<String>,
 }
 
+/// Shown when the player thread has died.
+const PLAYER_GONE: &str = "Playback stopped unexpectedly; restart dust";
+
 /// The UI's side of the player: send commands, read status.
 #[derive(Clone)]
 pub struct PlayerHandle {
@@ -189,10 +192,38 @@ impl PlayerHandle {
     }
 
     pub fn send(&self, cmd: Cmd) {
-        let _ = self.tx.send(cmd);
+        if self.tx.send(cmd).is_err() {
+            // The player thread is gone (it panicked): say so rather than ignore
+            // every click while the last status stays on screen.
+            let mut st = self.status.lock().unwrap_or_else(PoisonError::into_inner);
+            if st.error.as_deref() != Some(PLAYER_GONE) {
+                log_error!("player thread is gone");
+                st.error = Some(PLAYER_GONE.into());
+                st.state = State::Stopped;
+            }
+        }
     }
 
     pub fn status(&self) -> Status {
-        self.status.lock().unwrap().clone()
+        // A player thread that panicked while publishing leaves the lock poisoned;
+        // the snapshot in it is still the last one.
+        self.status.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_dead_player_shows_an_error() {
+        let (tx, rx) = mpsc::channel();
+        let status = Arc::new(Mutex::new(Status { state: State::Playing, ..Default::default() }));
+        let player = PlayerHandle { tx, status };
+        drop(rx); // the player thread ended
+        player.send(Cmd::Toggle);
+        let st = player.status();
+        assert_eq!(st.error.as_deref(), Some(PLAYER_GONE));
+        assert_eq!(st.state, State::Stopped);
     }
 }
