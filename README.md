@@ -282,6 +282,8 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
   *Add to queue*; album and playlist pages have *Add to queue* and a ⋯ menu (*Add all
   to playlist*, *Rename*, *Delete*)
 - Queue panel → *Save*: the queue as a new playlist; sidebar → *+*: a new playlist
+- Click *PLAYLISTS* in the sidebar to fold the list away (or bring it back); dust
+  remembers it
 - Queue button (next to AirPlay): open the queue; drag rows to reorder
 
 ## Project structure

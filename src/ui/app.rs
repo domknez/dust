@@ -116,6 +116,8 @@ pub struct App {
     pub(super) quality: Quality,
     pub(super) appearance: Appearance,
     pub(super) report_listens: bool,
+    /// The sidebar's playlist list is shown (its caption folds it away).
+    pub(super) playlists_open: bool,
     /// Last volume written to settings.
     saved_volume: f32,
     /// Speaker (by name) to reselect once discovery finds it.
@@ -148,6 +150,7 @@ impl App {
         let appearance = saved.get("theme").and_then(|k| Appearance::from_key(k)).unwrap_or(Appearance::System);
         let quality = saved.get("quality").and_then(|k| Quality::from_key(k)).unwrap_or(Quality::Mp3_320);
         let report_listens = saved.get("report_listens").is_none_or(|v| v != "false");
+        let playlists_open = saved.get("sidebar_playlists").is_none_or(|v| v != "closed");
         let volume = saved.get("volume").and_then(|v| v.parse::<f32>().ok()).map_or(0.5, |v| v.clamp(0.0, 1.0));
         let restore_output = saved.get("output").filter(|o| !o.is_empty()).cloned();
         let auto_update = saved.get("auto_update").is_none_or(|v| v != "false");
@@ -218,6 +221,7 @@ impl App {
             quality,
             appearance,
             report_listens,
+            playlists_open,
             saved_volume: volume,
             restore_output,
             discovery,
