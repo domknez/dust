@@ -1,8 +1,8 @@
 //! Listen reports. Deezer's own apps send these; Deezer uses them for history,
 //! Flow and — if the account is linked — Last.fm scrobbling.
 
-use super::models::Listen;
 use super::{Deezer, Result};
+use crate::model::{Format, Listen};
 use serde_json::json;
 
 /// Client/device identifiers Deezer's web player sends with reports.
@@ -17,7 +17,7 @@ impl Deezer {
     /// A track finished or was skipped.
     pub fn report_listen(&self, listen: &Listen) -> Result<()> {
         let params = json!({
-            "media": {"id": listen.song_id, "type": "song", "format": listen.format.api_name()},
+            "media": {"id": listen.song_id, "type": "song", "format": api_name(listen.format)},
             "type": 1,
             "stat": {"seek": u8::from(listen.skipped), "pause": 0, "sync": 0, "next": listen.skipped},
             "lt": listen.listened_secs,
@@ -29,5 +29,14 @@ impl Deezer {
             "stream_id": listen.stream_id,
         });
         self.call("log.listen", json!({"params": params})).map(drop)
+    }
+}
+
+/// Deezer's name for the format a listen was streamed in.
+fn api_name(format: Format) -> &'static str {
+    match format {
+        Format::Flac => "FLAC",
+        Format::Mp3(128) | Format::Podcast | Format::File => "MP3_128",
+        Format::Mp3(_) => "MP3_320",
     }
 }

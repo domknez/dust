@@ -1,6 +1,6 @@
 //! What the UI is showing and what it can open: views, collections and their sources.
 
-use crate::deezer::{ArtistRef, Item, Playlist, Track};
+use crate::model::{ArtistRef, Item, Playlist, Track};
 use crate::player::Cmd;
 use crate::provider::Provider;
 
@@ -90,7 +90,7 @@ impl Coll {
 
     /// Where the title of a playing track leads: its album, or an episode's podcast.
     pub fn origin_of(track: &Track) -> Option<Self> {
-        match &track.episode {
+        match track.episode() {
             Some(episode) if !episode.show_id.is_empty() => Some(Coll {
                 source: Source::Show(episode.show_id.clone()),
                 kind: "PODCAST",
@@ -174,6 +174,7 @@ impl PlayMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{DeezerSong, Origin};
 
     fn item(kind: &str, id: &str) -> Item {
         Item { kind: kind.into(), id: id.into(), title: "T".into(), subtitle: "S".into(), picture: None }
@@ -189,13 +190,10 @@ mod tests {
             album: "Discovery".into(),
             album_id: "302127".into(),
             duration: 320,
-            token: String::new(),
             cover: "abc".into(),
-            fallback: None,
             available: true,
             available_from: String::new(),
-            episode: None,
-            server: None,
+            origin: Origin::Deezer(DeezerSong::default()),
         };
         let coll = Coll::album_of(&track).unwrap();
         assert_eq!((coll.source, coll.title.as_str(), coll.subtitle.as_str()), (Source::Album("302127".into()), "Discovery", "Daft Punk"));
@@ -213,13 +211,10 @@ mod tests {
             album: String::new(),
             album_id: String::new(),
             duration: 1,
-            token: String::new(),
             cover: String::new(),
-            fallback: None,
             available,
             available_from: String::new(),
-            episode: None,
-            server: None,
+            origin: Origin::Deezer(DeezerSong::default()),
         };
         let tracks = vec![t(1, true), t(2, false), t(3, false), t(4, true)];
         let ids = |(q, i): (Vec<Track>, usize)| (q.iter().map(|t| t.id).collect::<Vec<_>>(), i);

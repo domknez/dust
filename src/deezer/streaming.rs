@@ -1,11 +1,11 @@
 //! Resolving stream URLs and opening decrypted streams.
 
 use super::crypto::{CHUNK, StripeReader};
-use super::models::{Format, Quality, Track};
 use super::parse::text;
 use super::session::CALL_TIMEOUT;
 use super::{Deezer, Error, Result, api, http};
 use crate::media::Prefetch;
+use crate::model::{Format, Origin, Quality, Track};
 use serde_json::{Value, json};
 use std::io::Read;
 
@@ -26,18 +26,22 @@ impl Deezer {
     /// Best available stream for `track`: its own token, a refreshed token, then
     /// Deezer's regional fallback version.
     pub fn stream_source(&self, track: &Track, quality: Quality) -> Result<StreamSource> {
-        if let Some(episode) = &track.episode {
-            return Ok(StreamSource { url: episode.url.clone(), format: Format::Podcast, song_id: track.id, duration: track.duration });
-        }
+        let song = match &track.origin {
+            Origin::Deezer(song) => song,
+            Origin::Episode(episode) => {
+                return Ok(StreamSource { url: episode.url.clone(), format: Format::Podcast, song_id: track.id, duration: track.duration });
+            }
+            Origin::Server(_) => return Err(Error::Other("not a Deezer track".into())),
+        };
         let with_id = |(url, format): (String, Format), song_id| StreamSource { url, format, song_id, duration: track.duration };
-        let first_error = match self.media_url(&track.token, quality) {
+        let first_error = match self.media_url(&song.token, quality) {
             Ok(found) => return Ok(with_id(found, track.id)),
             Err(e) => e,
         };
         if let Ok(found) = self.refresh_token(track.id).and_then(|t| self.media_url(&t, quality)) {
             return Ok(with_id(found, track.id));
         }
-        match &track.fallback {
+        match &song.fallback {
             Some((id, token)) => self.media_url(token, quality).map(|found| with_id(found, *id)).map_err(|_| first_error),
             None => Err(first_error),
         }
@@ -91,7 +95,7 @@ impl Deezer {
     }
 
     fn media_url(&self, token: &str, quality: Quality) -> Result<(String, Format)> {
-        let formats: Vec<Value> = quality.api_formats().iter().map(|f| json!({"cipher": "BF_CBC_STRIPE", "format": f})).collect();
+        let formats: Vec<Value> = api_formats(quality).iter().map(|f| json!({"cipher": "BF_CBC_STRIPE", "format": f})).collect();
         let body = json!({
             "license_token": self.0.license_token,
             "media": [{"type": "FULL", "formats": formats}],
@@ -108,6 +112,37 @@ impl Deezer {
         }
         let media = &item["media"][0];
         let url = media["sources"][0]["url"].as_str().ok_or(Error::NotAvailable)?;
-        Ok((url.to_string(), Format::from_api(media["format"].as_str())))
+        Ok((url.to_string(), format_from_api(media["format"].as_str())))
+    }
+}
+
+/// The media service's names for `quality` and every lower one, best first.
+fn api_formats(quality: Quality) -> &'static [&'static str] {
+    match quality {
+        Quality::Flac => &["FLAC", "MP3_320", "MP3_128"],
+        Quality::Mp3_320 => &["MP3_320", "MP3_128"],
+        Quality::Mp3_128 => &["MP3_128"],
+    }
+}
+
+/// The format the media service named.
+fn format_from_api(name: Option<&str>) -> Format {
+    match name {
+        Some("FLAC") => Format::Flac,
+        Some("MP3_128") => Format::Mp3(128),
+        _ => Format::Mp3(320),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_have_media_service_names() {
+        assert_eq!(api_formats(Quality::Mp3_320), ["MP3_320", "MP3_128"]);
+        assert_eq!(format_from_api(Some("FLAC")), Format::Flac);
+        assert_eq!(format_from_api(Some("MP3_128")), Format::Mp3(128));
+        assert_eq!(format_from_api(None), Format::Mp3(320));
     }
 }

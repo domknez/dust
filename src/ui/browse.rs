@@ -4,8 +4,8 @@
 use super::history::History;
 use super::load::Load;
 use super::state::{PlayMode, View};
-use crate::deezer::{AlbumInfo, ArtistPage, Item, Link, Playlist, SearchResults, Section, Track};
-use crate::model::Error;
+use crate::deezer::Link;
+use crate::model::{AlbumInfo, ArtistPage, Error, Item, Playlist, SearchResults, Section, Track};
 
 /// The page in the main area and its content. Replaced wholesale along with the
 /// [`Library`](super::library::Library) when the source changes.

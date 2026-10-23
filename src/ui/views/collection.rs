@@ -1,7 +1,8 @@
 //! Track lists: search results, Loved tracks and opened collections. A header
 //! (artwork, title, Play/Shuffle) scrolls with a virtualised track table.
 
-use crate::deezer::{ArtistRef, Item, Likeable, Playlist, image_url};
+use crate::deezer::image_url;
+use crate::model::{ArtistRef, Item, Likeable, Playlist};
 use crate::player::{State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;

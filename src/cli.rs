@@ -15,7 +15,8 @@
 //! - `--debug-decode <playlist> [quality] [start s]`  decrypt and decode 10 s of the first track (no sound)
 
 use crate::credentials;
-use crate::deezer::{Deezer, Quality};
+use crate::deezer::Deezer;
+use crate::model::{Origin, Quality};
 use crate::output::airplay::{AirPlaySink, Device, Discovery};
 use crate::output::local::LocalSink;
 use crate::output::{RATE, Sink};
@@ -283,7 +284,13 @@ fn debug_stream(client: &Deezer, playlist: u64, count: usize) {
         let how = match client.stream_source(t, Quality::Mp3_320) {
             Ok(s) if s.song_id != t.id => format!("OK via fallback {} ({:?})", s.song_id, s.format),
             Ok(s) => format!("OK ({:?})", s.format),
-            Err(e) => format!("FAIL {e} (fallback: {:?})", t.fallback.as_ref().map(|f| f.0)),
+            Err(e) => {
+                let fallback = match &t.origin {
+                    Origin::Deezer(song) => song.fallback.as_ref().map(|f| f.0),
+                    _ => None,
+                };
+                format!("FAIL {e} (fallback: {fallback:?})")
+            }
         };
         println!("{:<50} {how}", format!("{} – {}", t.artist, t.title));
     }

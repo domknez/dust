@@ -1,6 +1,6 @@
 //! The Playlists page: a grid of the account's playlists.
 
-use crate::deezer::Playlist;
+use crate::model::Playlist;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;

@@ -1,5 +1,5 @@
 //! Navidrome and other Subsonic / OpenSubsonic servers: a second music source next to
-//! Deezer, filling the same models ([`crate::deezer::Track`] and friends) so the UI
+//! Deezer, filling the same models ([`crate::model::Track`] and friends) so the UI
 //! and player work the same with either.
 //!
 //! - [`Subsonic`]: connecting (token authentication), calls and id bookkeeping
@@ -17,8 +17,7 @@ mod live_tests;
 mod parse;
 mod stream;
 
-use crate::deezer::Track;
-use crate::model::{Error, Result, Service};
+use crate::model::{Error, Origin, Result, Service, Track};
 use md5::{Digest, Md5};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -183,8 +182,10 @@ impl Subsonic {
 
     /// Learn the server ids of tracks that came from elsewhere (a restored queue).
     pub fn remember_tracks(&self, tracks: &[Track]) {
-        for server in tracks.iter().filter_map(|t| t.server.as_ref()) {
-            self.remember(&server.id);
+        for track in tracks {
+            if let Origin::Server(song) = &track.origin {
+                self.remember(&song.id);
+            }
         }
     }
 }

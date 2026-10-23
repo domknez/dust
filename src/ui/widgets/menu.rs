@@ -1,7 +1,7 @@
 //! Popover menus and their rows.
 
 use super::text::text_left;
-use crate::deezer::Playlist;
+use crate::model::Playlist;
 use crate::ui::state::PlayMode;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, radius, typography as ty};

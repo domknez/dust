@@ -2,8 +2,8 @@
 //! the app (through [`crate::provider::Provider`]); tests use fakes, so the playback
 //! logic runs without network or audio hardware.
 
-use crate::deezer::{Listen, Quality, Track};
 use crate::media::{OpenError, Playback};
+use crate::model::{Listen, Quality, Track};
 use std::sync::Arc;
 
 /// Opens tracks and Flow, and receives listen reports.

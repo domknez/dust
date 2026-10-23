@@ -1,6 +1,7 @@
 //! Display formatting and artwork URLs.
 
-use crate::deezer::{Playlist, Track, image_url};
+use crate::deezer::image_url;
+use crate::model::{Playlist, Track};
 
 /// 245.3 -> "4:05"
 pub fn mmss(secs: f64) -> String {
@@ -25,6 +26,19 @@ pub fn release_date(iso: &str) -> Option<String> {
     (year.len() == 4 && (1..=12).contains(&month)).then(|| format!("{day} {} {year}", MONTHS[month - 1]))
 }
 
+/// 1234567 -> "1,234,567"
+pub fn thousands(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
+
 pub fn cover_url(t: &Track, size: u32) -> Option<String> {
     (!t.cover.is_empty()).then(|| image_url(if t.is_episode() { "talk" } else { "cover" }, &t.cover, size))
 }
@@ -36,6 +50,7 @@ pub fn playlist_url(p: &Playlist, size: u32) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{DeezerSong, Origin};
 
     #[test]
     fn release_dates_read_naturally() {
@@ -43,6 +58,12 @@ mod tests {
         assert_eq!(release_date("2000-01-01").as_deref(), Some("1 Jan 2000"));
         assert_eq!(release_date(""), None);
         assert_eq!(release_date("2026-13-01"), None);
+    }
+
+    #[test]
+    fn counts_have_separators() {
+        assert_eq!(thousands(4702289), "4,702,289");
+        assert_eq!(thousands(999), "999");
     }
 
     #[test]
@@ -57,13 +78,10 @@ mod tests {
             album: String::new(),
             album_id: String::new(),
             duration: d,
-            token: String::new(),
             cover: String::new(),
-            fallback: None,
             available: true,
             available_from: String::new(),
-            episode: None,
-            server: None,
+            origin: Origin::Deezer(DeezerSong::default()),
         };
         assert_eq!(total_clock(&[t(100), t(3012)]), "51:52");
         assert_eq!(total_clock(&[t(3600), t(123)]), "1:02:03");

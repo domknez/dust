@@ -14,7 +14,7 @@ mod listens;
 mod queue;
 pub mod saved;
 
-use crate::deezer::{Quality, Track};
+use crate::model::{Quality, Track};
 use crate::output::airplay::Device;
 use crate::provider::Provider;
 use eframe::egui;

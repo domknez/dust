@@ -12,7 +12,7 @@ use super::state::{ArtistView, Coll, PlayMode, Source, View, playable};
 use super::style::Appearance;
 use super::views::{SleepChoice, reveal_log};
 use super::widgets::TrackMenu;
-use crate::deezer::{ArtistRef, Likeable, Quality, Track};
+use crate::model::{ArtistRef, Likeable, Quality, Track};
 use crate::player::{Cmd, Output, Repeat, Sleep};
 use crate::provider::Provider;
 use crate::subsonic::Server;

@@ -5,8 +5,7 @@
 use super::likes::LikeState;
 use super::load::Load;
 use super::playlist_edit::PlaylistEditing;
-use crate::deezer::{Item, Likes, Playlist, Section};
-use crate::model::Error;
+use crate::model::{Error, Item, Likes, Playlist, Section};
 
 /// One source's data. Switching source or logging out replaces it wholesale
 /// (`Library::default()`), which also drops its loads in flight: a result that

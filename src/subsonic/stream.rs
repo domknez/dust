@@ -2,9 +2,8 @@
 //! others (Opus, WMA, ...) are converted to MP3 by the server as they play.
 
 use super::{Subsonic, api, http};
-use crate::deezer::{Format, ServerSong, Track};
 use crate::media::{OpenError, Opened, Opener, Prefetch, Stream, StreamInfo};
-use crate::model::{Error, Result};
+use crate::model::{Error, Format, Origin, Result, ServerSong, Track};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -109,14 +108,16 @@ impl Subsonic {
     /// Start a song at `at` seconds. A file dust can't decode after all (say, Opus
     /// in an `.ogg`) is asked for again as MP3.
     pub fn open_track(&self, track: &Track, at: f64) -> std::result::Result<Stream, OpenError> {
-        let song = track.server.clone().ok_or_else(|| Error::Other("not a song from this server".into()))?;
+        let Origin::Server(song) = &track.origin else {
+            return Err(Error::Other("not a song from this server".into()).into());
+        };
         self.remember(&song.id);
         let (delivery, extension) = delivery(&song.suffix);
-        match self.open_as(track, &song, delivery, extension, at) {
+        match self.open_as(track, song, delivery, extension, at) {
             // Only a file problem: a network one would fail the same way again.
             Err(OpenError::Unavailable(e)) if delivery != Delivery::Converted => {
                 log_info!("{}: {e}; asking the server for MP3", song.suffix);
-                self.open_as(track, &song, Delivery::Converted, "mp3", at)
+                self.open_as(track, song, Delivery::Converted, "mp3", at)
             }
             result => result,
         }

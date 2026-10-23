@@ -2,8 +2,7 @@
 //! fields they fill, so everything falls back to the classic Subsonic fields.
 
 use super::{COVER_PREFIX, api, local_id};
-use crate::deezer::{ArtistRef, Item, LyricLine, Lyrics, Playlist, Section, ServerSong, Track};
-use crate::model::Result;
+use crate::model::{ArtistRef, Item, LyricLine, Lyrics, Origin, Playlist, Result, Section, ServerSong, Track};
 use serde_json::Value;
 
 /// The `subsonic-response` object of a reply, or the server's error.
@@ -75,13 +74,10 @@ pub fn song(v: &Value) -> Option<Track> {
         album: text(&v["album"]),
         album_id: text(&v["albumId"]),
         duration: number(&v["duration"]) as u32,
-        token: String::new(),
         cover: cover(v).unwrap_or_default(),
-        fallback: None,
         available: true,
         available_from: String::new(),
-        episode: None,
-        server: Some(ServerSong { id, suffix: text(&v["suffix"]).to_lowercase() }),
+        origin: Origin::Server(ServerSong { id, suffix: text(&v["suffix"]).to_lowercase() }),
     })
 }
 
@@ -269,9 +265,9 @@ mod tests {
         assert_eq!(t.album_id, "5F81DCwcfjVByziJAH9maf");
         assert_eq!(t.artists, vec![ArtistRef { id: "1cX14wrZBmbXZQpEQ79FiO".into(), name: "Square Wave Trio".into() }]);
         assert_eq!(t.cover, "sub:al-5F81DCwcfjVByziJAH9maf_0");
-        assert_eq!(t.server, Some(ServerSong { id: "qPyR7XLJOiu93qWw1n06xy".into(), suffix: "wav".into() }));
+        assert_eq!(t.origin, Origin::Server(ServerSong { id: "qPyR7XLJOiu93qWw1n06xy".into(), suffix: "wav".into() }));
         assert_eq!(t.id, local_id("qPyR7XLJOiu93qWw1n06xy"));
-        assert!(t.available && t.episode.is_none());
+        assert!(t.available);
     }
 
     #[test]
@@ -347,7 +343,7 @@ mod tests {
         let v = json!({"song": {"id": "x", "title": "Solo", "suffix": "MP3"}});
         let tracks = songs(list(&v, "song"));
         assert_eq!(tracks.len(), 1);
-        assert_eq!(tracks[0].server.as_ref().unwrap().suffix, "mp3");
+        assert!(matches!(&tracks[0].origin, Origin::Server(s) if s.suffix == "mp3"));
     }
 
     #[test]

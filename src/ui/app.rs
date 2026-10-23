@@ -14,8 +14,8 @@ use super::state::{ArtistView, Coll, PlayMode, Source, View, playable, playable_
 use super::style::{self, Appearance, colors, metrics};
 use super::updates::Updates;
 use crate::credentials;
-use crate::deezer::{self, Deezer, Link, Quality, Track};
-use crate::model::Error;
+use crate::deezer::{self, Deezer, Link};
+use crate::model::{Error, Quality, Track};
 use crate::output::airplay::Discovery;
 use crate::output::airplay::dacp::{self, Remote};
 use crate::player::saved::QueueFiles;
@@ -570,6 +570,7 @@ fn log_repaint_causes(ctx: &egui::Context) {
 #[cfg(test)]
 pub(super) mod testing {
     use super::*;
+    use crate::model::{DeezerSong, Origin};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc::Receiver;
@@ -634,13 +635,10 @@ pub(super) mod testing {
             album: String::new(),
             album_id: String::new(),
             duration: 180,
-            token: String::new(),
             cover: String::new(),
-            fallback: None,
             available,
             available_from: String::new(),
-            episode: None,
-            server: None,
+            origin: Origin::Deezer(DeezerSong::default()),
         }
     }
 
@@ -658,7 +656,7 @@ pub(super) mod testing {
 mod tests {
     use super::testing::{TestApp, deezer, track};
     use super::*;
-    use crate::deezer::Section;
+    use crate::model::Section;
     use crate::ui::load::Load;
 
     /// Logged in to Deezer, on the home page.

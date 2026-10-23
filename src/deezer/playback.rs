@@ -1,9 +1,9 @@
 //! Playing a Deezer song or podcast episode: its bytes, opened again for seeks.
 
 use super::Deezer;
-use super::models::{Format, Quality, Track};
 use super::streaming::StreamSource;
 use crate::media::{OpenError, Opened, Opener, Stream, StreamInfo};
+use crate::model::{Format, Quality, Track};
 use std::sync::Arc;
 
 /// Bytes per second per kbps (1000 / 8).

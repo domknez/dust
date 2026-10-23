@@ -1,6 +1,6 @@
 //! Building models from gw-light JSON, which mixes strings and numbers freely.
 
-use super::models::{AlbumInfo, ArtistPage, ArtistRef, Episode, Item, Playlist, Section, Track};
+use crate::model::{AlbumInfo, ArtistPage, ArtistRef, DeezerSong, Episode, Item, Origin, Playlist, Section, Track};
 use serde_json::Value;
 
 /// String field, tolerating numbers and nulls.
@@ -57,13 +57,10 @@ pub fn track(v: &Value) -> Option<Track> {
         album: text(&v["ALB_TITLE"]),
         album_id: Some(text(&v["ALB_ID"])).filter(|id| id != "0").unwrap_or_default(),
         duration: number(&v["DURATION"]) as u32,
-        token,
         cover: text(&v["ALB_PICTURE"]),
-        fallback,
         available: !blocked,
         available_from,
-        episode: None,
-        server: None,
+        origin: Origin::Deezer(DeezerSong { token, fallback }),
     })
 }
 
@@ -85,13 +82,10 @@ pub fn episode(v: &Value) -> Option<Track> {
         album: show,
         album_id: String::new(),
         duration: number(&v["DURATION"]) as u32,
-        token: String::new(),
         cover: text(&v["SHOW_ART_MD5"]),
-        fallback: None,
         available: v["AVAILABLE"].as_bool() != Some(false),
         available_from: String::new(),
-        episode: Some(Episode { url, show_id: text(&v["SHOW_ID"]), published }),
-        server: None,
+        origin: Origin::Episode(Episode { url, show_id: text(&v["SHOW_ID"]), published }),
     })
 }
 
@@ -99,7 +93,7 @@ pub fn episode(v: &Value) -> Option<Track> {
 pub fn show_episodes(page: &Value) -> Vec<Track> {
     let mut episodes: Vec<Track> = page["EPISODES"]["data"].as_array().map(|a| a.iter().filter_map(episode).collect()).unwrap_or_default();
     episodes.sort_by(|a, b| {
-        let date = |t: &Track| t.episode.as_ref().map(|e| e.published.clone()).unwrap_or_default();
+        let date = |t: &Track| t.episode().map(|e| e.published.clone()).unwrap_or_default();
         date(b).cmp(&date(a))
     });
     episodes
@@ -266,7 +260,7 @@ pub fn item(v: &Value) -> Item {
 }
 
 /// 1234567 -> "1,234,567"
-pub fn thousands(n: u64) -> String {
+fn thousands(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (i, ch) in digits.chars().enumerate() {
@@ -384,7 +378,7 @@ mod tests {
             (935346132, "Episode 935346132", "Lex Fridman Podcast", 13430, "fa87")
         );
         assert!(t.available && t.album_id.is_empty() && t.artists.is_empty());
-        let e = t.episode.unwrap();
+        let e = t.episode().unwrap();
         assert_eq!(
             (e.url.as_str(), e.show_id.as_str(), e.published.as_str()),
             ("https://example.com/935346132.mp3", "724752", "2026-09-17")
@@ -492,7 +486,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!((t.title.as_str(), t.artist.as_str(), t.duration), ("Song (Live)", "A, B", 180));
-        assert_eq!(t.fallback, Some((8, "tok2".into())));
+        assert_eq!(t.origin, Origin::Deezer(DeezerSong { token: "tok".into(), fallback: Some((8, "tok2".into())) }));
         assert!(track(&json!({"SNG_ID": "-5", "TRACK_TOKEN": "x"})).is_none());
     }
 }

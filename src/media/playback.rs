@@ -1,7 +1,6 @@
 //! What the player needs from a track being decoded, and why one didn't open.
 
-use crate::deezer::Format;
-use crate::model::Error;
+use crate::model::{Error, Format};
 
 /// Why a track didn't open, which decides what the engine does next.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]

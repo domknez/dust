@@ -4,11 +4,13 @@
 
 use super::collection::header_band;
 use super::home::card_row;
-use crate::deezer::{Item, Likeable, Section, image_url, thousands};
+use crate::deezer::image_url;
+use crate::model::{Item, Likeable, Section};
 use crate::player::{State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
+use crate::ui::format::thousands;
 use crate::ui::state::{ArtistView, Coll, Source};
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, radius, typography as ty};

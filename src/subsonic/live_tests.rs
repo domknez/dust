@@ -6,8 +6,8 @@
 //! ```
 
 use super::{Server, Subsonic};
-use crate::deezer::{Likeable, Track};
 use crate::media::{Decoded, Playback};
+use crate::model::{Likeable, Origin, Track};
 
 fn server() -> Subsonic {
     let spec = std::env::var("DUST_TEST_SUBSONIC").expect("DUST_TEST_SUBSONIC=url|user|password");
@@ -106,7 +106,8 @@ fn live_every_format_plays_and_seeks() {
     let songs = all_songs(&client);
     assert!(songs.len() >= 5);
     for track in &songs {
-        let suffix = &track.server.as_ref().unwrap().suffix;
+        let Origin::Server(song) = &track.origin else { panic!("not a server song") };
+        let suffix = &song.suffix;
         let mut stream = client.open_track(track, 0.0).unwrap_or_else(|e| panic!("{suffix}: {e}"));
         assert!(play_a_second(&mut stream) > 0.5, "{suffix}");
         // Jump into the middle: either reopened there or skipped to it.

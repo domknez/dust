@@ -3,7 +3,7 @@
 //! keeps its own: Deezer's in `queue.json`, a music server's in `queue-<key>.json`.
 
 use super::Status;
-use crate::deezer::{ArtistRef, Episode, ServerSong, Track};
+use crate::model::{ArtistRef, DeezerSong, Episode, Origin, ServerSong, Track};
 use crate::settings;
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -98,7 +98,14 @@ fn decode(v: &Value) -> Option<Saved> {
     Some(Saved { tracks, index, position: v["position"].as_f64().unwrap_or(0.0).max(0.0), flow })
 }
 
+/// A track as saved. The shape is the one dust has always written: every
+/// source's fields side by side, empty or null for the ones a track doesn't have.
 fn encode_track(t: &Track) -> Value {
+    let (song, episode, server) = match &t.origin {
+        Origin::Deezer(song) => (Some(song), None, None),
+        Origin::Episode(episode) => (None, Some(episode), None),
+        Origin::Server(server) => (None, None, Some(server)),
+    };
     json!({
         "id": t.id,
         "title": t.title,
@@ -107,13 +114,13 @@ fn encode_track(t: &Track) -> Value {
         "album": t.album,
         "album_id": t.album_id,
         "duration": t.duration,
-        "token": t.token,
+        "token": song.map(|s| s.token.as_str()).unwrap_or_default(),
         "cover": t.cover,
-        "fallback": t.fallback.as_ref().map(|(id, token)| json!({"id": id, "token": token})),
+        "fallback": song.and_then(|s| s.fallback.as_ref()).map(|(id, token)| json!({"id": id, "token": token})),
         "available": t.available,
         "available_from": t.available_from,
-        "episode": t.episode.as_ref().map(|e| json!({"url": e.url, "show_id": e.show_id, "published": e.published})),
-        "server": t.server.as_ref().map(|s| json!({"id": s.id, "suffix": s.suffix})),
+        "episode": episode.map(|e| json!({"url": e.url, "show_id": e.show_id, "published": e.published})),
+        "server": server.map(|s| json!({"id": s.id, "suffix": s.suffix})),
     })
 }
 
@@ -123,7 +130,22 @@ fn decode_track(v: &Value) -> Option<Track> {
         .as_array()
         .map(|a| a.iter().filter_map(|x| Some(ArtistRef { id: x["id"].as_str()?.into(), name: x["name"].as_str()?.into() })).collect())
         .unwrap_or_default();
-    let fallback = v["fallback"].as_object().and_then(|f| Some((f.get("id")?.as_u64()?, f.get("token")?.as_str()?.to_string())));
+    let episode = v["episode"].as_object().and_then(|e| {
+        let s = |k: &str| e.get(k).and_then(Value::as_str).map(str::to_string);
+        Some(Episode { url: s("url")?, show_id: s("show_id").unwrap_or_default(), published: s("published").unwrap_or_default() })
+    });
+    let server = v["server"].as_object().and_then(|s| {
+        let text = |k: &str| s.get(k).and_then(Value::as_str).map(str::to_string);
+        Some(ServerSong { id: text("id")?, suffix: text("suffix").unwrap_or_default() })
+    });
+    let origin = match (server, episode) {
+        (Some(server), _) => Origin::Server(server),
+        (None, Some(episode)) => Origin::Episode(episode),
+        (None, None) => {
+            let fallback = v["fallback"].as_object().and_then(|f| Some((f.get("id")?.as_u64()?, f.get("token")?.as_str()?.to_string())));
+            Origin::Deezer(DeezerSong { token: s("token"), fallback })
+        }
+    };
     Some(Track {
         id: v["id"].as_u64()?,
         title: s("title"),
@@ -132,20 +154,11 @@ fn decode_track(v: &Value) -> Option<Track> {
         album: s("album"),
         album_id: s("album_id"),
         duration: v["duration"].as_u64().unwrap_or(0) as u32,
-        token: s("token"),
         cover: s("cover"),
-        fallback,
         // Files from before 0.10 didn't record it; those tracks were playable then.
         available: v["available"].as_bool().unwrap_or(true),
         available_from: s("available_from"),
-        episode: v["episode"].as_object().and_then(|e| {
-            let s = |k: &str| e.get(k).and_then(Value::as_str).map(str::to_string);
-            Some(Episode { url: s("url")?, show_id: s("show_id").unwrap_or_default(), published: s("published").unwrap_or_default() })
-        }),
-        server: v["server"].as_object().and_then(|s| {
-            let text = |k: &str| s.get(k).and_then(Value::as_str).map(str::to_string);
-            Some(ServerSong { id: text("id")?, suffix: text("suffix").unwrap_or_default() })
-        }),
+        origin,
     })
 }
 
@@ -163,13 +176,10 @@ mod tests {
             album: "Album".into(),
             album_id: "302127".into(),
             duration: 200,
-            token: "tok".into(),
             cover: "md5".into(),
-            fallback: Some((9, "tok2".into())),
             available: true,
             available_from: String::new(),
-            episode: None,
-            server: None,
+            origin: Origin::Deezer(DeezerSong { token: "tok".into(), fallback: Some((9, "tok2".into())) }),
         }
     }
 
@@ -188,7 +198,11 @@ mod tests {
     #[test]
     fn episodes_keep_their_audio_file() {
         let episode = Track {
-            episode: Some(Episode { url: "https://example.com/ep.mp3".into(), show_id: "724752".into(), published: "2026-09-17".into() }),
+            origin: Origin::Episode(Episode {
+                url: "https://example.com/ep.mp3".into(),
+                show_id: "724752".into(),
+                published: "2026-09-17".into(),
+            }),
             ..track(3)
         };
         let st = Status { queue: Arc::new(vec![track(1), episode.clone()]), index: 1, ..Default::default() };
@@ -197,9 +211,67 @@ mod tests {
 
     #[test]
     fn server_songs_keep_their_id() {
-        let song = Track { server: Some(ServerSong { id: "qPyR7XLJOiu93qWw1n06xy".into(), suffix: "flac".into() }), ..track(4) };
+        let song = Track { origin: Origin::Server(ServerSong { id: "qPyR7XLJOiu93qWw1n06xy".into(), suffix: "flac".into() }), ..track(4) };
         let st = Status { queue: Arc::new(vec![song.clone()]), index: 0, ..Default::default() };
         assert_eq!(decode(&encode(&st)).unwrap().tracks, vec![song]);
+    }
+
+    /// `queue.json` as dust 0.16 wrote it: a song with a regional fallback, a
+    /// podcast episode, endless Flow tuned to a mood.
+    const DEEZER_0_16: &str = r##"{"flow":{"mood":"chill"},"index":1,"position":61.3,"tracks":[
+        {"album":"Discovery","album_id":"302127","artist":"Daft Punk","artists":[{"id":"27","name":"Daft Punk"}],
+         "available":true,"available_from":"","cover":"2e018122cb56986277102d2041a592c8","duration":320,"episode":null,
+         "fallback":{"id":3135554,"token":"AAAB-fallback"},"id":3135553,"server":null,"title":"One More Time","token":"AAAA-token"},
+        {"album":"Lex Fridman Podcast","album_id":"","artist":"Lex Fridman Podcast","artists":[],"available":true,
+         "available_from":"","cover":"fa87","duration":13430,
+         "episode":{"published":"2026-09-17","show_id":"724752","url":"https://example.com/935346132.mp3"},
+         "fallback":null,"id":935346132,"server":null,"title":"#480 – Episode","token":""}
+    ],"version":1}"##;
+
+    /// `queue-navidrome.json` as dust 0.16 wrote it.
+    const NAVIDROME_0_16: &str = r##"{"flow":null,"index":0,"position":0.0,"tracks":[
+        {"album":"Single Pulse","album_id":"5F81DCwcfjVByziJAH9maf","artist":"Square Wave Trio",
+         "artists":[{"id":"1cX14wrZBmbXZQpEQ79FiO","name":"Square Wave Trio"}],"available":true,"available_from":"",
+         "cover":"sub:al-5F81DCwcfjVByziJAH9maf_0","duration":20,"episode":null,"fallback":null,"id":8528590152792521616,
+         "server":{"id":"qPyR7XLJOiu93qWw1n06xy","suffix":"wav"},"title":"Pulse","token":""}
+    ],"version":1}"##;
+
+    #[test]
+    fn queues_saved_by_0_16_still_load() {
+        let saved = decode(&serde_json::from_str(DEEZER_0_16).unwrap()).unwrap();
+        assert_eq!((saved.index, saved.position, saved.flow.clone()), (1, 61.3, Some(Some("chill".into()))));
+        let [song, episode] = &saved.tracks[..] else { panic!("two tracks") };
+        assert_eq!((song.id, song.title.as_str(), song.album_id.as_str(), song.duration), (3135553, "One More Time", "302127", 320));
+        assert_eq!(
+            song.origin,
+            Origin::Deezer(DeezerSong { token: "AAAA-token".into(), fallback: Some((3135554, "AAAB-fallback".into())) })
+        );
+        assert_eq!(
+            episode.origin,
+            Origin::Episode(Episode {
+                url: "https://example.com/935346132.mp3".into(),
+                show_id: "724752".into(),
+                published: "2026-09-17".into()
+            })
+        );
+
+        let saved = decode(&serde_json::from_str(NAVIDROME_0_16).unwrap()).unwrap();
+        assert_eq!(saved.flow, None);
+        let song = &saved.tracks[0];
+        assert_eq!(song.origin, Origin::Server(ServerSong { id: "qPyR7XLJOiu93qWw1n06xy".into(), suffix: "wav".into() }));
+        assert_eq!(song.cover, "sub:al-5F81DCwcfjVByziJAH9maf_0");
+    }
+
+    #[test]
+    fn queues_are_written_as_0_16_wrote_them() {
+        // An older dust reading a newer file (after a downgrade) finds what it knows.
+        for text in [DEEZER_0_16, NAVIDROME_0_16] {
+            let old: Value = serde_json::from_str(text).unwrap();
+            let saved = decode(&old).unwrap();
+            let flow = saved.flow.clone().map(|mood| mood.unwrap_or_else(|| "default".into()));
+            let st = Status { queue: Arc::new(saved.tracks), index: saved.index, position: saved.position, flow, ..Default::default() };
+            assert_eq!(encode(&st), old);
+        }
     }
 
     #[test]

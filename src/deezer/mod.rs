@@ -7,7 +7,8 @@
 //! - [`playlists`]: creating and editing the account's own playlists
 //! - [`lyrics`]: synced and plain song lyrics
 //! - [`listens`]: listen reports (history, Flow, Last.fm scrobbling)
-//! - [`models`] / [`parse`]: data types and their construction from API JSON
+//! - [`parse`]: the model types ([`crate::model`]) from API JSON
+//! - [`images`]: artwork URLs
 //! - [`crypto`]: the `BF_CBC_STRIPE` stream cipher
 //! - [`playback`]: opening songs and episodes for the player
 //! - [`links`]: Deezer links pasted into search
@@ -16,25 +17,19 @@
 mod catalog;
 mod client;
 mod crypto;
+mod images;
 mod links;
 mod listens;
 mod lyrics;
-mod models;
 mod parse;
 mod playback;
 mod playlists;
 pub(crate) mod session;
 mod streaming;
 
-pub use catalog::{Likeable, Likes};
 pub use client::Deezer;
+pub use images::image_url;
 pub use links::{Link, is_link};
-pub use lyrics::{LyricLine, Lyrics};
-pub use models::{
-    AlbumInfo, ArtistPage, ArtistRef, Episode, Format, Item, Listen, Playlist, Quality, SearchResults, Section, ServerSong, Track,
-    image_url,
-};
-pub use parse::thousands;
 
 // Child modules use these as `super::{Error, Result}`.
 use crate::model::{Error, Result, Service};

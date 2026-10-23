@@ -3,7 +3,7 @@
 
 use super::playback::{Decoded, OpenError, Playback};
 use super::resample::Resampler;
-use crate::deezer::Format;
+use crate::model::Format;
 use crate::output::RATE;
 use std::io::Read;
 use std::sync::Arc;

@@ -1,7 +1,7 @@
 //! The Settings window: appearance, streaming quality, listen sharing, updates and
 //! troubleshooting. Opens from the account menu or with ⌘, (Ctrl+, elsewhere).
 
-use crate::deezer::Quality;
+use crate::model::Quality;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::style::icons::Icon;

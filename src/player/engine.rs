@@ -6,8 +6,8 @@ use super::library::SharedLibrary;
 use super::listens::ListenTracker;
 use super::queue::{Flow, Queue, Removed};
 use super::{Cmd, Output, Repeat, SLEEP_FADE, Sleep, State, Status};
-use crate::deezer::{Quality, Track};
 use crate::media::{Decoded, OpenError, Playback};
+use crate::model::{Quality, Track};
 use crate::output::airplay::AirPlaySink;
 use crate::output::local::LocalSink;
 use crate::output::{RATE, Sink};
@@ -646,7 +646,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::deezer::{Format, Listen};
+    use crate::model::{DeezerSong, Format, Listen, Origin};
     use crate::player::library::Library;
     use std::sync::mpsc::{Sender, channel};
 
@@ -659,13 +659,10 @@ mod tests {
             album: String::new(),
             album_id: String::new(),
             duration: secs,
-            token: String::new(),
             cover: String::new(),
-            fallback: None,
             available: true,
             available_from: String::new(),
-            episode: None,
-            server: None,
+            origin: Origin::Deezer(DeezerSong::default()),
         }
     }
 
@@ -979,8 +976,8 @@ mod tests {
     #[test]
     fn episodes_are_not_reported_as_listens() {
         let (mut e, library, _tx) = engine(FakeLibrary::default());
-        let episode = crate::deezer::Episode { url: "https://example.com/ep.mp3".into(), show_id: "1".into(), published: String::new() };
-        e.handle(Cmd::Play(vec![Track { episode: Some(episode), ..track(1, 5) }, track(2, 5)], 0));
+        let episode = crate::model::Episode { url: "https://example.com/ep.mp3".into(), show_id: "1".into(), published: String::new() };
+        e.handle(Cmd::Play(vec![Track { origin: Origin::Episode(episode), ..track(1, 5) }, track(2, 5)], 0));
         e.listens.heard(Duration::from_secs(5));
         e.handle(Cmd::Next);
         e.listens.heard(Duration::from_secs(5));

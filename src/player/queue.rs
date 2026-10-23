@@ -1,7 +1,7 @@
 //! Queue bookkeeping: the tracks, which one is current, shuffle and endless Flow.
 //! Pure data manipulation — no audio, no network — so it is fully unit-testable.
 
-use crate::deezer::Track;
+use crate::model::Track;
 
 /// Endless Flow: the queue refills itself from Deezer as it runs out.
 #[derive(Clone, Debug, PartialEq)]
@@ -238,6 +238,7 @@ fn index_after_move(current: usize, from: usize, to: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{DeezerSong, Origin};
 
     fn t(id: u64) -> Track {
         Track {
@@ -248,13 +249,10 @@ mod tests {
             album: String::new(),
             album_id: String::new(),
             duration: 1,
-            token: String::new(),
             cover: String::new(),
-            fallback: None,
             available: true,
             available_from: String::new(),
-            episode: None,
-            server: None,
+            origin: Origin::Deezer(DeezerSong::default()),
         }
     }
 

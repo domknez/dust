@@ -1,7 +1,7 @@
 //! Player bar, one row: now playing on the left; transport, times and progress in
 //! the middle; lyrics, queue, the ⋯ menu, output and volume on the right.
 
-use crate::deezer::Likeable;
+use crate::model::Likeable;
 use crate::player::{Cmd, Repeat, State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::{App, SidePanel};

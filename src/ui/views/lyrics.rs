@@ -1,7 +1,7 @@
 //! Lyrics panel: the playing track's lyrics, the sung line highlighted and kept in
 //! view when they're synced; click a line to jump there.
 
-use crate::deezer::Lyrics;
+use crate::model::Lyrics;
 use crate::player::{Cmd, State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;

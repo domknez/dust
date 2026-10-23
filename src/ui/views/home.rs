@@ -1,7 +1,7 @@
 //! Home: a greeting, the Flow panel with its moods, then Deezer's recommendation
 //! sections as horizontally scrolling rows of cards.
 
-use crate::deezer::{Item, Section};
+use crate::model::{Item, Section};
 use crate::player::{Cmd, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;

@@ -1,8 +1,8 @@
 //! Changing the account's own playlists: create (optionally from tracks), add and
 //! remove tracks, rename, delete.
 
-use super::models::Playlist;
 use super::{Deezer, Result, api, parse};
+use crate::model::Playlist;
 use serde_json::{Value, json};
 
 /// Deezer's playlist visibility (`STATUS`).

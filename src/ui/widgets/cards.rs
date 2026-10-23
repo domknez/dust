@@ -3,7 +3,8 @@
 use super::art::cover;
 use super::menu::queue_menu;
 use super::text::{artist_links, text_left};
-use crate::deezer::{ArtistRef, Track, image_url};
+use crate::deezer::image_url;
+use crate::model::{ArtistRef, Track};
 use crate::ui::covers::Covers;
 use crate::ui::format::{cover_url, mmss};
 use crate::ui::state::{Coll, PlayMode};

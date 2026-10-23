@@ -3,11 +3,11 @@
 //! has (Flow, podcasts, track mixes, Deezer links) is flagged in [`Features`] so the
 //! UI can leave it out.
 
-use crate::deezer::{
-    AlbumInfo, ArtistPage, Deezer, Item, Likeable, Likes, Link, Listen, Lyrics, Playlist, Quality, SearchResults, Section, Track,
-};
+use crate::deezer::{Deezer, Link};
 use crate::media::{OpenError, Playback};
-use crate::model::{Error, Result};
+use crate::model::{
+    AlbumInfo, ArtistPage, Error, Item, Likeable, Likes, Listen, Lyrics, Playlist, Quality, Result, SearchResults, Section, Track,
+};
 use crate::player::library::Library;
 use crate::subsonic::Subsonic;
 

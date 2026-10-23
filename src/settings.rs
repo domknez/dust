@@ -1,7 +1,7 @@
 //! Tiny `key=value` settings file in the platform config directory, read and
 //! written as typed [`Prefs`].
 
-use crate::deezer::Quality;
+use crate::model::Quality;
 use crate::player::Repeat;
 use crate::ui::Appearance;
 use std::collections::BTreeMap;

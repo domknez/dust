@@ -48,7 +48,7 @@ impl App {
         self.finish_drag(ui, drop_at, acts);
     }
 
-    fn queue_title(&mut self, ui: &mut Ui, can_clear: bool, queue: &[crate::deezer::Track], acts: &mut Actions) {
+    fn queue_title(&mut self, ui: &mut Ui, can_clear: bool, queue: &[crate::model::Track], acts: &mut Actions) {
         self.side_panel_tabs(ui, acts);
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -101,7 +101,7 @@ impl App {
         ui.add_space(6.0);
     }
 
-    fn upcoming_row(&mut self, ui: &mut Ui, i: usize, track: &crate::deezer::Track, drop_at: &mut Option<usize>, acts: &mut Actions) {
+    fn upcoming_row(&mut self, ui: &mut Ui, i: usize, track: &crate::model::Track, drop_at: &mut Option<usize>, acts: &mut Actions) {
         let p = colors();
         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::QUEUE_ROW), Sense::click_and_drag());
         // Pointer anywhere in the row, also over its artist links.

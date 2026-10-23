@@ -1,7 +1,7 @@
 //! The Artists, Albums and Podcasts pages: grids of the artists and podcasts the
 //! account follows and the albums it likes.
 
-use crate::deezer::Item;
+use crate::model::Item;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;

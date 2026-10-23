@@ -2,7 +2,7 @@
 //! listen to Deezer (history, Flow, Last.fm), like Deezer's own apps.
 
 use super::library::Library;
-use crate::deezer::{Format, Listen};
+use crate::model::{Format, Listen};
 use std::time::Duration;
 
 /// A listen that played to within this many seconds of the end isn't a skip.

@@ -4,7 +4,7 @@
 //! Rows report what was clicked as [`Action`]s.
 
 use super::{TrackMenu, artist_links, cover, equalizer, heart_at, queue_menu, text_left, text_link, track_menu};
-use crate::deezer::{Likeable, Playlist, Track};
+use crate::model::{Likeable, Playlist, Track};
 use crate::player::Cmd;
 use crate::ui::action::{Action, Actions};
 use crate::ui::covers::Covers;
@@ -169,7 +169,7 @@ fn track_row(ui: &mut Ui, covers: &mut Covers, table: &Table, i: usize, rect: Re
         let width = columns.time - album - 70.0;
         match Coll::album_of(track) {
             // Episodes show when they came out instead.
-            None if let Some(episode) = &track.episode => {
+            None if let Some(episode) = track.episode() => {
                 let date = release_date(&episode.published).unwrap_or_default();
                 text_left(painter, pos2(album, cy), &date, ty::BODY, p.dim, width);
             }
