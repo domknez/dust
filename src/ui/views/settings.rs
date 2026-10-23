@@ -28,7 +28,7 @@ impl App {
             return;
         }
         let max_height = (ctx.content_rect().height() - 120.0).max(240.0);
-        let modal = egui::Modal::new(egui::Id::new("settings")).frame(widgets::popover_frame(ctx)).show(ctx, |ui| {
+        let modal = egui::Modal::new(egui::Id::unique("settings")).frame(widgets::popover_frame(ctx)).show(ctx, |ui| {
             ui.set_width(WIDTH);
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Settings").font(ty::SECTION_TITLE.font()).color(colors().text));

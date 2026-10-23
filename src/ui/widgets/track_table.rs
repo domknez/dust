@@ -116,7 +116,7 @@ fn track_row(ui: &mut Ui, covers: &mut Covers, table: &Table, i: usize, rect: Re
     let (track, columns, menu) = (&table.tracks[i], table.columns, &table.menu);
     let (playing_id, playing) = table.now;
     let liked = (table.liked)(&track.id);
-    let resp = ui.interact(rect, ui.id().with(("row", i)), Sense::click());
+    let resp = ui.interact(rect, ui.scope_id().with(("row", i)), Sense::click());
     let current = playing_id == Some(&track.id);
     // Pointer anywhere in the row, including over its own heart and links: asking
     // `hovered()` would flip to false over the heart and make it flicker.

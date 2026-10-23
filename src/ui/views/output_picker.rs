@@ -108,7 +108,7 @@ impl App {
         let height = if current { ROW_HEIGHT + VOLUME_ROW } else { ROW_HEIGHT };
         let (card, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
         let row = Rect::from_min_size(card.min, vec2(card.width(), ROW_HEIGHT));
-        let resp = ui.interact(row, ui.id().with(("output", name)), Sense::click());
+        let resp = ui.interact(row, ui.scope_id().with(("output", name)), Sense::click());
         let corner = CornerRadius::same(radius::PANEL);
         if current {
             ui.painter().rect_filled(card, corner, p.raised);

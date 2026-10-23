@@ -75,7 +75,7 @@ impl App {
             }
             // Cover and title open the album (an episode's podcast).
             let album = Coll::origin_of(track);
-            let cover = ui.interact(art, ui.id().with("now-playing-cover"), egui::Sense::click());
+            let cover = ui.interact(art, ui.scope_id().with("now-playing-cover"), egui::Sense::click());
             let title_pos = pos2(x, area.center().y - 9.0);
             let title_clicked = match &album {
                 Some(_) => {

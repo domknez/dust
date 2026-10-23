@@ -300,7 +300,7 @@ fn more_releases(ui: &mut Ui, covers: &mut Covers, column: Rect, caption: &str, 
     for (k, item) in items.iter().enumerate() {
         let rect =
             Rect::from_min_size(pos2(column.left(), column.top() + 28.0 + k as f32 * MORE_ROW), vec2(column.width(), MORE_ROW - 4.0));
-        let resp = ui.interact(rect, ui.id().with(("more-by", k)), Sense::click());
+        let resp = ui.interact(rect, ui.scope_id().with(("more-by", k)), Sense::click());
         if resp.hovered() {
             ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.hover);
         }

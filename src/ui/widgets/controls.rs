@@ -21,7 +21,7 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, size: f32, color: Color32) -> Respon
 /// content on hover and make the list jump).
 pub fn heart_at(ui: &Ui, center: egui::Pos2, id: impl std::hash::Hash + std::fmt::Debug, liked: bool, size: f32) -> Response {
     let rect = Rect::from_center_size(center, Vec2::splat(size + 12.0));
-    let resp = ui.interact(rect, ui.id().with(("heart", id)), Sense::click());
+    let resp = ui.interact(rect, ui.scope_id().with(("heart", id)), Sense::click());
     paint_heart(ui, rect, resp, liked, size)
 }
 
@@ -234,7 +234,7 @@ pub fn segmented(ui: &mut Ui, items: &[(Icon, &str)], selected: usize) -> Option
             pos2(rect.left() + 3.0 + i as f32 * segment_width, rect.top() + 3.0),
             vec2(segment_width, rect.height() - 6.0),
         );
-        let resp = ui.interact(seg, ui.id().with(("segment", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let resp = ui.interact(seg, ui.scope_id().with(("segment", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
         let on = i == selected;
         if on {
             ui.painter().rect_filled(seg, CornerRadius::same(5), p.text);

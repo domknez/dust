@@ -56,17 +56,17 @@ impl App {
         let caption = format!("PLAYLISTS / {}", self.library.playlists.len());
         let width = ui.painter().layout_no_wrap(caption.clone(), ty::OVERLINE.font(), colors().dim).size().x;
         let fold = Rect::from_min_max(row.min, pos2((row.left() + width + 34.0).min(row.right() - 28.0), row.bottom()));
-        let fold = ui.interact(fold, ui.id().with("fold-playlists"), Sense::click());
+        let fold = ui.interact(fold, ui.scope_id().with("fold-playlists"), Sense::click());
         let caption_color = if fold.hovered() { colors().text } else { colors().dim };
         text_left(ui.painter(), pos2(row.left() + 10.0, row.center().y), &caption, ty::OVERLINE, caption_color, row.width() - 40.0);
-        let open = ui.ctx().animate_bool(ui.id().with("playlists-open"), self.prefs.sidebar_playlists);
+        let open = ui.ctx().animate_bool(ui.scope_id().with("playlists-open"), self.prefs.sidebar_playlists);
         disclosure(ui.painter(), pos2(row.left() + width + 22.0, row.center().y), 8.0, open, caption_color);
         let hint = if self.prefs.sidebar_playlists { "Hide playlists" } else { "Show playlists" };
         if fold.on_hover_text(hint).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
             acts.push(Action::ToggleSidebarPlaylists);
         }
         let plus = Rect::from_center_size(pos2(row.right() - 12.0, row.center().y), Vec2::splat(22.0));
-        let resp = ui.interact(plus, ui.id().with("new-playlist"), Sense::click());
+        let resp = ui.interact(plus, ui.scope_id().with("new-playlist"), Sense::click());
         let color = if resp.hovered() { colors().text } else { colors().faint };
         icons::paint(ui.painter(), Rect::from_center_size(plus.center(), Vec2::splat(12.0)), Icon::Plus, color);
         if resp.on_hover_text("New playlist").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {

@@ -132,7 +132,7 @@ impl App {
         let service = self.client.as_ref().map_or("", |c| c.id().name);
         let mut submit = None;
         let mut close = false;
-        let modal = egui::Modal::new(egui::Id::new("playlist-dialog")).frame(widgets::popover_frame(ctx)).show(ctx, |ui| {
+        let modal = egui::Modal::new(egui::Id::unique("playlist-dialog")).frame(widgets::popover_frame(ctx)).show(ctx, |ui| {
             ui.set_width(320.0);
             ui.spacing_mut().item_spacing.y = 10.0;
             let confirm = |ui: &mut egui::Ui, label: &str, enabled: bool| {

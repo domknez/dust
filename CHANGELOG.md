@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Updated the UI toolkit (egui 0.37) and other libraries
+
 ## 0.20.0 (2026-10-23)
 
 - Songs follow each other without a pause: dust opens the next track about ten seconds
