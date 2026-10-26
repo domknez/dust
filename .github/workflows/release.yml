@@ -93,17 +93,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      # Downloaded packages are kept between runs (refreshed monthly), so a stalling
-      # package mirror only matters for what changed.
-      - name: Month
-        id: month
-        run: echo "month=$(date +%Y-%m)" >> "$GITHUB_OUTPUT"
+      # Downloaded packages are kept between runs (per runner image, refreshed
+      # monthly), so a stalling package mirror only matters for what changed.
+      - name: Cache key
+        id: key
+        run: echo "apt=apt-$ImageOS-${{ runner.arch }}" >> "$GITHUB_OUTPUT"; echo "month=$(date +%Y-%m)" >> "$GITHUB_OUTPUT"
       - name: Cache system packages
         uses: actions/cache@v6
         with:
           path: ~/apt-archives
-          key: apt-${{ runner.os }}-${{ runner.arch }}-${{ steps.month.outputs.month }}
-          restore-keys: apt-${{ runner.os }}-${{ runner.arch }}-
+          key: ${{ steps.key.outputs.apt }}-${{ steps.key.outputs.month }}
+          restore-keys: ${{ steps.key.outputs.apt }}-
       - name: System libraries
         timeout-minutes: 25
         run: |
