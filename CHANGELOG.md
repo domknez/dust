@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.21.0 (2026-10-26)
+
 - Explore (sidebar, `⌘7`): Deezer's genres, moods, decades, charts and *For you*, each a
   page of new releases, playlists and top artists. Genre cards on Home open them too, and
   *see all* on a row shows the whole of it
