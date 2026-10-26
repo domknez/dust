@@ -5,18 +5,19 @@
 //! - `--check-update`             is a newer release out, and can this copy install it
 //! - `--self-update`              install the latest release in place (no relaunch)
 //! - `--debug-home`                home page structure for the stored session
+//! - `--debug-page <id>`           another page's structure (channels/explore, channels/rock, ...)
 //! - `--debug-search <query>`      search results: track count and card sections
 //! - `--debug-api <method> [json]` raw gw-light reply, for exploring the API
 //! - `--debug-artist <id>`         an artist page: top tracks and card sections
 //! - `--debug-link <url>`          what a pasted Deezer link resolves to
 //! - `--debug-likes`               how many tracks, albums and artists the account likes
-//! - `--debug-tracks <kind> <id>`  what a home item plays (mix|album|artist|playlist|trackmix, or flow [mood])
+//! - `--debug-tracks <kind> <id>`  what a home item plays (mix|album|artist|artistmix|playlist|trackmix, or flow [mood])
 //! - `--debug-stream <playlist> [n]`  stream resolution per track, incl. fallbacks
 //! - `--debug-decode <playlist> [quality] [start s]`  decrypt and decode 10 s of the first track (no sound)
 
 use crate::credentials;
 use crate::deezer::Deezer;
-use crate::model::{Origin, PlaylistId, Quality};
+use crate::model::{Origin, PlaylistId, Quality, Section};
 use crate::output::airplay::{AirPlaySink, Device, Discovery};
 use crate::output::local::LocalSink;
 use crate::output::{RATE, Sink};
@@ -30,6 +31,7 @@ pub enum Command {
     CheckUpdate,
     SelfUpdate,
     DebugHome,
+    DebugPage(String),
     DebugSearch(String),
     DebugArtist(String),
     DebugLink(String),
@@ -64,6 +66,7 @@ impl Command {
             "--check-update" => Command::CheckUpdate,
             "--self-update" => Command::SelfUpdate,
             "--debug-home" => Command::DebugHome,
+            "--debug-page" => Command::DebugPage(args.next().unwrap_or_default()),
             "--debug-api" => {
                 Command::DebugApi { method: args.next().unwrap_or_default(), body: args.next().unwrap_or_else(|| "{}".into()) }
             }
@@ -95,6 +98,7 @@ impl Command {
             Command::CheckUpdate => check_update(),
             Command::SelfUpdate => self_update(),
             Command::DebugHome => debug_home(&logged_in()),
+            Command::DebugPage(id) => debug_page(&logged_in(), &id),
             Command::DebugSearch(query) => debug_search(&logged_in(), &query),
             Command::DebugArtist(id) => debug_artist(&logged_in(), &id),
             Command::DebugLikes => match logged_in().likes() {
@@ -214,8 +218,23 @@ fn find_speaker(target: &str) -> Device {
 }
 
 fn debug_home(client: &Deezer) {
-    for sec in client.home().expect("home") {
-        println!("\n## {} ({} items)", sec.title, sec.items.len());
+    print_sections(&client.home().expect("home"));
+}
+
+fn debug_page(client: &Deezer, id: &str) {
+    match client.page(id) {
+        Ok(page) => {
+            println!("# {}", page.title);
+            print_sections(&page.sections);
+        }
+        Err(e) => println!("error: {e}"),
+    }
+}
+
+fn print_sections(sections: &[Section]) {
+    for sec in sections {
+        let grid = if sec.grid { ", grid" } else { "" };
+        println!("\n## {} ({} items{grid}) more={:?}", sec.title, sec.items.len(), sec.more);
         for it in sec.items.iter().take(8) {
             println!("  - {:?}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
         }
@@ -264,6 +283,7 @@ fn debug_tracks(client: &Deezer, kind: &str, id: &str) {
         "mix" => client.mix(id),
         "album" => client.album(id),
         "artist" => client.artist_top(id),
+        "artistmix" => client.artist_mix(id),
         "trackmix" => client.track_mix(id),
         _ => client.playlist(&PlaylistId::new(id)),
     };

@@ -3,7 +3,7 @@
 use super::art::cover;
 use super::menu::queue_menu;
 use super::text::{artist_links, text_left};
-use crate::model::{ArtistRef, Track};
+use crate::model::{ArtistRef, Item, Track};
 use crate::ui::covers::Covers;
 use crate::ui::format::mmss;
 use crate::ui::state::{Coll, PlayMode};
@@ -43,6 +43,27 @@ pub fn card(ui: &mut Ui, covers: &mut Covers, coll: &Coll) -> CardClick {
     text_left(ui.painter(), pos2(rect.left(), art.bottom() + 34.0), &coll.subtitle, ty::SMALL, colors().dim, w);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     click
+}
+
+/// A channel's card (a genre, a mood, the charts): its picture and name, opening
+/// its page; nothing to play from it directly. Returns whether it was clicked.
+pub fn channel_card(ui: &mut Ui, covers: &mut Covers, item: &Item) -> bool {
+    let w = metrics::HOME_CARD;
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, w + metrics::CARD_TEXT), Sense::click());
+    let art = Rect::from_min_size(rect.min, Vec2::splat(w));
+    cover(ui, covers, item.picture.as_ref(), metrics::HOME_CARD_PX, art, radius::CARD);
+    if resp.hovered() {
+        ui.painter().rect_filled(art, CornerRadius::same(radius::CARD), colors().veil);
+        let ring = art.expand(3.0);
+        ui.painter().rect_stroke(
+            ring,
+            CornerRadius::same(radius::CONTROL),
+            egui::Stroke::new(1.5, colors().accent),
+            egui::StrokeKind::Inside,
+        );
+    }
+    text_left(ui.painter(), pos2(rect.left(), art.bottom() + 15.0), &item.title, ty::ITEM.strong(), colors().text, w);
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
 
 /// Lime play button drawn over artwork; `half` is half its side.

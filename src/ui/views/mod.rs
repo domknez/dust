@@ -3,6 +3,7 @@
 mod account_menu;
 mod artist;
 mod artists;
+mod channel;
 mod collection;
 mod content;
 mod home;

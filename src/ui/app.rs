@@ -226,6 +226,10 @@ impl App {
                 let id = artist.id.clone();
                 self.browse.artist_page.start(&self.jobs, move || client.artist(&id));
             }
+            View::Channel(channel) => {
+                let id = channel.id.clone();
+                self.browse.channel.start(&self.jobs, move || client.page(&id));
+            }
             View::Playlists | View::Search | View::Loved | View::Collection(_) => self.load_list(client, view),
         }
     }
@@ -235,7 +239,7 @@ impl App {
         let browse = &mut self.browse;
         browse.clear_list();
         match view {
-            View::Home | View::Playlists | View::Artists | View::Albums | View::Podcasts | View::Artist(_) => {}
+            View::Home | View::Playlists | View::Artists | View::Albums | View::Podcasts | View::Artist(_) | View::Channel(_) => {}
             View::Search if browse.search.trim().is_empty() => {}
             // A pasted link to the source opens what it points at instead of searching.
             View::Search if client.is_link(&browse.search) => {
@@ -657,6 +661,8 @@ mod tests {
     use super::*;
     use crate::model::Section;
     use crate::ui::load::Load;
+    use crate::ui::state::ChannelView;
+    use crate::ui::widgets::TrackMenu;
 
     /// Logged in to Deezer, on the home page.
     fn logged_in() -> TestApp {
@@ -695,7 +701,7 @@ mod tests {
     fn cached_pages_load_once_and_track_lists_each_time() {
         let mut t = logged_in();
         assert!(t.app.library.home.is_loading(), "home loads with the source");
-        t.app.library.home = Load::Ready(vec![Section { title: "Mixes".into(), items: Vec::new() }]);
+        t.app.library.home = Load::Ready(vec![Section::new("Mixes", Vec::new())]);
         let jobs = t.jobs.waiting();
         t.update(Action::Open(View::Loved));
         assert!(t.app.browse.tracks_load.is_loading());
@@ -705,6 +711,26 @@ mod tests {
         assert_eq!(t.jobs.waiting(), jobs + 2, "a track list loads each time it's shown");
         t.update(Action::ReloadHome);
         assert!(t.app.library.home.is_loading(), "refresh loads home again");
+    }
+
+    #[test]
+    fn channel_pages_load_each_time_they_are_shown() {
+        let mut t = logged_in();
+        let rock = View::Channel(Box::new(ChannelView::new("channels/rock", "Rock")));
+        t.update(Action::Open(rock.clone()));
+        assert!(t.app.browse.channel.is_loading());
+        let jobs = t.jobs.waiting();
+        t.update(Action::Open(View::Channel(Box::new(ChannelView::explore()))));
+        t.update(Action::Back);
+        assert_eq!((page(&t).0, t.jobs.waiting()), (rock, jobs + 2), "Explore, then Rock again");
+    }
+
+    #[test]
+    fn a_track_mix_from_the_menu_plays_at_once() {
+        let mut t = logged_in();
+        t.update(Action::TrackMenu(Box::new(track(7, true)), TrackMenu::Mix));
+        assert!(t.app.browse.quick_play.is_loading(), "fetched, then played");
+        assert_eq!(page(&t).0, View::Home, "without leaving the page");
     }
 
     #[test]

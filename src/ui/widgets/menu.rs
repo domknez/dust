@@ -111,11 +111,14 @@ pub enum TrackMenu {
     NewPlaylist,
     /// Take it out of the playlist being shown.
     Remove,
+    /// Play songs like it, starting with it.
+    Mix,
 }
 
-/// Right-click menu for a track: Play next, Add to queue, Add to playlist › (the
-/// own ones of `playlists`), and Remove from this playlist when `removable`.
-pub fn track_menu(resp: &Response, playlists: &[Playlist], removable: bool) -> Option<TrackMenu> {
+/// Right-click menu for a track: Play next, Add to queue, Start track mix (with
+/// `mix`), Add to playlist › (the own ones of `playlists`), and Remove from this
+/// playlist when `removable`.
+pub fn track_menu(resp: &Response, playlists: &[Playlist], removable: bool, mix: bool) -> Option<TrackMenu> {
     let mut pick = None;
     resp.context_menu(|ui| {
         ui.set_min_width(CONTEXT_MENU_WIDTH);
@@ -125,6 +128,9 @@ pub fn track_menu(resp: &Response, playlists: &[Playlist], removable: bool) -> O
         }
         if menu_row(ui, Some(Icon::Queue), "Add to queue", None, false, colors().text).clicked() {
             pick = Some(TrackMenu::Play(PlayMode::Queue));
+        }
+        if mix && menu_row(ui, Some(Icon::Streaming), "Start track mix", None, false, colors().text).clicked() {
+            pick = Some(TrackMenu::Mix);
         }
         if let Some(choice) = add_to_playlist(ui, playlists) {
             pick = Some(choice);

@@ -1,8 +1,9 @@
 //! Sidebar: wordmark, navigation, the playlist list and the account card.
 
+use crate::source::Features;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
-use crate::ui::state::{Coll, CollSource, View};
+use crate::ui::state::{ChannelView, Coll, CollSource, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
@@ -35,15 +36,15 @@ impl App {
 
     fn navigation(&self, ui: &mut Ui, acts: &mut Actions) {
         ui.spacing_mut().item_spacing.y = 1.0;
-        let home = &NAV_SHORTCUTS[0];
-        if widgets::sidebar_item(ui, home.1, Some(&shortcut(home.0)), self.browse.view == home.2).clicked() {
+        let pages = nav_pages(self.features());
+        let (key, label, home) = &pages[0];
+        if widgets::sidebar_item(ui, label, Some(&shortcut(*key)), self.browse.view == *home).clicked() {
             acts.push(Action::Open(View::Home));
         }
         if widgets::sidebar_item(ui, "Search", Some(SEARCH_KEYS), self.browse.view == View::Search).clicked() {
             acts.push(Action::OpenSearch);
         }
-        let podcasts = self.features().podcasts;
-        for (key, label, view) in NAV_SHORTCUTS[1..].iter().filter(|(_, _, v)| podcasts || *v != View::Podcasts) {
+        for (key, label, view) in &pages[1..] {
             if widgets::sidebar_item(ui, label, Some(&shortcut(*key)), self.browse.view == *view).clicked() {
                 acts.push(Action::Open(view.clone()));
             }
@@ -156,28 +157,36 @@ impl App {
         self.client.as_ref().map(|c| c.account()).unwrap_or_default()
     }
 
-    /// ⌘1 … ⌘6 (Ctrl elsewhere) open the pages listed in the sidebar.
+    /// ⌘1 … ⌘8 (Ctrl elsewhere) open the pages listed in the sidebar.
     pub(in crate::ui) fn nav_shortcuts(&self, ctx: &egui::Context, acts: &mut Actions) {
-        let podcasts = self.features().podcasts;
-        let pressed = NAV_SHORTCUTS
-            .iter()
-            .filter(|(_, _, view)| podcasts || *view != View::Podcasts)
+        let pressed = nav_pages(self.features())
+            .into_iter()
             .find(|(key, ..)| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, *key))));
         if let Some((_, _, view)) = pressed {
-            acts.push(Action::Open(view.clone()));
+            acts.push(Action::Open(view));
         }
     }
 }
 
-/// Sidebar pages with their number shortcuts.
-const NAV_SHORTCUTS: [(Key, &str, View); 6] = [
-    (Key::Num1, "Home", View::Home),
-    (Key::Num2, "Loved tracks", View::Loved),
-    (Key::Num3, "Playlists", View::Playlists),
-    (Key::Num4, "Albums", View::Albums),
-    (Key::Num5, "Artists", View::Artists),
-    (Key::Num6, "Podcasts", View::Podcasts),
-];
+/// Sidebar pages with their number shortcuts, those the source has; Home first
+/// (above Search).
+fn nav_pages(features: Features) -> Vec<(Key, &'static str, View)> {
+    let mut pages = vec![
+        (Key::Num1, "Home", View::Home),
+        (Key::Num2, "Loved tracks", View::Loved),
+        (Key::Num3, "Playlists", View::Playlists),
+        (Key::Num4, "Albums", View::Albums),
+        (Key::Num5, "Artists", View::Artists),
+    ];
+    if features.podcasts {
+        pages.push((Key::Num6, "Podcasts", View::Podcasts));
+    }
+    if features.explore {
+        pages.push((Key::Num7, "Explore", View::Channel(Box::new(ChannelView::explore()))));
+        pages.push((Key::Num8, "New releases", View::Channel(Box::new(ChannelView::new_releases()))));
+    }
+    pages
+}
 
 /// "⌘1" on macOS, "Ctrl+1" elsewhere.
 fn shortcut(key: Key) -> String {

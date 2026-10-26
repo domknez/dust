@@ -78,6 +78,10 @@ impl Source for Subsonic {
         Subsonic::mix(self, id)
     }
 
+    fn artist_mix(&self, id: &str) -> Result<Vec<Track>> {
+        Subsonic::artist_mix(self, id)
+    }
+
     fn loved(&self) -> Result<Vec<Track>> {
         Subsonic::loved(self)
     }

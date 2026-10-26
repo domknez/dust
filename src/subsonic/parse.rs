@@ -188,7 +188,7 @@ pub fn discography(artist: &Value) -> Vec<Section> {
         .filter(|(items, _)| !items.is_empty())
         .map(|(mut dated, title)| {
             dated.sort_by_key(|d| std::cmp::Reverse(d.0));
-            Section { title: title.into(), items: dated.into_iter().map(|(_, item)| item).collect() }
+            Section::new(title, dated.into_iter().map(|(_, item)| item).collect())
         })
         .collect()
 }

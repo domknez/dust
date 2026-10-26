@@ -1,12 +1,12 @@
 //! Home: a greeting, the Flow (or Radio) panel with its moods, then the source's
-//! sections as horizontally scrolling rows of cards.
+//! sections as horizontally scrolling rows of cards (also on other pages).
 
 use crate::model::{Item, ItemKind, Section};
 use crate::player::{Cmd, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
-use crate::ui::state::Coll;
+use crate::ui::state::{ChannelView, Coll, View};
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, typography as ty};
 use crate::ui::widgets::{self, CardClick, text_left};
@@ -29,7 +29,7 @@ impl App {
             };
             for i in flow_first(sections) {
                 let section = &sections[i];
-                card_row(ui, &mut self.covers, ("home-row", i), &section.title, &section.items, st, acts);
+                card_row(ui, &mut self.covers, ("home-row", i), section, st, acts);
             }
             ui.add_space(24.0);
         });
@@ -56,21 +56,22 @@ impl App {
     }
 }
 
-/// A titled, horizontally scrolling row of cards; a section of Flow moods becomes
-/// the Flow panel. Draws nothing when none of `items` can be shown.
+/// A section as a titled, horizontally scrolling row of cards, with "see all" when
+/// there's a page with more; a section of Flow moods becomes the Flow panel. Draws
+/// nothing when none of its cards can be shown.
 pub(in crate::ui) fn card_row(
     ui: &mut Ui,
     covers: &mut Covers,
     id: impl std::hash::Hash + std::fmt::Debug,
-    title: &str,
-    items: &[Item],
+    section: &Section,
     st: &Status,
     acts: &mut Actions,
 ) {
+    let items = &section.items;
     // Deezer's Flow, or a music server's Radio (random songs by genre) in its place.
     let is_radio = items.iter().all(|it| matches!(it.kind, ItemKind::Radio { .. }));
     let is_flow = is_radio || items.iter().all(|it| matches!(it.kind, ItemKind::Flow { .. }));
-    let items: Vec<&Item> = items.iter().filter(|it| is_flow || Coll::from_item(it).is_some()).collect();
+    let items: Vec<&Item> = items.iter().filter(|it| is_flow || has_card(it)).collect();
     if items.is_empty() {
         return;
     }
@@ -84,8 +85,7 @@ pub(in crate::ui) fn card_row(
         return;
     }
     ui.add_space(26.0);
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
-    text_left(ui.painter(), pos2(r.left(), r.center().y), &title.to_uppercase(), ty::OVERLINE, colors().dim, r.width());
+    section_title(ui, section, acts);
     ui.add_space(10.0);
     egui::ScrollArea::horizontal()
         .id_salt(id)
@@ -97,16 +97,49 @@ pub(in crate::ui) fn card_row(
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 16.0;
                 for item in items {
-                    if let Some(coll) = Coll::from_item(item) {
-                        match widgets::card(ui, covers, &coll) {
-                            CardClick::Open => acts.push(Action::OpenCollection(coll)),
-                            CardClick::Play(mode) => acts.push(Action::PlaySource(coll.source.clone(), mode)),
-                            CardClick::None => {}
-                        }
-                    }
+                    item_card(ui, covers, item, acts);
                 }
             });
         });
+}
+
+/// A section's title in small capitals, with "see all →" on the right when there's
+/// a page with all of it.
+pub(in crate::ui) fn section_title(ui: &mut Ui, section: &Section, acts: &mut Actions) {
+    let p = colors();
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
+    let mut title_width = r.width();
+    if let Some(more) = &section.more {
+        let label = "see all →";
+        let width = ui.painter().layout_no_wrap(label.into(), ty::META.font(), p.accent).size().x;
+        let at = pos2(r.right() - width, r.center().y);
+        if widgets::text_link(ui, ("see-all", more), at, label, ty::META, p.accent, p.text, width).0 {
+            acts.push(Action::Open(View::Channel(Box::new(ChannelView::new(more, &section.title)))));
+        }
+        title_width -= width + 16.0;
+    }
+    text_left(ui.painter(), pos2(r.left(), r.center().y), &section.title.to_uppercase(), ty::OVERLINE, p.dim, title_width);
+}
+
+/// Whether `item` gets a card: a list of tracks, or a channel's page.
+pub(in crate::ui) fn has_card(item: &Item) -> bool {
+    item.kind == ItemKind::Channel || Coll::from_item(item).is_some()
+}
+
+/// One card: a channel opens its page; a list of tracks opens, plays from the play
+/// button or queues from its menu. Others draw nothing (see [`has_card`]).
+pub(in crate::ui) fn item_card(ui: &mut Ui, covers: &mut Covers, item: &Item, acts: &mut Actions) {
+    if item.kind == ItemKind::Channel {
+        if widgets::channel_card(ui, covers, item) {
+            acts.push(Action::Open(View::Channel(Box::new(ChannelView::new(&item.id, &item.title)))));
+        }
+    } else if let Some(coll) = Coll::from_item(item) {
+        match widgets::card(ui, covers, &coll) {
+            CardClick::Open => acts.push(Action::OpenCollection(coll)),
+            CardClick::Play(mode) => acts.push(Action::PlaySource(coll.source.clone(), mode)),
+            CardClick::None => {}
+        }
+    }
 }
 
 /// Section order with the Flow section first, as on Deezer.

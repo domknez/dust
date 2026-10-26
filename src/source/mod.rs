@@ -7,14 +7,14 @@
 //! - [`KINDS`]: the sources dust knows, in the account menu's order
 //!
 //! A source is used as a [`Shared`] (`Arc<dyn Source>`). What only some sources
-//! have (Flow, podcasts, track mixes, links, lyrics, playlist editing) has default
+//! have (Flow, Explore, podcasts, track mixes, links, lyrics, playlist editing) has default
 //! methods that say it's unsupported, and is flagged in [`Features`] so the UI can
 //! leave it out.
 
 use crate::media::{OpenError, Playback};
 use crate::model::{
-    AlbumInfo, Art, ArtResolver, ArtistPage, Error, Item, Likeable, Likes, Link, Listen, Lyrics, Playlist, PlaylistId, Quality, Result,
-    SearchResults, Section, Track, TrackId,
+    AlbumInfo, Art, ArtResolver, ArtistPage, Error, Item, Likeable, Likes, Link, Listen, Lyrics, Page, Playlist, PlaylistId, Quality,
+    Result, SearchResults, Section, Track, TrackId,
 };
 use crate::player::library::Library;
 use std::sync::Arc;
@@ -50,6 +50,9 @@ impl SourceId {
 pub struct Features {
     /// Endless play is Deezer's Flow (with moods) rather than a Radio of genres.
     pub flow: bool,
+    /// Explore and New releases: the service's own pages of genres, moods, charts
+    /// and new music.
+    pub explore: bool,
     pub podcasts: bool,
     /// "Mixes inspired by" a track.
     pub track_mix: bool,
@@ -63,10 +66,11 @@ pub struct Features {
 
 impl Features {
     /// Everything (what the UI assumes while no source is in use).
-    pub const ALL: Features = Features { flow: true, podcasts: true, track_mix: true, links: true, quality: true, private_playlists: true };
+    pub const ALL: Features =
+        Features { flow: true, explore: true, podcasts: true, track_mix: true, links: true, quality: true, private_playlists: true };
     /// Browsing and playing only.
     pub const NONE: Features =
-        Features { flow: false, podcasts: false, track_mix: false, links: false, quality: false, private_playlists: false };
+        Features { flow: false, explore: false, podcasts: false, track_mix: false, links: false, quality: false, private_playlists: false };
 }
 
 /// A logged-in source, shared between the UI, background loads and the player.
@@ -111,6 +115,8 @@ pub trait Source: Send + Sync {
     fn artist_top(&self, id: &str) -> Result<Vec<Track>>;
     /// A mix card's tracks.
     fn mix(&self, id: &str) -> Result<Vec<Track>>;
+    /// Songs by an artist and ones like them.
+    fn artist_mix(&self, id: &str) -> Result<Vec<Track>>;
 
     // ------------------------------------------------------------ the account
 
@@ -141,6 +147,11 @@ pub trait Source: Send + Sync {
 
     // ------------------------------------------------------------ optional
 
+    /// A page of sections a [`Channel`](crate::model::ItemKind::Channel) card or a
+    /// section's "See all" leads to.
+    fn page(&self, _id: &str) -> Result<Page> {
+        Err(unsupported("Explore"))
+    }
     fn favorite_shows(&self) -> Result<Vec<Item>> {
         Ok(Vec::new())
     }

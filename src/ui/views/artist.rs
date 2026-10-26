@@ -10,7 +10,7 @@ use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
 use crate::ui::format::thousands;
-use crate::ui::state::{ArtistView, Coll, CollSource};
+use crate::ui::state::{ArtistView, Coll, CollSource, PlayMode};
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, Columns, Grid, GridColumns, RowMenu, Table, text_left};
@@ -78,7 +78,7 @@ impl App {
                     columns: &columns,
                     now,
                     liked: &liked,
-                    menu: RowMenu { playlists: &self.library.playlists, removable: false },
+                    menu: RowMenu { playlists: &self.library.playlists, removable: false, mix: self.features().track_mix },
                 };
                 widgets::track_rows(ui, &mut self.covers, &table, 0..popular, left.min + vec2(0.0, 28.0), left.width(), acts);
                 if page.top.len() > POPULAR {
@@ -101,7 +101,7 @@ impl App {
             // Playlists featuring them, related artists.
             for (i, section) in page.sections.iter().enumerate() {
                 if !DISCOGRAPHY.iter().any(|(title, _)| section.title == *title) {
-                    card_row(ui, &mut self.covers, ("artist-row", i), &section.title, &section.items, st, acts);
+                    card_row(ui, &mut self.covers, ("artist-row", i), section, st, acts);
                 }
             }
             ui.add_space(28.0);
@@ -154,6 +154,10 @@ impl App {
             }
             if has_top && widgets::pill(ui, "Shuffle", None, false).clicked() {
                 acts.push(Action::PlayFrom { tracks: top.to_vec(), index: 0, shuffle: true });
+            }
+            let mix = widgets::pill(ui, "Mix", Some(Icon::Streaming), false).on_hover_text("Songs by them and artists like them");
+            if mix.clicked() {
+                acts.push(Action::PlaySource(CollSource::ArtistMix(artist.id.clone()), PlayMode::Now));
             }
             let what = Likeable::Artist(artist.id.clone());
             let following = self.library.likes.likes.contains(&what);

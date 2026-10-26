@@ -45,16 +45,16 @@ impl Subsonic {
         let mut sections: Vec<Section> = shelves
             .iter()
             .zip(&lists)
-            .map(|((_, title), albums)| Section { title: (*title).into(), items: parse::albums(list(albums, "album")) })
+            .map(|((_, title), albums)| Section::new(*title, parse::albums(list(albums, "album"))))
             .filter(|s| !s.items.is_empty())
             .collect();
-        let mixes = Section { title: "Mixes".into(), items: mix_cards(mix_source) };
+        let mixes = Section::new("Mixes", mix_cards(mix_source));
         if !mixes.items.is_empty() {
             sections.insert(sections.len().min(1), mixes);
         }
         // Without genres the panel still plays the whole library.
         let genres = self.call("getGenres", &[]).unwrap_or_default();
-        sections.insert(0, Section { title: "Radio".into(), items: radio_stations(&genres) });
+        sections.insert(0, Section::new("Radio", radio_stations(&genres)));
         Ok(sections)
     }
 
@@ -103,7 +103,7 @@ impl Subsonic {
         if let Ok(info) = self.call("getArtistInfo2", &[("id", id), ("count", "12")]) {
             let similar = parse::artists_items(list(&info["artistInfo2"], "similarArtist"));
             if !similar.is_empty() {
-                sections.push(Section { title: "Similar artists".into(), items: similar });
+                sections.push(Section::new("Similar artists", similar));
             }
         }
         let top = self.top_songs(&name, artist).unwrap_or_default();
@@ -203,26 +203,31 @@ impl Subsonic {
         let sections = [("Artists", parse::artists_items(list(found, "artist"))), ("Albums", parse::albums(list(found, "album")))]
             .into_iter()
             .filter(|(_, items)| !items.is_empty())
-            .map(|(title, items)| Section { title: title.into(), items })
+            .map(|(title, items)| Section::new(title, items))
             .collect();
         Ok(SearchResults { tracks: parse::songs(list(found, "song")), sections })
     }
 
-    /// A mix from the home page: random songs, or songs like an artist's (their own
-    /// songs, shuffled, when the server knows no similar ones).
+    /// A mix from the home page: random songs, or an artist's mix.
     pub fn mix(&self, id: &str) -> Result<Vec<Track>> {
         if let Some(artist) = id.strip_prefix(ARTIST_MIX) {
-            let r = self.call("getSimilarSongs2", &[("id", artist), ("count", MIX)])?;
-            let similar = parse::songs(list(&r["similarSongs2"], "song"));
-            if !similar.is_empty() {
-                return Ok(similar);
-            }
-            let mut own = self.artist_top(artist)?;
-            fastrand::shuffle(&mut own);
-            return Ok(own);
+            return self.artist_mix(artist);
         }
         let r = self.call("getRandomSongs", &[("size", MIX)])?;
         Ok(parse::songs(list(&r["randomSongs"], "song")))
+    }
+
+    /// Songs like an artist's (their own songs, shuffled, when the server knows no
+    /// similar ones).
+    pub fn artist_mix(&self, artist: &str) -> Result<Vec<Track>> {
+        let r = self.call("getSimilarSongs2", &[("id", artist), ("count", MIX)])?;
+        let similar = parse::songs(list(&r["similarSongs2"], "song"));
+        if !similar.is_empty() {
+            return Ok(similar);
+        }
+        let mut own = self.artist_top(artist)?;
+        fastrand::shuffle(&mut own);
+        Ok(own)
     }
 
     /// Radio: random songs from the whole library, or from one genre. Asked again
