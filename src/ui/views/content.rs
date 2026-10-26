@@ -40,6 +40,10 @@ impl App {
                 let artist = artist.as_ref().clone();
                 self.artist_view(ui, st, &artist, acts);
             }
+            View::Channel(channel) => {
+                let channel = channel.as_ref().clone();
+                self.channel_view(ui, st, &channel, acts);
+            }
         }
     }
 

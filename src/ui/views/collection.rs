@@ -96,7 +96,7 @@ impl App {
                 columns: &columns,
                 now: (playing_id, playing),
                 liked: &liked,
-                menu: RowMenu { playlists: &self.library.playlists, removable },
+                menu: RowMenu { playlists: &self.library.playlists, removable, mix: self.features().track_mix },
             };
             widgets::track_rows(ui, &mut self.covers, &table, first..last, origin + vec2(0.0, header_height), table_width, acts);
         });
@@ -118,9 +118,14 @@ impl App {
                 tile: None,
                 round: coll.round(),
             },
-            View::Home | View::Search | View::Playlists | View::Artists | View::Albums | View::Podcasts | View::Artist(_) => {
-                Header::default()
-            }
+            View::Home
+            | View::Search
+            | View::Playlists
+            | View::Artists
+            | View::Albums
+            | View::Podcasts
+            | View::Artist(_)
+            | View::Channel(_) => Header::default(),
         }
     }
 
@@ -149,7 +154,7 @@ impl App {
         );
         ui.scope_builder(UiBuilder::new().max_rect(rows), |ui| {
             for (i, section) in self.browse.search_sections.iter().enumerate() {
-                card_row(ui, &mut self.covers, ("search-row", i), &section.title, &section.items, st, acts);
+                card_row(ui, &mut self.covers, ("search-row", i), section, st, acts);
             }
         });
         if !self.browse.tracks.is_empty() {

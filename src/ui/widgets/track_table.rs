@@ -87,6 +87,8 @@ pub struct RowMenu<'a> {
     pub playlists: &'a [Playlist],
     /// Showing one of the own playlists: rows can be removed from it.
     pub removable: bool,
+    /// The source makes track mixes: "Start track mix".
+    pub mix: bool,
 }
 
 /// A track list as a table.
@@ -202,8 +204,11 @@ fn track_row(ui: &mut Ui, covers: &mut Covers, table: &Table, i: usize, rect: Re
             acts.push(Action::PlayFrom { tracks: table.tracks.to_vec(), index: i, shuffle: false });
         }
     }
-    let choice =
-        if track.is_episode() { queue_menu(&resp).map(TrackMenu::Play) } else { track_menu(&resp, menu.playlists, menu.removable) };
+    let choice = if track.is_episode() {
+        queue_menu(&resp).map(TrackMenu::Play)
+    } else {
+        track_menu(&resp, menu.playlists, menu.removable, menu.mix)
+    };
     acts.extend(choice.map(|choice| Action::TrackMenu(Box::new(track.clone()), choice)));
 }
 

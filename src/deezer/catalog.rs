@@ -2,7 +2,10 @@
 //! items open (albums, artists, mixes, Flow).
 
 use super::{Deezer, Error, Result, parse};
-use crate::model::{AlbumInfo, ArtistPage, Item, Likeable, Likes, Playlist, PlaylistId, SearchResults, Section, Track, TrackId};
+use crate::model::{AlbumInfo, ArtistPage, Item, Likeable, Likes, Page, Playlist, PlaylistId, SearchResults, Section, Track, TrackId};
+
+/// The home page's name for `page.get`.
+const HOME: &str = "home";
 use serde_json::json;
 
 impl Deezer {
@@ -47,6 +50,12 @@ impl Deezer {
 
     /// Personalised home page, as sections of items (what the web app shows).
     pub fn home(&self) -> Result<Vec<Section>> {
+        self.page(HOME).map(|page| page.sections)
+    }
+
+    /// A page of sections: Home, Explore ("channels/explore"), a channel
+    /// ("channels/rock") or a section's "See all" ("channels/module/<id>").
+    pub fn page(&self, page: &str) -> Result<Page> {
         let support = json!({
             "grid": ["channel", "album", "playlist", "flow", "smarttracklist", "artist"],
             "horizontal-grid": ["album", "playlist", "flow", "smarttracklist", "artist", "channel"],
@@ -57,10 +66,11 @@ impl Deezer {
             "filterable-grid": ["flow"],
             "item-highlight": ["radio"],
         });
-        let input = json!({"PAGE": "home", "VERSION": "2.5", "SUPPORT": support, "LANG": "en", "OPTIONS": []}).to_string();
+        let input = json!({"PAGE": page, "VERSION": "2.5", "SUPPORT": support, "LANG": "en", "OPTIONS": []}).to_string();
         let r = self.call_with("page.get", json!({}), &[("gateway_input", &input)])?;
         let sections = r["sections"].as_array().cloned().unwrap_or_default();
-        Ok(sections.iter().map(parse::section).filter(|s| !s.items.is_empty()).collect())
+        let sections = sections.iter().map(parse::section).filter(|s| !s.items.is_empty()).collect();
+        Ok(Page { title: parse::text(&r["title"]), sections })
     }
 
     pub fn album(&self, id: &str) -> Result<Vec<Track>> {
@@ -110,6 +120,12 @@ impl Deezer {
 
     pub fn artist_top(&self, id: &str) -> Result<Vec<Track>> {
         let r = self.call("artist.getTopTrack", json!({"art_id": id, "nb": 100}))?;
+        Ok(parse::tracks(&r["data"]))
+    }
+
+    /// Songs by an artist and ones like them (the web app's artist mix).
+    pub fn artist_mix(&self, id: &str) -> Result<Vec<Track>> {
+        let r = self.call("smart.getSmartRadio", json!({"art_id": id}))?;
         Ok(parse::tracks(&r["data"]))
     }
 

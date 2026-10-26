@@ -4,7 +4,7 @@
 use super::history::History;
 use super::load::Load;
 use super::state::{PlayMode, View};
-use crate::model::{AlbumInfo, ArtistPage, Error, Item, ItemKind, Link, Playlist, SearchResults, Section, Track};
+use crate::model::{AlbumInfo, ArtistPage, Error, Item, ItemKind, Link, Page, Playlist, SearchResults, Section, Track};
 
 /// The page in the main area and its content. Replaced wholesale along with the
 /// [`Library`](super::library::Library) when the source changes.
@@ -27,6 +27,8 @@ pub struct Browse {
     pub link_load: Load<Link>,
     /// The artist page being shown (for `View::Artist`).
     pub artist_page: Load<ArtistPage>,
+    /// The page of sections being shown (for `View::Channel`).
+    pub channel: Load<Page>,
     /// Discography tab on artist pages (albums, singles, live).
     pub discography_tab: usize,
     /// Tracks fetched to play straight from a card.
@@ -47,6 +49,7 @@ impl Default for Browse {
             search_load: Load::Idle,
             link_load: Load::Idle,
             artist_page: Load::Idle,
+            channel: Load::Idle,
             discography_tab: 0,
             quick_play: Load::Idle,
             history: History::default(),
@@ -101,6 +104,7 @@ impl Browse {
             None => {}
         }
         failed.extend(self.artist_page.poll());
+        failed.extend(self.channel.poll());
         match self.link_load.poll_take()? {
             Ok(link) => Some(link),
             Err(e) => {
@@ -126,7 +130,7 @@ fn own_playlists(playlists: &[Playlist], query: &str) -> Option<Section> {
             picture: p.picture.clone(),
         })
         .collect();
-    (!items.is_empty()).then(|| Section { title: "Your playlists".into(), items })
+    (!items.is_empty()).then(|| Section::new("Your playlists", items))
 }
 
 #[cfg(test)]

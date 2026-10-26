@@ -135,8 +135,17 @@ pub fn playlist(v: &Value, me: u64) -> Playlist {
     }
 }
 
+/// A section of a `page.get` page: its cards, the page "See all" opens and whether
+/// it's a grid (Explore's genres) rather than a row.
 pub fn section(v: &Value) -> Section {
-    Section { title: text(&v["title"]), items: v["items"].as_array().map(|a| a.iter().map(item).collect()).unwrap_or_default() }
+    let items = v["items"].as_array().map(|a| a.iter().map(item).collect()).unwrap_or_default();
+    Section { title: text(&v["title"]), items, more: channel_page(&v["target"]), grid: text(&v["layout"]) == "grid" }
+}
+
+/// The page a link like "/channels/rock" names ("channels/rock"); None for links
+/// elsewhere (an artist, concerts).
+fn channel_page(target: &Value) -> Option<String> {
+    text(target).strip_prefix('/').filter(|path| path.starts_with("channels/")).map(str::to_string)
 }
 
 /// Most cards a search section shows.
@@ -145,7 +154,7 @@ const SEARCH_SECTION_ITEMS: usize = 24;
 /// A search result list (`ARTIST`, `ALBUM`, `PLAYLIST` data) as a card section.
 pub fn search_section(title: &str, kind: &str, data: &Value) -> Section {
     let items = data.as_array().map(|a| a.iter().filter_map(|v| card_item(kind, v)).take(SEARCH_SECTION_ITEMS).collect());
-    Section { title: title.into(), items: items.unwrap_or_default() }
+    Section::new(title, items.unwrap_or_default())
 }
 
 /// An artist, album or playlist from gw-light data as a card.
@@ -229,7 +238,7 @@ pub fn discography(data: &Value) -> Vec<Section> {
         .map(|(title, mut dated)| {
             // ISO dates sort as text; the sort is stable, so ties keep Deezer's order.
             dated.sort_by(|a, b| b.0.cmp(&a.0));
-            Section { title: title.into(), items: dated.into_iter().map(|(_, item)| item).collect() }
+            Section::new(title, dated.into_iter().map(|(_, item)| item).collect())
         })
         .collect()
 }
@@ -244,7 +253,7 @@ pub fn artist_page(page: &Value, discography_data: &Value) -> ArtistPage {
     for (title, kind, key) in [("Featured in", "playlist", "RELATED_PLAYLIST"), ("Fans also like", "artist", "RELATED_ARTISTS")] {
         let items = cards(kind, &page[key]["data"]);
         if !items.is_empty() {
-            sections.push(Section { title: title.into(), items });
+            sections.push(Section::new(title, items));
         }
     }
     ArtistPage {
@@ -257,12 +266,18 @@ pub fn artist_page(page: &Value, discography_data: &Value) -> ArtistPage {
 }
 
 pub fn item(v: &Value) -> Item {
-    let picture = v["pictures"].get(0).and_then(|p| picture(&p["type"], &p["md5"]));
+    // Channels mostly come with the cover of a playlist of theirs instead.
+    let picture = v["pictures"].get(0).or_else(|| v.get("image_linked_item")).and_then(|p| picture(&p["type"], &p["md5"]));
     let (kind, id, data) = (text(&v["type"]), text(&v["id"]), &v["data"]);
     // Deezer localises item texts by the listener's location, ignoring the requested
     // language; rebuild them in English from the raw data where we can.
     let (title, subtitle) = english_texts(&kind, &id, data, text(&v["title"]), text(&v["subtitle"]));
-    Item { kind: item_kind(&kind, &id), id, title, subtitle, picture }
+    // A channel opens the page it links to.
+    let (kind, id) = match (kind.as_str(), channel_page(&v["target"])) {
+        ("channel", Some(page)) => (ItemKind::Channel, page),
+        _ => (item_kind(&kind, &id), id),
+    };
+    Item { kind, id, title, subtitle, picture }
 }
 
 /// What a card of Deezer's `type` opens. Flow's `default` card is plain Flow, the
@@ -458,6 +473,38 @@ mod tests {
         assert_eq!(kind(json!({"type": "radio", "id": "37151"})), ItemKind::Other("radio".into()), "not the Radio panel");
         let flow = item(&json!({"type": "flow", "id": "hip-hop", "title": "Hip-hop", "pictures": [{"type": "misc", "md5": "f1"}]}));
         assert_eq!((flow.title.as_str(), flow.kind.tuning(), flow.picture), ("Hip Hop", Some("hip-hop"), art("misc", "f1")));
+    }
+
+    #[test]
+    fn channels_open_their_pages() {
+        // As on Explore: no pictures of its own, the cover of one of its playlists.
+        let rock = item(&json!({
+            "type": "channel", "id": "25c78c12", "title": "Rock", "target": "/channels/rock",
+            "image_linked_item": {"md5": "4f7e", "type": "playlist"},
+            "data": {"type": "channel", "slug": "rock", "title": "Rock"},
+        }));
+        assert_eq!((rock.kind, rock.id.as_str(), rock.title.as_str()), (ItemKind::Channel, "channels/rock", "Rock"));
+        assert_eq!(rock.picture, art("playlist", "4f7e"));
+        let podcasts = item(&json!({
+            "type": "channel", "target": "/channels/podcasts",
+            "pictures": [{"md5": "55dd", "type": "misc"}], "image_linked_item": {"md5": "4810", "type": "playlist"},
+        }));
+        assert_eq!(podcasts.picture, art("misc", "55dd"), "its own picture first");
+        let concerts = item(&json!({"type": "channel", "id": "c", "target": "/concerts"}));
+        assert_eq!(concerts.kind, ItemKind::Other("channel".into()), "not a page of sections");
+    }
+
+    #[test]
+    fn sections_link_to_all_of_them() {
+        let new = section(&json!({
+            "layout": "horizontal-grid", "title": "New releases for you", "target": "/channels/module/7960abe2",
+            "items": [{"type": "album", "id": "1", "title": "A"}],
+        }));
+        assert_eq!((new.more.as_deref(), new.grid), (Some("channels/module/7960abe2"), false));
+        let genres = section(&json!({"layout": "grid", "title": "Genres", "items": []}));
+        assert_eq!((genres.more, genres.grid), (None, true));
+        let like = section(&json!({"layout": "horizontal-grid", "title": "Because you like X", "target": "/artist/60087", "items": []}));
+        assert_eq!(like.more, None, "an artist isn't a page of sections");
     }
 
     #[test]

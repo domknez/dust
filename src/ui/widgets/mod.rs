@@ -13,7 +13,7 @@ mod text;
 mod track_table;
 
 pub use art::{cover, tile};
-pub use cards::{CardClick, card, flow_panel, play_knob, queue_row};
+pub use cards::{CardClick, card, channel_card, flow_panel, play_knob, queue_row};
 pub use controls::{heart_at, icon_button, pill, play_button, segmented, tag, text_field, thin_slider, wave_slider};
 pub use decor::{equalizer, fade_to};
 pub use grid::{Grid, GridColumns};

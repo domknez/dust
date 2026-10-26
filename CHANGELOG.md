@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Explore (sidebar, `⌘7`): Deezer's genres, moods, decades, charts and *For you*, each a
+  page of new releases, playlists and top artists. Genre cards on Home open them too, and
+  *see all* on a row shows the whole of it
+- New releases (sidebar, `⌘8`): this week's albums, the ones from artists you listen to
+  first, then by genre
+- Artist mix: *Mix* on an artist's page plays songs by them and artists like them (Deezer
+  and music servers)
+- Track mix from any track: right-click it → *Start track mix* (Deezer)
+
 ## 0.20.1 (2026-10-23)
 
 - Updated the UI toolkit (egui 0.37) and other libraries

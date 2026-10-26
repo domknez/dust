@@ -19,6 +19,32 @@ pub enum View {
     Podcasts,
     Collection(Box<Coll>),
     Artist(Box<ArtistView>),
+    /// A page of sections: Explore, New releases, a genre, a "See all".
+    Channel(Box<ChannelView>),
+}
+
+/// A page of sections being shown: which, and its title for before it loads.
+#[derive(Clone, PartialEq, Debug)]
+pub struct ChannelView {
+    /// The source's name for the page ("channels/rock").
+    pub id: String,
+    pub title: String,
+}
+
+impl ChannelView {
+    pub fn new(id: impl Into<String>, title: impl Into<String>) -> Self {
+        ChannelView { id: id.into(), title: title.into() }
+    }
+
+    /// Genres, moods, charts and new music, as the service picks them.
+    pub fn explore() -> Self {
+        Self::new("channels/explore", "Explore")
+    }
+
+    /// New albums and playlists, with the ones from artists you like first.
+    pub fn new_releases() -> Self {
+        Self::new("channels/new", "New releases")
+    }
 }
 
 /// An artist page being shown: enough to draw its header before the page loads.
@@ -48,6 +74,8 @@ pub enum CollSource {
     /// Songs like a track, starting with it ("Mixes inspired by…").
     TrackMix(String),
     Mix(String),
+    /// Songs by an artist and ones like them.
+    ArtistMix(String),
     /// A podcast: its episodes, newest first.
     Show(String),
 }
@@ -60,6 +88,7 @@ impl CollSource {
             CollSource::Artist(id) | CollSource::TopTracks(id) => client.artist_top(id),
             CollSource::TrackMix(id) => client.track_mix(id),
             CollSource::Mix(id) => client.mix(id),
+            CollSource::ArtistMix(id) => client.artist_mix(id),
             CollSource::Show(id) => client.show_episodes(id),
         }
     }
@@ -113,7 +142,8 @@ impl Coll {
         }
     }
 
-    /// None for cards we don't open (Flow and Radio play directly; channels, ...).
+    /// None for cards that aren't a list of tracks (Flow and Radio play directly,
+    /// channels open a page of their own; Deezer's radios, ...).
     pub fn from_item(it: &Item) -> Option<Self> {
         let (source, kind) = match &it.kind {
             ItemKind::Playlist if it.id.is_empty() => return None,
@@ -123,7 +153,7 @@ impl Coll {
             ItemKind::Mix => (CollSource::Mix(it.id.clone()), "MIX"),
             ItemKind::TrackMix => (CollSource::TrackMix(it.id.clone()), "TRACK MIX"),
             ItemKind::Show => (CollSource::Show(it.id.clone()), "PODCAST"),
-            ItemKind::Flow { .. } | ItemKind::Radio { .. } | ItemKind::Other(_) => return None,
+            ItemKind::Flow { .. } | ItemKind::Radio { .. } | ItemKind::Channel | ItemKind::Other(_) => return None,
         };
         Some(Coll { source, kind, title: it.title.clone(), subtitle: it.subtitle.clone(), picture: it.picture.clone() })
     }
@@ -232,7 +262,8 @@ mod tests {
         assert_eq!(Coll::from_item(&item(ItemKind::Playlist, "42")).map(|c| c.source), Some(CollSource::Playlist(PlaylistId::new("42"))));
         assert_eq!(Coll::from_item(&item(ItemKind::Mix, "discovery")).map(|c| c.source), Some(CollSource::Mix("discovery".into())));
         assert!(Coll::from_item(&item(ItemKind::Artist, "27")).is_some_and(|c| c.round()));
-        assert!(Coll::from_item(&item(ItemKind::Other("channel".into()), "x")).is_none());
+        assert!(Coll::from_item(&item(ItemKind::Other("radio".into()), "x")).is_none());
+        assert!(Coll::from_item(&item(ItemKind::Channel, "channels/rock")).is_none(), "a channel opens a page");
         assert_eq!(
             Coll::from_item(&item(ItemKind::TrackMix, "4229026412")).map(|c| c.source),
             Some(CollSource::TrackMix("4229026412".into()))

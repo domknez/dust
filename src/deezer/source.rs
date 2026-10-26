@@ -1,11 +1,11 @@
-//! Deezer as a music source: everything, including Flow, podcasts, track mixes,
+//! Deezer as a music source: everything, including Flow, Explore, podcasts, track mixes,
 //! Deezer links and the quality setting.
 
 use super::{Deezer, SERVICE, images, links};
 use crate::media::{OpenError, Playback};
 use crate::model::{
-    AlbumInfo, Art, ArtistPage, Item, Likeable, Likes, Link, Listen, Lyrics, Playlist, PlaylistId, Quality, Result, SearchResults, Section,
-    Track, TrackId,
+    AlbumInfo, Art, ArtistPage, Item, Likeable, Likes, Link, Listen, Lyrics, Page, Playlist, PlaylistId, Quality, Result, SearchResults,
+    Section, Track, TrackId,
 };
 use crate::source::{Features, Source, SourceId};
 
@@ -64,6 +64,14 @@ impl Source for Deezer {
 
     fn mix(&self, id: &str) -> Result<Vec<Track>> {
         Deezer::mix(self, id)
+    }
+
+    fn artist_mix(&self, id: &str) -> Result<Vec<Track>> {
+        Deezer::artist_mix(self, id)
+    }
+
+    fn page(&self, id: &str) -> Result<Page> {
+        Deezer::page(self, id)
     }
 
     fn loved(&self) -> Result<Vec<Track>> {

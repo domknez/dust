@@ -23,7 +23,7 @@ mod quality;
 mod track;
 
 pub use art::{Art, ArtResolver};
-pub use catalog::{AlbumInfo, ArtistPage, Item, ItemKind, Link, SearchResults, Section};
+pub use catalog::{AlbumInfo, ArtistPage, Item, ItemKind, Link, Page, SearchResults, Section};
 pub use error::{Error, Service};
 pub use id::{PlaylistId, TrackId};
 pub use likes::{Likeable, Likes};

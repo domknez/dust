@@ -209,6 +209,7 @@ impl App {
             TrackMenu::Play(mode) => self.player.send(mode.command(vec![track])),
             TrackMenu::AddTo(playlist) => self.edit_playlist(Edit::Add { playlist, tracks: vec![track] }),
             TrackMenu::NewPlaylist => self.new_playlist(vec![track]),
+            TrackMenu::Mix => self.play_source(CollSource::TrackMix(track.id.to_string()), PlayMode::Now),
             TrackMenu::Remove => {
                 if let Some(playlist) = self.showing_own_playlist().map(|p| p.id.clone()) {
                     self.edit_playlist(Edit::Remove { playlist, tracks: vec![track.id] });

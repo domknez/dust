@@ -35,7 +35,10 @@ pub enum ItemKind {
     Radio {
         genre: Option<String>,
     },
-    /// Something dust doesn't open (Deezer's channels, live streams, ...), by the
+    /// A page of more sections (Deezer's genres, moods, charts, new releases); the
+    /// id is the page's, for [`Source::page`](crate::source::Source::page).
+    Channel,
+    /// Something dust doesn't open (Deezer's radios, live streams, ...), by the
     /// source's name for it.
     Other(String),
 }
@@ -61,6 +64,24 @@ impl ItemKind {
 pub struct Section {
     pub title: String,
     pub items: Vec<Item>,
+    /// The page with all of it ("See all"), for [`Source::page`](crate::source::Source::page).
+    pub more: Option<String>,
+    /// Shown as a grid of cards rather than a scrolling row (a page of genres).
+    pub grid: bool,
+}
+
+impl Section {
+    /// A row of cards with nothing more to see.
+    pub fn new(title: impl Into<String>, items: Vec<Item>) -> Self {
+        Section { title: title.into(), items, more: None, grid: false }
+    }
+}
+
+/// A page of sections other than Home: Explore, a genre, the charts.
+#[derive(Clone, Debug, Default)]
+pub struct Page {
+    pub title: String,
+    pub sections: Vec<Section>,
 }
 
 /// An artist's page: header, popular tracks and card sections (discography,

@@ -44,6 +44,7 @@ last. More sources can be added later without changing the rest of the app.
 |---|---|---|
 | **You need** | Deezer Premium | your own [Navidrome](https://www.navidrome.org) (or Subsonic / OpenSubsonic) server |
 | **Home** | your recommendations, Flow and its moods, daily mixes, mixes inspired by tracks | *Radio* (endless, from the whole library or one genre), recently added / played, most played, favourites, mixes per artist |
+| **Discover** | *Explore* (genres, moods, decades, charts), *New releases*, artist mixes, track mixes from any track | artist mixes |
 | **Library** | Loved tracks, playlists, albums, followed artists, podcasts | starred songs as *Loved tracks*, playlists, the whole library under *Albums* and *Artists* |
 | **Playlists** | create, add, remove, rename, delete | create, add, remove, rename, delete |
 | **Likes** | tracks, albums, artists | stars |
@@ -72,7 +73,7 @@ and *Connect a Navidrome server*.
   to an hour the music fades out over 30 seconds and pauses (your volume is back for
   the next play), or it stops at the end of the track (the next one waits for play)
 - **Artist pages:** popular tracks and the full discography, plus related artists; click
-  any artist name to get there
+  any artist name to get there. *Mix* plays songs by the artist and artists like them
 - **Streamed, not stored:** audio is decoded on the fly — nothing is written to disk
 
 **Listening anywhere**
@@ -108,6 +109,13 @@ and *Connect a Navidrome server*.
 - **Home like Deezer's:** your personalised recommendations — Flow and its moods
   (Chill, Focus, Workout, Party, ...), daily mixes, mixes inspired by tracks you play,
   recently played, new releases, artists and albums picked for you
+- **Explore:** Deezer's pages of genres (Rock, Metal, Jazz, ...), moods and activities,
+  decades, charts and *For you*, each with its new releases, playlists and top artists.
+  Genre cards on Home open them too; *see all* on a row shows the whole of it
+- **New releases:** this week's albums, the ones from artists you listen to first
+  (*New releases for you*), then by genre
+- **Track mixes from any track:** right-click a track → *Start track mix* plays songs
+  like it, starting with it
 - **Plays more of the catalogue:** when a track isn't licensed in your region, dust uses
   the alternative version Deezer offers, like the web app does
 - **Podcasts:** find shows in Search and play their episodes (newest first, with dates);
@@ -286,6 +294,7 @@ without opening the window:
 
 ```sh
 dust --debug-home                          # home page sections
+dust --debug-page channels/explore         # another page: Explore, channels/rock, ...
 dust --debug-search "daft punk"            # search results
 dust --debug-link <deezer url>             # what a pasted link opens
 dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, silently
@@ -295,14 +304,15 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 
 - `Space`: play/pause
 - `⌘F` / `Ctrl+F`: search
-- `⌘1`–`⌘6` / `Ctrl+1`–`Ctrl+6`: Home, Loved tracks, Playlists, Albums, Artists, Podcasts
+- `⌘1`–`⌘8` / `Ctrl+1`–`Ctrl+8`: Home, Loved tracks, Playlists, Albums, Artists, Podcasts,
+  Explore, New releases
 - `⌘←` / `⌘→` (`Alt+←` / `Alt+→` on Windows and Linux), or the mouse's side buttons:
   back / forward between pages
 - `⌘⇧M` / `Ctrl+Shift+M`: mini player on/off
 - `⌘,` / `Ctrl+,`: Settings (`Esc` closes them)
 - Double-click a track, or click its number: play from there
 - Home cards: click to open, click the lime play button to play right away
-- Right-click a track: *Play next*, *Add to queue*, *Add to playlist ›* (and *Remove
+- Right-click a track: *Play next*, *Add to queue*, *Start track mix*, *Add to playlist ›* (and *Remove
   from this playlist* on your own); right-click a card or playlist: *Play next* /
   *Add to queue*; album and playlist pages have *Add to queue* and a ⋯ menu (*Add all
   to playlist*, *Rename*, *Delete*)
