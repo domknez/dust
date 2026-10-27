@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Messages come as toasts in the bottom right corner, above the player bar, instead of a
+  line of text beside the search field: a track that can't be played, a playlist
+  change, a like or follow (done, or why it didn't go through). They fade after a few
+  seconds (errors stay longer), stay while the pointer is on them, and × closes them
+
 ## 0.21.0 (2026-10-26)
 
 - Explore (sidebar, `⌘7`): Deezer's genres, moods, decades, charts and *For you*, each a

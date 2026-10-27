@@ -7,11 +7,11 @@ use super::covers::Covers;
 use super::history::Visit;
 use super::library::Library;
 use super::load::Jobs;
-use super::notice::Notice;
 use super::now_playing::NowPlaying;
 use super::sources::{Login, Sources};
 use super::state::{ArtistView, Coll, CollSource, PlayMode, View, playable, playable_from};
 use super::style::{self, Appearance, colors, metrics};
+use super::toasts::Toasts;
 use super::updates::Updates;
 use crate::credentials;
 use crate::deezer::{self, Deezer};
@@ -93,7 +93,7 @@ pub struct App {
     pub(super) updates: Updates,
     /// What just happened away from the page on screen (a playlist changed, a like
     /// that didn't go through).
-    pub(super) notice: Notice,
+    pub(super) toasts: Toasts,
     /// When a whole list was last added to the queue (for the button's confirmation).
     pub(super) queued_flash: Option<std::time::Instant>,
     /// What the saved queue file last reflected (queue snapshot, index, Flow);
@@ -156,7 +156,7 @@ impl App {
             logo: crate::icon::logo_texture(ctx),
             remote_control: None,
             now_playing: None,
-            notice: Notice::default(),
+            toasts: Toasts::default(),
             queued_flash: None,
             queue_saved: None,
             restore_pending: false,
@@ -425,7 +425,7 @@ impl App {
     }
 
     /// Tracks fetched from a card: play or queue them. They aren't shown anywhere,
-    /// so a failure is a notice.
+    /// so a failure is a toast.
     fn poll_quick_play(&mut self, ctx: &egui::Context, failed: &mut Vec<Error>) {
         match self.browse.quick_play.poll_take() {
             Some(Ok((tracks, mode))) => {
@@ -437,7 +437,7 @@ impl App {
             Some(Err(e)) => {
                 // An expired session says so on the login screen instead.
                 if !e.is_session_expired() {
-                    self.notice.error(ctx, format!("Couldn't load the tracks: {e}"));
+                    self.toasts.error(ctx, format!("Couldn't load the tracks: {e}"));
                 }
                 failed.push(e);
             }
@@ -519,6 +519,8 @@ impl eframe::App for App {
         if let Some(np) = &mut self.now_playing {
             np.update(&self.covers, &st);
         }
+        // Also in the mini player, so an error doesn't show late, once back.
+        self.toasts.player_error(&ctx, st.error.as_deref());
         let p = colors();
         if self.mini_player.is_some() {
             egui::CentralPanel::default().frame(panel_frame(p.bar, Margin::ZERO)).show(ui, |ui| self.mini_player(ui, &st, &mut acts));
@@ -549,9 +551,12 @@ impl eframe::App for App {
                 });
         }
         let margin = metrics::CONTENT_MARGIN;
-        egui::CentralPanel::default()
+        let page = egui::CentralPanel::default()
             .frame(panel_frame(p.bg, Margin { left: margin, right: margin, top: 0, bottom: 0 }))
-            .show(ui, |ui| self.content(ui, &st, &mut acts));
+            .show(ui, |ui| self.content(ui, &st, &mut acts))
+            .response
+            .rect;
+        self.toasts.show(&ctx, page);
         self.playlist_dialog(&ctx, &mut acts);
         self.settings_window(&ctx, &mut acts);
         self.server_dialog(&ctx, &mut acts);
