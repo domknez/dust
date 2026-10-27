@@ -11,7 +11,7 @@
 //! - [`sources`]: the logged-in music sources: connecting, switching, the account menu's rows
 //! - [`library`]: the source's playlists, likes and lists; [`browse`]: the page on screen
 //! - [`load`]: background loads, each keeping its result or error
-//! - [`notice`]: short messages about things that happened off the page
+//! - [`toasts`]: short messages in the corner about things that happened off the page
 //! - [`state`], [`format`], [`covers`]: supporting pieces
 
 mod action;
@@ -23,12 +23,12 @@ mod history;
 mod library;
 mod likes;
 mod load;
-mod notice;
 mod now_playing;
 mod playlist_edit;
 mod sources;
 mod state;
 mod style;
+mod toasts;
 mod updates;
 mod views;
 mod widgets;

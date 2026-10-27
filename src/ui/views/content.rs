@@ -7,7 +7,7 @@ use crate::ui::state::View;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets;
-use eframe::egui::{self, CornerRadius, Key, KeyboardShortcut, Modifiers, Rect, RichText, Sense, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, CornerRadius, Key, KeyboardShortcut, Modifiers, Rect, Sense, Ui, Vec2, pos2, vec2};
 
 impl App {
     pub(in crate::ui) fn content(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
@@ -16,16 +16,10 @@ impl App {
             self.history_buttons(ui, acts);
             ui.add_space(6.0);
             self.search_field(ui, acts);
-            if let Some(e) = &st.error {
-                ui.add_space(12.0);
-                ui.label(RichText::new(e).color(colors().danger).font(ty::SECONDARY.font()));
-            } else if self.library.editing.busy() {
+            // A playlist change on its way; what came of it is a toast.
+            if self.library.editing.busy() {
                 ui.add_space(12.0);
                 ui.add(egui::Spinner::new().size(14.0));
-            } else if let Some((notice, error)) = self.notice.current() {
-                ui.add_space(12.0);
-                let color = if error { colors().danger } else { colors().accent };
-                ui.label(RichText::new(notice).color(color).font(ty::SECONDARY.font()));
             }
         });
         ui.add_space(20.0);

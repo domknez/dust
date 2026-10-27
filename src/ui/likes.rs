@@ -1,6 +1,6 @@
 //! Likes: the account's liked tracks, albums and followed artists, toggled from
 //! hearts across the UI. A toggle shows at once and is sent in the background;
-//! if the source refuses, it is rolled back and the error shown as a notice.
+//! if the source refuses, it is rolled back and the error shown as a toast.
 
 use crate::model::{Error, Likeable, Likes};
 use crate::ui::app::App;
@@ -48,7 +48,7 @@ impl App {
                     log_warn!("like {what:?}: {e}");
                     self.library.likes.likes.set(&what, !liked);
                     self.like_changed(&what);
-                    self.notice.error(ctx, format!("Couldn't update your likes: {e}"));
+                    self.toasts.error(ctx, format!("Couldn't update your likes: {e}"));
                 }
                 Ok(_) => {}
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => return,

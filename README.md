@@ -74,6 +74,8 @@ and *Connect a Navidrome server*.
   the next play), or it stops at the end of the track (the next one waits for play)
 - **Artist pages:** popular tracks and the full discography, plus related artists; click
   any artist name to get there. *Mix* plays songs by the artist and artists like them
+- **Toasts:** what happened off the page (a track that can't be played, a playlist
+  change, a like that didn't go through) shows briefly in the bottom right corner
 - **Streamed, not stored:** audio is decoded on the fly — nothing is written to disk
 
 **Listening anywhere**

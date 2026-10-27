@@ -1,6 +1,6 @@
 //! Editing the account's own playlists from the UI: add tracks, create (from a track,
 //! a list or the queue), remove tracks, rename, delete. Dialogs ask for names and
-//! confirm deletes; a short [notice](crate::ui::notice) reports what happened.
+//! confirm deletes; a [toast](crate::ui::toasts) reports what happened.
 
 use crate::model::{Error, Playlist, PlaylistId, Track, TrackId};
 use crate::source::Source;
@@ -38,7 +38,7 @@ pub enum Dialog {
     },
 }
 
-/// What finished: the notice to show, and the playlist it changed (to reload it).
+/// What finished: the toast to show, and the playlist it changed (to reload it).
 pub struct Done {
     message: String,
     playlist: Option<PlaylistId>,
@@ -102,17 +102,17 @@ impl App {
         self.library.editing.dialog = Some(Dialog::Create { title: String::new(), private: false, tracks });
     }
 
-    /// Collect a finished edit: notice, refreshed sidebar, reloaded page.
+    /// Collect a finished edit: toast, refreshed sidebar, reloaded page.
     pub(in crate::ui) fn poll_playlist_edits(&mut self, ctx: &egui::Context) {
         let Some(result) = self.library.editing.task.poll_take() else { return };
         let done = match result {
             Ok(done) => done,
             Err(e) => {
-                self.notice.error(ctx, format!("Couldn't change the playlist: {e}"));
+                self.toasts.error(ctx, format!("Couldn't change the playlist: {e}"));
                 return;
             }
         };
-        self.notice.info(ctx, done.message);
+        self.toasts.info(ctx, done.message);
         if let Some(client) = self.client.clone() {
             self.library.playlists_load.start(&self.jobs, move || client.playlists());
         }
