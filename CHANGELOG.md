@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.22.0 (2026-10-27)
+
 - Messages come as toasts in the bottom right corner, above the player bar, instead of a
   line of text beside the search field: a track that can't be played, a playlist
   change, a like or follow (done, or why it didn't go through). They fade after a few
