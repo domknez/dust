@@ -1,6 +1,7 @@
 //! Likes: the account's liked tracks, albums and followed artists, toggled from
-//! hearts across the UI. A toggle shows at once and is sent in the background;
-//! if the source refuses, it is rolled back and the error shown as a toast.
+//! hearts across the UI. A toggle shows at once and is sent in the background; a
+//! toast says it's done, or, if the source refuses, it is rolled back and the
+//! error shown instead.
 
 use crate::model::{Error, Likeable, Likes};
 use crate::ui::app::App;
@@ -40,7 +41,7 @@ impl App {
         });
     }
 
-    /// Collect toggle results; undo the ones the source refused.
+    /// Collect toggle results: confirm them, or undo the ones the source refused.
     pub(in crate::ui) fn poll_likes(&mut self, ctx: &egui::Context) {
         loop {
             match self.library.likes.done.try_recv() {
@@ -50,7 +51,7 @@ impl App {
                     self.like_changed(&what);
                     self.toasts.error(ctx, format!("Couldn't update your likes: {e}"));
                 }
-                Ok(_) => {}
+                Ok((what, liked, Ok(()))) => self.toasts.info(ctx, done_message(&what, liked)),
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => return,
             }
         }
@@ -63,5 +64,30 @@ impl App {
             Likeable::Album(_) => self.library.favorite_albums = Load::Idle,
             Likeable::Track(_) => {}
         }
+    }
+}
+
+/// What a like or follow that went through did.
+fn done_message(what: &Likeable, liked: bool) -> &'static str {
+    match (what, liked) {
+        (Likeable::Track(_), true) => "Added to Loved tracks",
+        (Likeable::Track(_), false) => "Removed from Loved tracks",
+        (Likeable::Album(_), true) => "Added to your albums",
+        (Likeable::Album(_), false) => "Removed from your albums",
+        (Likeable::Artist(_), true) => "Following the artist",
+        (Likeable::Artist(_), false) => "No longer following the artist",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::TrackId;
+
+    #[test]
+    fn likes_that_went_through_say_so() {
+        assert_eq!(done_message(&Likeable::Track(TrackId::from(1)), true), "Added to Loved tracks");
+        assert_eq!(done_message(&Likeable::Album("302127".into()), false), "Removed from your albums");
+        assert_eq!(done_message(&Likeable::Artist("27".into()), true), "Following the artist");
     }
 }
