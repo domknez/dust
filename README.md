@@ -21,16 +21,9 @@ No ads, no telemetry, no account with us — bring a Deezer subscription, your o
 Navidrome (or other Subsonic) server, or both, and switch between them in one click.
 Inspired by [SpotLight](https://github.com/dddevid/SpotLight).
 
-| | dust | Deezer desktop |
-|---|---|---|
-| Binary | ~10 MB | 300+ MB |
-| Memory, idle in background | ~85 MB | 400+ MB |
-| Memory, idle and visible | ~155 MB¹ | |
-| Idle CPU | ~0% (UI sleeps when untouched) | |
-
-¹ About half of that is the window's own drawing buffers, which macOS keeps for every
-visible window (they scale with window size on Retina displays); dust itself uses ~70–85 MB,
-including cover art.
+A single native process, a binary measured in megabytes rather than hundreds of them,
+and a window that stops redrawing the moment you stop touching it — no browser engine,
+no helper processes, no idle CPU.
 
 ## Music sources
 
