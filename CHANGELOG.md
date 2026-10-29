@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Pasting into text fields works (⌘V / Ctrl+V): a Deezer link into Search, a server
+  address into the Navidrome dialog
+
 ## 0.22.0 (2026-10-27)
 
 - Messages come as toasts in the bottom right corner, above the player bar, instead of a
