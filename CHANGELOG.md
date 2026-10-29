@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.22.1 (2026-10-29)
+
 - Pasting into text fields works (⌘V / Ctrl+V): a Deezer link into Search, a server
   address into the Navidrome dialog
 
