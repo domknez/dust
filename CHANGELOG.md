@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.22.2 (2026-10-30)
+
 - Right-click an album's name in a track list, or an album under *More by* on an album
   page: *Play next* / *Add to queue* for the whole album. Before, nothing happened
 
