@@ -176,7 +176,12 @@ fn track_row(ui: &mut Ui, covers: &mut Covers, table: &Table, i: usize, rect: Re
                 text_left(painter, pos2(album, cy), &date, ty::BODY, p.dim, width);
             }
             Some(coll) => {
-                if text_link(ui, ("album-link", i), pos2(album, cy), &track.album, ty::BODY, p.dim, p.text, width).0 {
+                // The link sits over the row, so it takes right-clicks: queue the album.
+                let (link, _) = text_link(ui, ("album-link", i), pos2(album, cy), &track.album, ty::BODY, p.dim, p.text, width);
+                if let Some(mode) = queue_menu(&link) {
+                    acts.push(Action::PlaySource(coll.source.clone(), mode));
+                }
+                if link.clicked() {
                     acts.push(Action::OpenCollection(coll));
                 }
             }

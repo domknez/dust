@@ -76,7 +76,7 @@ impl App {
                 let by =
                     self.album_artist().map_or_else(|| "MORE BY THIS ARTIST".to_string(), |a| format!("MORE BY {}", a.name.to_uppercase()));
                 let items = self.browse.album_info.as_ref().map_or(&[][..], |i| &i.more[..]);
-                acts.extend(more_releases(ui, &mut self.covers, column, &by, items).map(Action::OpenCollection));
+                more_releases(ui, &mut self.covers, column, &by, items, acts);
             }
 
             let (loading, error) = (self.browse.loading_tracks(), self.browse.tracks_error());
@@ -296,12 +296,11 @@ fn heart_square(ui: &mut Ui, liked: bool) -> egui::Response {
     resp.on_hover_text(hint).on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-/// "MORE BY …": the artist's other releases (cover, title, year). Returns the one
-/// clicked.
-fn more_releases(ui: &mut Ui, covers: &mut Covers, column: Rect, caption: &str, items: &[Item]) -> Option<Coll> {
+/// "MORE BY …": the artist's other releases (cover, title, year); a click opens one,
+/// a right-click queues it.
+fn more_releases(ui: &mut Ui, covers: &mut Covers, column: Rect, caption: &str, items: &[Item], acts: &mut Actions) {
     let p = colors();
     text_left(ui.painter(), pos2(column.left(), column.top() + 10.0), caption, ty::OVERLINE, p.dim, column.width());
-    let mut open = None;
     for (k, item) in items.iter().enumerate() {
         let rect =
             Rect::from_min_size(pos2(column.left(), column.top() + 28.0 + k as f32 * MORE_ROW), vec2(column.width(), MORE_ROW - 4.0));
@@ -315,11 +314,14 @@ fn more_releases(ui: &mut Ui, covers: &mut Covers, column: Rect, caption: &str, 
         let width = rect.right() - x - 4.0;
         text_left(ui.painter(), pos2(x, rect.center().y - 8.0), &item.title, ty::ITEM, p.text, width);
         text_left(ui.painter(), pos2(x, rect.center().y + 9.0), &item.subtitle, ty::META, p.dim, width);
+        let Some(coll) = Coll::from_item(item) else { continue };
+        if let Some(mode) = widgets::queue_menu(&resp) {
+            acts.push(Action::PlaySource(coll.source.clone(), mode));
+        }
         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-            open = Coll::from_item(item);
+            acts.push(Action::OpenCollection(coll));
         }
     }
-    open
 }
 
 impl App {

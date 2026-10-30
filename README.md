@@ -55,7 +55,7 @@ and *Connect a Navidrome server*.
 
 - **Queue:** see what's next, jump to any track, reorder by dragging, remove, clear;
   it survives a restart (paused where you left off);
-  right-click any track or card → *Play next* / *Add to queue*
+  right-click any track, album or card → *Play next* / *Add to queue*
 - **Endless play:** Deezer's Flow and the server's Radio keep going, fetching more as you
   listen
 - **Seeking** on a waveform-style progress bar
@@ -308,9 +308,9 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 - Double-click a track, or click its number: play from there
 - Home cards: click to open, click the lime play button to play right away
 - Right-click a track: *Play next*, *Add to queue*, *Start track mix*, *Add to playlist ›* (and *Remove
-  from this playlist* on your own); right-click a card or playlist: *Play next* /
-  *Add to queue*; album and playlist pages have *Add to queue* and a ⋯ menu (*Add all
-  to playlist*, *Rename*, *Delete*)
+  from this playlist* on your own); right-click a card, a playlist or an album's name
+  in a track list: *Play next* / *Add to queue*; album and playlist pages have *Add to
+  queue* and a ⋯ menu (*Add all to playlist*, *Rename*, *Delete*)
 - Queue panel → *Save*: the queue as a new playlist; sidebar → *+*: a new playlist
 - Click *PLAYLISTS* in the sidebar to fold the list away (or bring it back); dust
   remembers it

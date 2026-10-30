@@ -84,7 +84,10 @@ impl App {
                 if page.top.len() > POPULAR {
                     let at = left.min + vec2(8.0, 28.0 + popular as f32 * columns.row + 16.0);
                     let label = format!("show all {} →", page.top.len());
-                    if widgets::text_link(ui, "artist-show-all", at, &label, ty::META, colors().accent, colors().text, left.width()).0 {
+                    if widgets::text_link(ui, "artist-show-all", at, &label, ty::META, colors().accent, colors().text, left.width())
+                        .0
+                        .clicked()
+                    {
                         acts.push(Action::OpenCollection(top_tracks(artist)));
                     }
                 }
