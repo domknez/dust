@@ -3,7 +3,7 @@
 use crate::model::ArtistRef;
 use crate::ui::style::typography::Text;
 use eframe::egui::text::{LayoutJob, TextWrapping};
-use eframe::egui::{Color32, CursorIcon, Galley, Painter, Pos2, Rect, Sense, Stroke, Ui, pos2};
+use eframe::egui::{Color32, CursorIcon, Galley, Painter, Pos2, Rect, Response, Sense, Stroke, Ui, pos2};
 use std::sync::Arc;
 
 /// Single-line galley cut with "…" at `max_width`.
@@ -24,7 +24,7 @@ pub fn text_left(painter: &Painter, pos: Pos2, text: &str, style: Text, color: C
 }
 
 /// `text` as a link: left edge at `pos.x`, centred on `pos.y`, underlined on hover.
-/// Returns whether it was clicked and its right edge.
+/// Returns its response (for clicks and a right-click menu) and its right edge.
 #[allow(clippy::too_many_arguments)]
 pub fn text_link(
     ui: &Ui,
@@ -35,7 +35,7 @@ pub fn text_link(
     color: Color32,
     hover: Color32,
     max_width: f32,
-) -> (bool, f32) {
+) -> (Response, f32) {
     let painter = ui.painter();
     let galley = line(painter, text, style, color, max_width);
     let rect = Rect::from_min_size(pos2(pos.x, pos.y - galley.size().y / 2.0), galley.size());
@@ -45,7 +45,8 @@ pub fn text_link(
     if resp.hovered() {
         painter.hline(rect.x_range(), rect.bottom() - 1.0, Stroke::new(1.0, tint));
     }
-    (resp.clicked(), rect.right())
+    let right = rect.right();
+    (resp, right)
 }
 
 /// Artist names as links ("A, B"): left edge at `pos.x`, centred on `pos.y`. Each name
@@ -78,7 +79,7 @@ pub fn artist_links(
         }
         let id = ("artist-link", &artist.id, x as i32, pos.y as i32);
         let (hit, end) = text_link(ui, id, pos2(x, pos.y), &artist.name, style, color, hover, right - x);
-        if hit {
+        if hit.clicked() {
             clicked = Some(artist.clone());
         }
         x = end;

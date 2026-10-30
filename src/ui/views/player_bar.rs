@@ -78,19 +78,18 @@ impl App {
             let cover = ui.interact(art, ui.scope_id().with("now-playing-cover"), egui::Sense::click());
             let title_pos = pos2(x, area.center().y - 9.0);
             let title_clicked = match &album {
-                Some(_) => {
-                    widgets::text_link(
-                        ui,
-                        "now-playing-title",
-                        title_pos,
-                        &track.title,
-                        ty::TITLE.strong(),
-                        colors().text,
-                        colors().text,
-                        width,
-                    )
-                    .0
-                }
+                Some(_) => widgets::text_link(
+                    ui,
+                    "now-playing-title",
+                    title_pos,
+                    &track.title,
+                    ty::TITLE.strong(),
+                    colors().text,
+                    colors().text,
+                    width,
+                )
+                .0
+                .clicked(),
                 None => {
                     text_left(ui.painter(), title_pos, &track.title, ty::TITLE.strong(), colors().text, width);
                     false

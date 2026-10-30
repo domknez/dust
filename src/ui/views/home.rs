@@ -113,7 +113,7 @@ pub(in crate::ui) fn section_title(ui: &mut Ui, section: &Section, acts: &mut Ac
         let label = "see all →";
         let width = ui.painter().layout_no_wrap(label.into(), ty::META.font(), p.accent).size().x;
         let at = pos2(r.right() - width, r.center().y);
-        if widgets::text_link(ui, ("see-all", more), at, label, ty::META, p.accent, p.text, width).0 {
+        if widgets::text_link(ui, ("see-all", more), at, label, ty::META, p.accent, p.text, width).0.clicked() {
             acts.push(Action::Open(View::Channel(Box::new(ChannelView::new(more, &section.title)))));
         }
         title_width -= width + 16.0;

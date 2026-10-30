@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Right-click an album's name in a track list, or an album under *More by* on an album
+  page: *Play next* / *Add to queue* for the whole album. Before, nothing happened
+
 ## 0.22.1 (2026-10-29)
 
 - Pasting into text fields works (⌘V / Ctrl+V): a Deezer link into Search, a server

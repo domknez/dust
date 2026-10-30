@@ -109,7 +109,10 @@ impl App {
                 match Coll::origin_of(track) {
                     // The title opens the album (or podcast) in the full window.
                     Some(album) => {
-                        if widgets::text_link(ui, "mini-title", title_pos, &track.title, ty::TITLE.strong(), p.text, p.text, width).0 {
+                        if widgets::text_link(ui, "mini-title", title_pos, &track.title, ty::TITLE.strong(), p.text, p.text, width)
+                            .0
+                            .clicked()
+                        {
                             acts.push(Action::OpenCollection(album));
                         }
                     }
