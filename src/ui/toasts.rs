@@ -115,12 +115,18 @@ impl Toasts {
                             .inner_margin(Margin { left: 18, right: 6, top: 6, bottom: 6 })
                             .show(ui, |ui| {
                                 ui.set_width(WIDTH - 24.0);
-                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                // A row only as tall as its content: `with_layout` would
+                                // centre in, and so take, all the height the area has.
+                                let row = vec2(ui.available_width(), ui.spacing().interact_size.y);
+                                ui.allocate_ui_with_layout(row, Layout::right_to_left(Align::Center), |ui| {
                                     if widgets::icon_button(ui, Icon::Close, 10.0, p.faint).on_hover_text("Dismiss").clicked() {
                                         closed = Some(i);
                                     }
                                     let text = RichText::new(&toast.message).font(ty::SECONDARY.font()).color(p.text);
-                                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| ui.add(egui::Label::new(text).wrap()));
+                                    let rest = vec2(ui.available_width(), ui.spacing().interact_size.y);
+                                    ui.allocate_ui_with_layout(rest, Layout::left_to_right(Align::Center), |ui| {
+                                        ui.add(egui::Label::new(text).wrap())
+                                    });
                                 });
                             })
                             .response
@@ -179,6 +185,34 @@ mod tests {
         assert_eq!(toasts.messages(), ["Failed"]);
         toasts.list.iter_mut().for_each(|t| t.since = back(ERROR_FOR + FADE));
         assert!(toasts.messages().is_empty());
+    }
+
+    /// The toasts' height after `frames` frames in a 1000×800 window.
+    fn drawn_height(toasts: &mut Toasts, ctx: &egui::Context, frames: usize) -> f32 {
+        let page = Rect::from_min_max(pos2(200.0, 60.0), pos2(1000.0, 700.0));
+        for _ in 0..frames {
+            let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 800.0));
+            let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+            let mut output = ctx.run_ui(input, |ui| toasts.show(ui.ctx(), page));
+            output.textures_delta.clear();
+        }
+        ctx.memory(|m| m.area_rect(egui::Id::unique("toasts"))).expect("drawn").height()
+    }
+
+    #[test]
+    fn toasts_stay_as_tall_as_their_text() {
+        let ctx = egui::Context::default();
+        let mut toasts = Toasts::default();
+        toasts.info(&ctx, "Removed 10 tracks");
+        let one = drawn_height(&mut toasts, &ctx, 3);
+        toasts.info(&ctx, "Removed 2 tracks");
+        // Each row once took all the height the area had the frame before, so two
+        // toasts grew every frame until they filled the window.
+        let two = drawn_height(&mut toasts, &ctx, 8);
+        assert!(two < 2.5 * one, "two toasts: {two}, one: {one}");
+        toasts.list.remove(0);
+        let left = drawn_height(&mut toasts, &ctx, 3);
+        assert!((left - one).abs() < 1.0, "back to one: {left}, was {one}");
     }
 
     #[test]

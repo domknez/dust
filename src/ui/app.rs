@@ -733,9 +733,39 @@ mod tests {
     #[test]
     fn a_track_mix_from_the_menu_plays_at_once() {
         let mut t = logged_in();
-        t.update(Action::TrackMenu(Box::new(track(7, true)), TrackMenu::Mix));
+        t.update(Action::TrackMenu(vec![track(7, true)], TrackMenu::Mix));
         assert!(t.app.browse.quick_play.is_loading(), "fetched, then played");
         assert_eq!(page(&t).0, View::Home, "without leaving the page");
+    }
+
+    #[test]
+    fn the_menu_of_picked_tracks_queues_the_playable_ones() {
+        let mut t = logged_in();
+        t.sent();
+        let picked = vec![track(1, true), track(2, false), track(3, true)];
+        t.update(Action::TrackMenu(picked, TrackMenu::Play(PlayMode::Queue)));
+        match &t.sent()[..] {
+            [Cmd::Enqueue(tracks)] => assert_eq!(super::testing::ids(tracks), [1, 3]),
+            other => panic!("expected one Enqueue, got {} commands", other.len()),
+        }
+        t.update(Action::TrackMenu(vec![track(2, false)], TrackMenu::Play(PlayMode::Next)));
+        assert!(t.sent().is_empty(), "nothing to play, nothing sent");
+    }
+
+    #[test]
+    fn picked_tracks_leave_an_own_playlist_in_one_edit() {
+        let mut t = logged_in();
+        let mine = crate::model::Playlist { id: 5.into(), title: "Mine".into(), count: 3, owned: true, private: false, picture: None };
+        t.app.library.playlists = vec![mine];
+        let coll =
+            Coll { source: CollSource::Playlist(5.into()), kind: "PLAYLIST", title: "Mine".into(), subtitle: String::new(), picture: None };
+        t.update(Action::OpenCollection(coll));
+        t.app.browse.tracks = vec![track(1, true), track(2, false), track(3, true)];
+        t.app.browse.selection.all(3);
+        let jobs = t.jobs.waiting();
+        t.update(Action::TrackMenu(vec![track(1, true), track(2, false)], TrackMenu::Remove));
+        assert!(t.app.library.editing.busy(), "the removal runs");
+        assert_eq!(t.jobs.waiting(), jobs + 1, "both tracks in one request");
     }
 
     #[test]

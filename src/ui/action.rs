@@ -58,7 +58,7 @@ pub enum Action {
     // Library
     ToggleLike(Likeable),
     /// A choice in a track's right-click menu.
-    TrackMenu(Box<Track>, TrackMenu),
+    TrackMenu(Vec<Track>, TrackMenu),
     EditPlaylist(Edit),
     /// Ask for a name, then create a playlist holding these tracks.
     NewPlaylist(Vec<Track>),
@@ -171,7 +171,7 @@ impl App {
                 }
             }
             Action::ToggleLike(what) => self.toggle_like(what),
-            Action::TrackMenu(track, choice) => self.track_menu_choice(*track, choice),
+            Action::TrackMenu(tracks, choice) => self.track_menu_choice(tracks, choice),
             Action::EditPlaylist(edit) => self.edit_playlist(edit),
             Action::NewPlaylist(tracks) => self.new_playlist(tracks),
             Action::PlaylistDialog(dialog) => self.library.editing.dialog = Some(dialog),
@@ -203,16 +203,26 @@ impl App {
         }
     }
 
-    /// Act on a track's right-click menu.
-    fn track_menu_choice(&mut self, track: Track, choice: TrackMenu) {
+    /// Act on the right-click menu of a track, or of the tracks picked together.
+    fn track_menu_choice(&mut self, tracks: Vec<Track>, choice: TrackMenu) {
         match choice {
-            TrackMenu::Play(mode) => self.player.send(mode.command(vec![track])),
-            TrackMenu::AddTo(playlist) => self.edit_playlist(Edit::Add { playlist, tracks: vec![track] }),
-            TrackMenu::NewPlaylist => self.new_playlist(vec![track]),
-            TrackMenu::Mix => self.play_source(CollSource::TrackMix(track.id.to_string()), PlayMode::Now),
+            TrackMenu::Play(mode) => {
+                let tracks = playable(tracks);
+                if !tracks.is_empty() {
+                    self.player.send(mode.command(tracks));
+                }
+            }
+            TrackMenu::AddTo(playlist) => self.edit_playlist(Edit::Add { playlist, tracks }),
+            TrackMenu::NewPlaylist => self.new_playlist(tracks),
+            TrackMenu::Mix => {
+                if let Some(track) = tracks.first() {
+                    self.play_source(CollSource::TrackMix(track.id.to_string()), PlayMode::Now);
+                }
+            }
             TrackMenu::Remove => {
                 if let Some(playlist) = self.showing_own_playlist().map(|p| p.id.clone()) {
-                    self.edit_playlist(Edit::Remove { playlist, tracks: vec![track.id] });
+                    let tracks = tracks.into_iter().map(|t| t.id).collect();
+                    self.edit_playlist(Edit::Remove { playlist, tracks });
                 }
             }
         }

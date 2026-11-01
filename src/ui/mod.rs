@@ -10,6 +10,7 @@
 //! - [`updates`]: background update checks and installs
 //! - [`sources`]: the logged-in music sources: connecting, switching, the account menu's rows
 //! - [`library`]: the source's playlists, likes and lists; [`browse`]: the page on screen
+//! - [`selection`]: the rows picked in the track list on screen
 //! - [`load`]: background loads, each keeping its result or error
 //! - [`toasts`]: short messages in the corner about things that happened off the page
 //! - [`state`], [`format`], [`covers`]: supporting pieces
@@ -25,6 +26,7 @@ mod likes;
 mod load;
 mod now_playing;
 mod playlist_edit;
+mod selection;
 mod sources;
 mod state;
 mod style;

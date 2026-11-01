@@ -115,28 +115,44 @@ pub enum TrackMenu {
     Mix,
 }
 
-/// Right-click menu for a track: Play next, Add to queue, Start track mix (with
-/// `mix`), Add to playlist › (the own ones of `playlists`), and Remove from this
-/// playlist when `removable`.
-pub fn track_menu(resp: &Response, playlists: &[Playlist], removable: bool, mix: bool) -> Option<TrackMenu> {
+/// What a track menu acts on: one track or several picked together, and whether
+/// any of them can be played.
+#[derive(Clone, Copy)]
+pub struct MenuTarget {
+    pub count: usize,
+    pub playable: bool,
+}
+
+/// Right-click menu for a track, or for the `target.count` picked: Play next, Add to
+/// queue, Start track mix (one track, with `mix`), Add to playlist › (the own ones of
+/// `playlists`), and Remove from this playlist when `removable`. Only removing is
+/// offered for tracks that can't be played.
+pub fn track_menu(resp: &Response, playlists: &[Playlist], removable: bool, mix: bool, target: MenuTarget) -> Option<TrackMenu> {
     let mut pick = None;
     resp.context_menu(|ui| {
         ui.set_min_width(CONTEXT_MENU_WIDTH);
         ui.set_max_width(CONTEXT_MENU_WIDTH);
-        if menu_row(ui, Some(Icon::Play), "Play next", None, false, colors().text).clicked() {
-            pick = Some(TrackMenu::Play(PlayMode::Next));
+        if target.count > 1 {
+            caption(ui, &format!("{} TRACKS", target.count));
         }
-        if menu_row(ui, Some(Icon::Queue), "Add to queue", None, false, colors().text).clicked() {
-            pick = Some(TrackMenu::Play(PlayMode::Queue));
-        }
-        if mix && menu_row(ui, Some(Icon::Streaming), "Start track mix", None, false, colors().text).clicked() {
-            pick = Some(TrackMenu::Mix);
-        }
-        if let Some(choice) = add_to_playlist(ui, playlists) {
-            pick = Some(choice);
+        if target.playable {
+            if menu_row(ui, Some(Icon::Play), "Play next", None, false, colors().text).clicked() {
+                pick = Some(TrackMenu::Play(PlayMode::Next));
+            }
+            if menu_row(ui, Some(Icon::Queue), "Add to queue", None, false, colors().text).clicked() {
+                pick = Some(TrackMenu::Play(PlayMode::Queue));
+            }
+            if mix && target.count == 1 && menu_row(ui, Some(Icon::Streaming), "Start track mix", None, false, colors().text).clicked() {
+                pick = Some(TrackMenu::Mix);
+            }
+            if let Some(choice) = add_to_playlist(ui, playlists) {
+                pick = Some(choice);
+            }
         }
         if removable {
-            divider(ui);
+            if target.playable {
+                divider(ui);
+            }
             if menu_row(ui, Some(Icon::Close), "Remove from this playlist", None, false, colors().danger).clicked() {
                 pick = Some(TrackMenu::Remove);
             }

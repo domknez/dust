@@ -80,7 +80,7 @@ impl App {
                     liked: &liked,
                     menu: RowMenu { playlists: &self.library.playlists, removable: false, mix: self.features().track_mix },
                 };
-                widgets::track_rows(ui, &mut self.covers, &table, 0..popular, left.min + vec2(0.0, 28.0), left.width(), acts);
+                widgets::track_rows(ui, &mut self.covers, &table, None, 0..popular, left.min + vec2(0.0, 28.0), left.width(), acts);
                 if page.top.len() > POPULAR {
                     let at = left.min + vec2(8.0, 28.0 + popular as f32 * columns.row + 16.0);
                     let label = format!("show all {} →", page.top.len());

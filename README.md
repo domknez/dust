@@ -56,6 +56,8 @@ and *Connect a Navidrome server*.
 - **Queue:** see what's next, jump to any track, reorder by dragging, remove, clear;
   it survives a restart (paused where you left off);
   right-click any track, album or card → *Play next* / *Add to queue*
+- **Pick several tracks:** click, `⌘`-click and `Shift`-click rows (or `⌘A`), then
+  right-click to queue them, add them to a playlist or remove them from your own
 - **Endless play:** Deezer's Flow and the server's Radio keep going, fetching more as you
   listen
 - **Seeking** on a waveform-style progress bar
@@ -306,6 +308,9 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 - `⌘⇧M` / `Ctrl+Shift+M`: mini player on/off
 - `⌘,` / `Ctrl+,`: Settings (`Esc` closes them)
 - Double-click a track, or click its number: play from there
+- Click a track to pick it; `⌘`-click (`Ctrl`-click) adds or drops one, `Shift`-click
+  picks a range, `⌘A` / `Ctrl+A` picks the whole list and `Esc` lets go. The right-click
+  menu then acts on every picked track
 - Home cards: click to open, click the lime play button to play right away
 - Right-click a track: *Play next*, *Add to queue*, *Start track mix*, *Add to playlist ›* (and *Remove
   from this playlist* on your own); right-click a card, a playlist or an album's name

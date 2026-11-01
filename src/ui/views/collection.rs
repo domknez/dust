@@ -13,7 +13,7 @@ use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::views::home::{CARD_ROW_HEIGHT, card_row};
 use crate::ui::widgets::{self, Columns, RowMenu, Table, TrackMenu, column_captions, text_left};
-use eframe::egui::{self, Color32, CornerRadius, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
+use eframe::egui::{self, Color32, CornerRadius, Key, KeyboardShortcut, Modifiers, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
 
 /// Search page: title and result count, then card rows, then the table captions.
 const SEARCH_TOP: f32 = 64.0;
@@ -47,6 +47,7 @@ impl App {
         let header_height = if self.browse.view == View::Search { self.search_header_height() } else { COLLECTION_HEADER };
         let count = self.browse.tracks.len();
         let album = self.showing_album();
+        self.selection_keys(ui, count);
 
         egui::ScrollArea::vertical().auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
             let width = ui.available_width();
@@ -98,7 +99,8 @@ impl App {
                 liked: &liked,
                 menu: RowMenu { playlists: &self.library.playlists, removable, mix: self.features().track_mix },
             };
-            widgets::track_rows(ui, &mut self.covers, &table, first..last, origin + vec2(0.0, header_height), table_width, acts);
+            let top = origin + vec2(0.0, header_height);
+            widgets::track_rows(ui, &mut self.covers, &table, Some(&mut self.browse.selection), first..last, top, table_width, acts);
         });
     }
 
@@ -325,6 +327,20 @@ fn more_releases(ui: &mut Ui, covers: &mut Covers, column: Rect, caption: &str, 
 }
 
 impl App {
+    /// ⌘A picks every track of the list and Esc lets go of them, unless a text field
+    /// has the keyboard.
+    fn selection_keys(&mut self, ui: &Ui, count: usize) {
+        if count == 0 || ui.ctx().memory(|m| m.focused().is_some()) {
+            return;
+        }
+        if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::A))) {
+            self.browse.selection.all(count);
+        }
+        if !self.browse.selection.is_empty() && ui.input(|i| i.key_pressed(Key::Escape)) {
+            self.browse.selection.clear();
+        }
+    }
+
     /// The own playlist on screen, if that's what is shown.
     pub(in crate::ui) fn showing_own_playlist(&self) -> Option<&Playlist> {
         let View::Collection(coll) = &self.browse.view else { return None };
