@@ -18,7 +18,7 @@ pub use controls::{heart_at, icon_button, pill, play_button, segmented, tag, tex
 pub use decor::{equalizer, fade_to};
 pub use grid::{Grid, GridColumns};
 pub use load_state::load_state;
-pub use menu::{TrackMenu, add_to_playlist, caption, divider, menu_row, popover_frame, queue_menu, shortcut_row, track_menu};
+pub use menu::{MenuTarget, TrackMenu, add_to_playlist, caption, divider, menu_row, popover_frame, queue_menu, shortcut_row, track_menu};
 pub use nav::sidebar_item;
 pub use text::{artist_links, text_left, text_link};
 pub use track_table::{Columns, RowMenu, Table, column_captions, track_rows};

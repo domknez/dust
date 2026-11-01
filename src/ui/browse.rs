@@ -3,6 +3,7 @@
 
 use super::history::History;
 use super::load::Load;
+use super::selection::Selection;
 use super::state::{PlayMode, View};
 use crate::model::{AlbumInfo, ArtistPage, Error, Item, ItemKind, Link, Page, Playlist, SearchResults, Section, Track};
 
@@ -16,6 +17,8 @@ pub struct Browse {
     pub searched: String,
     /// The track list on screen (a collection, Loved tracks or search results).
     pub tracks: Vec<Track>,
+    /// Rows of `tracks` picked to act on together; emptied whenever the list changes.
+    pub selection: Selection,
     pub album_info: Option<AlbumInfo>,
     /// Artist, album and playlist cards of the current search.
     pub search_sections: Vec<Section>,
@@ -43,6 +46,7 @@ impl Default for Browse {
             search: String::new(),
             searched: String::new(),
             tracks: Vec::new(),
+            selection: Selection::default(),
             album_info: None,
             search_sections: Vec::new(),
             tracks_load: Load::Idle,
@@ -62,6 +66,7 @@ impl Browse {
     /// stale result never lands.
     pub fn clear_list(&mut self) {
         self.tracks.clear();
+        self.selection.clear();
         self.album_info = None;
         self.search_sections.clear();
         self.tracks_load = Load::Idle;
@@ -86,6 +91,7 @@ impl Browse {
         match self.tracks_load.poll_take() {
             Some(Ok((tracks, info))) => {
                 self.tracks = tracks;
+                self.selection.clear();
                 self.album_info = info;
             }
             Some(Err(e)) => failed.push(e),
@@ -94,6 +100,7 @@ impl Browse {
         match self.search_load.poll_take() {
             Some(Ok(results)) => {
                 self.tracks = results.tracks;
+                self.selection.clear();
                 self.search_sections = results.sections;
                 // The listener's own playlists first.
                 if let Some(own) = own_playlists(playlists, &self.searched) {

@@ -1,14 +1,16 @@
 //! Track tables: one row per track with its number (or the equalizer / a play
 //! button), artwork, title, linked artists, album and duration, a heart and a
-//! right-click menu. Only the rows asked for are drawn, so a long list stays cheap.
+//! right-click menu. Rows can be picked to act on several at once (see
+//! [`Selection`]). Only the rows asked for are drawn, so a long list stays cheap.
 //! Rows report what was clicked as [`Action`]s.
 
-use super::{TrackMenu, artist_links, cover, equalizer, heart_at, queue_menu, text_left, text_link, track_menu};
+use super::{MenuTarget, TrackMenu, artist_links, cover, equalizer, heart_at, queue_menu, text_left, text_link, track_menu};
 use crate::model::{Likeable, Playlist, Track, TrackId};
 use crate::player::Cmd;
 use crate::ui::action::{Action, Actions};
 use crate::ui::covers::Covers;
 use crate::ui::format::{mmss, release_date};
+use crate::ui::selection::Selection;
 use crate::ui::state::Coll;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
@@ -103,17 +105,36 @@ pub struct Table<'a> {
 }
 
 /// The rows in `range` of a table whose first row is at `top`, each `width` wide.
-pub fn track_rows(ui: &mut Ui, covers: &mut Covers, table: &Table, range: Range<usize>, top: Pos2, width: f32, acts: &mut Actions) {
+/// With a `selection`, clicks pick rows and the menu acts on the ones picked.
+#[allow(clippy::too_many_arguments)]
+pub fn track_rows(
+    ui: &mut Ui,
+    covers: &mut Covers,
+    table: &Table,
+    mut selection: Option<&mut Selection>,
+    range: Range<usize>,
+    top: Pos2,
+    width: f32,
+    acts: &mut Actions,
+) {
     let row = table.columns.row;
     for i in range {
         let rect = Rect::from_min_size(top + vec2(0.0, i as f32 * row), vec2(width, row));
-        track_row(ui, covers, table, i, rect, acts);
+        track_row(ui, covers, table, selection.as_deref_mut(), i, rect, acts);
     }
 }
 
 /// One row of a track table: number (or equalizer / play icon), artwork, title,
 /// linked artists, album, duration, for track `i` of the table.
-fn track_row(ui: &mut Ui, covers: &mut Covers, table: &Table, i: usize, rect: Rect, acts: &mut Actions) {
+fn track_row(
+    ui: &mut Ui,
+    covers: &mut Covers,
+    table: &Table,
+    mut selection: Option<&mut Selection>,
+    i: usize,
+    rect: Rect,
+    acts: &mut Actions,
+) {
     let p = colors();
     let (track, columns, menu) = (&table.tracks[i], table.columns, &table.menu);
     let (playing_id, playing) = table.now;
@@ -129,6 +150,9 @@ fn track_row(ui: &mut Ui, covers: &mut Covers, table: &Table, i: usize, rect: Re
         ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.hover);
     } else if current {
         ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.surface);
+    }
+    if selection.as_ref().is_some_and(|s| s.contains(i)) {
+        ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.accent.gamma_multiply(0.14));
     }
     let cy = rect.center().y;
     let index = Rect::from_center_size(pos2(columns.index + 12.0, cy), Vec2::splat(14.0));
@@ -196,25 +220,47 @@ fn track_row(ui: &mut Ui, covers: &mut Covers, table: &Table, i: usize, rect: Re
         acts.push(Action::ToggleLike(Likeable::Track(track.id.clone())));
     }
 
-    if !available {
-        return;
-    }
     // Double-click a row, or click its number, to play from there.
     let number_edge = columns.art.map_or(columns.title, |(x, _)| x);
     let clicked_number = resp.clicked() && resp.interact_pointer_pos().is_some_and(|pt| pt.x < number_edge);
-    if resp.double_clicked() || clicked_number {
+    if available && (resp.double_clicked() || clicked_number) {
         if current && clicked_number {
             acts.push(Action::Player(Cmd::Toggle));
         } else {
             acts.push(Action::PlayFrom { tracks: table.tracks.to_vec(), index: i, shuffle: false });
         }
     }
-    let choice = if track.is_episode() {
+    // A click elsewhere in the row picks it; a right-click outside what's picked
+    // picks just that row, so the menu is about the row under the pointer.
+    if let Some(selection) = selection.as_deref_mut() {
+        if resp.clicked() && !(available && clicked_number) {
+            selection.click(i, ui.input(|input| input.modifiers));
+        }
+        if resp.secondary_clicked() && !selection.contains(i) {
+            selection.only(i);
+        }
+    }
+    if !resp.secondary_clicked() && !resp.context_menu_opened() {
+        return;
+    }
+    // The menu acts on every picked row when this is one of them.
+    let picked: Vec<usize> = match selection.as_deref() {
+        Some(s) if s.len() > 1 && s.contains(i) => s.rows().collect(),
+        _ => vec![i],
+    };
+    let target = MenuTarget { count: picked.len(), playable: picked.iter().any(|&k| table.tracks[k].available) };
+    if !target.playable && !menu.removable {
+        return;
+    }
+    let choice = if track.is_episode() && picked.len() == 1 {
         queue_menu(&resp).map(TrackMenu::Play)
     } else {
-        track_menu(&resp, menu.playlists, menu.removable, menu.mix)
+        track_menu(&resp, menu.playlists, menu.removable, menu.mix, target)
     };
-    acts.extend(choice.map(|choice| Action::TrackMenu(Box::new(track.clone()), choice)));
+    if let Some(choice) = choice {
+        let tracks = picked.iter().map(|&k| table.tracks[k].clone()).collect();
+        acts.push(Action::TrackMenu(tracks, choice));
+    }
 }
 
 /// Hover text for a track that can't be played (yet).
