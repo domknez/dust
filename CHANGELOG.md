@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.22.3 (2026-11-01)
+
 - Pick several tracks in a list: click, `⌘`-click (`Ctrl`-click), `Shift`-click for a
   range, or `⌘A` / `Ctrl+A` for all (`Esc` lets go). The right-click menu then works on
   all of them: *Remove from this playlist* on your own playlists, *Play next*, *Add to
