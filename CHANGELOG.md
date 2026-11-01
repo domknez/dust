@@ -6,6 +6,7 @@
   range, or `⌘A` / `Ctrl+A` for all (`Esc` lets go). The right-click menu then works on
   all of them: *Remove from this playlist* on your own playlists, *Play next*, *Add to
   queue*, *Add to playlist ›*. Tracks that can't be played can be picked and removed too
+- Two toasts at once no longer grow until they fill the window
 
 ## 0.22.2 (2026-10-30)
 
