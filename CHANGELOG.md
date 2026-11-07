@@ -6,8 +6,9 @@
   asks *Who's listening?* and lists the members that can be listened as. The pick is
   remembered; *Switch profile…* in the account menu changes it. dust acts as that member:
   their library, favourites and history
-- Nix: `flake.nix` with a dev shell (`nix develop`) and a package (`nix run`,
-  `nix profile install`)
+- Nix: `flake.nix` with a dev shell (`nix develop`), an installable package (`nix run`,
+  `nix profile install`, NixOS) with the desktop entry and icons, and `nix flake check`.
+  dust doesn't check for updates by itself there: Nix manages them
 
 ## 0.22.3 (2026-11-01)
 
