@@ -539,7 +539,6 @@ mod tests {
         t.app.on_logged_in(family(Some(2)));
         assert!(!t.app.login.choosing);
         assert_eq!(in_use(&t), Some("Deezer"));
-        assert_eq!(credentials::load_profile(deezer::ID), Some(2), "remembered for next start");
         credentials::clear(deezer::ID);
     }
 

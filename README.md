@@ -197,14 +197,15 @@ nix profile upgrade dust   # later, to update
   outputs = { nixpkgs, dust, ... }: {
     nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
       modules = [
-        ({ pkgs, ... }: {
-          environment.systemPackages = [ dust.packages.${pkgs.stdenv.hostPlatform.system}.default ];
-        })
+        dust.nixosModules.default # installs dust system-wide
       ];
     };
   };
 }
 ```
+
+Without the module, `environment.systemPackages = [ dust.packages.${pkgs.stdenv.hostPlatform.system}.default ];`
+does the same.
 
 Rebuild with `sudo nixos-rebuild switch --flake .#myhost`; `nix flake update dust` pulls
 a newer dust. The same package works in Home Manager (`home.packages`). The flake also

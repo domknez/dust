@@ -179,4 +179,20 @@ mod tests {
         assert_eq!(Logins::from_json(r#"{"arl":"abc","server":null}"#), logins(&[("arl", "abc")]), "a login 0.19 didn't have");
         assert_eq!(Logins::from_json(&read.to_json()), read, "and writes it back the same");
     }
+
+    /// A source of its own: the other tests log Deezer and Navidrome in and out in
+    /// the shared in-memory keychain while this runs.
+    #[test]
+    fn the_picked_profile_is_kept_with_the_login_and_cleared_with_it() {
+        let own = SourceId { key: "profile-test", name: "Test", queue_file: "profile-test.json", login_key: "profile-test" };
+        assert_eq!(load_profile(own), None);
+        save(own, "secret");
+        save_profile(own, Some(42));
+        assert_eq!(load_profile(own), Some(42));
+        save_profile(own, None);
+        assert_eq!(load_profile(own), None);
+        save_profile(own, Some(7));
+        clear(own);
+        assert_eq!((load(own), load_profile(own)), (None, None), "logging out forgets the pick too");
+    }
 }

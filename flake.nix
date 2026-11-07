@@ -140,6 +140,11 @@
           '';
         });
 
+      # `imports = [ dust.nixosModules.default ];` installs dust system-wide.
+      nixosModules.default = { pkgs, ... }: {
+        environment.systemPackages = [ self.packages.${pkgs.stdenv.hostPlatform.system}.default ];
+      };
+
       overlays.default = final: _prev: { dust = self.packages.${final.stdenv.hostPlatform.system}.default; };
     };
 }
