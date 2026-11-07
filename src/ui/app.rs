@@ -168,22 +168,54 @@ impl App {
     pub(super) fn log_in_with(&mut self, arl: String) {
         self.login.error = None;
         self.login.remember = true;
-        self.login.task.start(&self.jobs, move || Deezer::login(&arl));
+        self.login.task.start(&self.jobs, move || Deezer::login_as(&arl, None));
     }
 
     #[cfg(feature = "login-window")]
     pub(super) fn log_in_with_browser(&mut self) {
         self.login.error = None;
         self.login.remember = true;
-        self.login.task.start(&self.jobs, || Deezer::login(&crate::login::obtain_arl().map_err(Error::Other)?));
+        self.login.task.start(&self.jobs, || Deezer::login_as(&crate::login::obtain_arl().map_err(Error::Other)?, None));
     }
 
-    fn on_logged_in(&mut self, client: Deezer) {
-        if std::mem::take(&mut self.login.remember) {
+    pub(super) fn on_logged_in(&mut self, client: Deezer) {
+        let remember = std::mem::take(&mut self.login.remember);
+        if remember {
             credentials::save(deezer::ID, client.arl());
+            credentials::save_profile(deezer::ID, client.profile());
         }
         self.login.arl.clear();
+        let several = client.profiles().len() > 1;
+        self.login.family = several.then(|| client.clone());
+        // A new login to a family plan asks who is listening, before any music.
+        if several && remember && client.profile().is_none() {
+            self.login.choosing = true;
+            return;
+        }
+        // Another member: nothing of the last one's pages stays.
+        if std::mem::take(&mut self.login.choosing) && self.client.as_ref().is_some_and(|c| c.id() == deezer::ID) {
+            self.clear_content();
+        }
         self.source_ready(std::sync::Arc::new(client));
+    }
+
+    /// The profile picker's choice: log in again as that family member.
+    pub(super) fn pick_profile(&mut self, id: u64) {
+        let Some(family) = self.login.family.clone() else { return };
+        if self.client.as_ref().is_some_and(|c| c.id() == deezer::ID) && family.profile() == Some(id) {
+            self.login.choosing = false;
+            return;
+        }
+        let arl = family.arl().to_string();
+        self.login.error = None;
+        self.login.remember = true;
+        self.login.task.start(&self.jobs, move || Deezer::login_as(&arl, Some(id)));
+    }
+
+    /// "Switch profile…" in the account menu.
+    pub(super) fn choose_profile(&mut self) {
+        self.login.error = None;
+        self.login.choosing = self.login.family.is_some();
     }
 
     // ------------------------------------------------------------ navigation
@@ -506,6 +538,11 @@ impl eframe::App for App {
         self.poll_loads(&ctx);
         self.updates.poll(&ctx);
         let mut acts = Actions::default();
+        if self.login.choosing {
+            self.profile_picker(ui, &mut acts);
+            self.apply(&ctx, acts);
+            return;
+        }
         if self.client.is_none() {
             self.login_screen(ui, &mut acts);
             self.server_dialog(&ctx, &mut acts);

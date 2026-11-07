@@ -125,9 +125,32 @@ pub fn save(source: SourceId, secret: &str) {
     });
 }
 
+/// Where a source keeps which member of the account was picked (a Deezer family plan).
+fn profile_key(source: SourceId) -> String {
+    format!("{}.profile", source.login_key)
+}
+
+/// The family member picked for `source`, if any.
+pub fn load_profile(source: SourceId) -> Option<u64> {
+    with_logins(|l| l.0.get(&profile_key(source))?.parse().ok())
+}
+
+/// Remember the member picked for `source` (none: the account itself).
+pub fn save_profile(source: SourceId, profile: Option<u64>) {
+    update(|l| match profile {
+        Some(id) => {
+            l.0.insert(profile_key(source), id.to_string());
+        }
+        None => {
+            l.0.remove(&profile_key(source));
+        }
+    });
+}
+
 pub fn clear(source: SourceId) {
     update(|l| {
         l.0.remove(source.login_key);
+        l.0.remove(&profile_key(source));
     });
 }
 
@@ -155,5 +178,21 @@ mod tests {
         assert_eq!((server.url.as_str(), server.user.as_str()), ("http://nas", "me"));
         assert_eq!(Logins::from_json(r#"{"arl":"abc","server":null}"#), logins(&[("arl", "abc")]), "a login 0.19 didn't have");
         assert_eq!(Logins::from_json(&read.to_json()), read, "and writes it back the same");
+    }
+
+    /// A source of its own: the other tests log Deezer and Navidrome in and out in
+    /// the shared in-memory keychain while this runs.
+    #[test]
+    fn the_picked_profile_is_kept_with_the_login_and_cleared_with_it() {
+        let own = SourceId { key: "profile-test", name: "Test", queue_file: "profile-test.json", login_key: "profile-test" };
+        assert_eq!(load_profile(own), None);
+        save(own, "secret");
+        save_profile(own, Some(42));
+        assert_eq!(load_profile(own), Some(42));
+        save_profile(own, None);
+        assert_eq!(load_profile(own), None);
+        save_profile(own, Some(7));
+        clear(own);
+        assert_eq!((load(own), load_profile(own)), (None, None), "logging out forgets the pick too");
     }
 }

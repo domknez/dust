@@ -157,9 +157,69 @@ You need Deezer Premium, a Navidrome / Subsonic server, or both.
 - **Linux:** unpack and run `./dust` (needs WebKitGTK 4.1, ALSA and D-Bus; the archive
   includes a `.desktop` entry and icon).
 
-Later versions install themselves from inside dust. On Windows and
-Linux that needs dust's folder to be writable by you (e.g. `~/.local/bin`); otherwise
+- **Nix / NixOS:** see [Install with Nix](#install-with-nix).
+
+Later versions install themselves from inside dust (not with Nix, which updates dust
+with the flake). On Windows and Linux that needs dust's folder to be writable by you (e.g. `~/.local/bin`); otherwise
 the update button opens the download page.
+
+## Install with Nix
+
+The repository is a flake (`flake.nix`): the package includes the desktop entry, the
+icons and the libraries dust loads at run time (Wayland, X11, OpenGL, WebKitGTK for the
+login window). Nix manages the updates, so dust doesn't check for them by itself (it can
+still be switched on in Settings). Linux (x86_64, aarch64) and macOS build from the same
+flake; the flakes experimental feature must be enabled.
+
+**Try it without installing:**
+
+```sh
+nix run github:domknez/dust
+```
+
+**Install it for your user:**
+
+```sh
+nix profile install github:domknez/dust
+nix profile upgrade dust   # later, to update
+```
+
+**On NixOS**, add the flake as an input of your system flake and install the package:
+
+```nix
+{
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+  inputs.dust = {
+    url = "github:domknez/dust";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
+
+  outputs = { nixpkgs, dust, ... }: {
+    nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
+      modules = [
+        dust.nixosModules.default # installs dust system-wide
+      ];
+    };
+  };
+}
+```
+
+Without the module, `environment.systemPackages = [ dust.packages.${pkgs.stdenv.hostPlatform.system}.default ];`
+does the same.
+
+Rebuild with `sudo nixos-rebuild switch --flake .#myhost`; `nix flake update dust` pulls
+a newer dust. The same package works in Home Manager (`home.packages`). The flake also
+has an overlay (`dust.overlays.default`, which adds `pkgs.dust`; note that nixpkgs
+already has an unrelated `dust`, the disk usage tool, so prefer the package form above).
+
+To pin a branch or version, use `github:domknez/dust/<branch-or-tag>`.
+
+**Check the flake:** `nix flake check` builds dust, runs its unit tests, and verifies the
+installed result: the binary, the desktop entry, every icon size and that no shared
+library is missing.
+
+**Develop:** `nix develop` gives a shell with Rust, clippy, rustfmt and every native
+library; then `cargo run` / `cargo test` as usual.
 
 ## Build
 
@@ -190,6 +250,8 @@ Linux needs ALSA, D-Bus and WebKitGTK headers:
 `sudo apt install libasound2-dev libdbus-1-dev libwebkit2gtk-4.1-dev pkg-config`.
 Without the login window (no WebKitGTK): `cargo build --release --no-default-features`.
 
+With Nix, `nix develop` provides all of that (see [Install with Nix](#install-with-nix)).
+
 ## Sign in
 
 **Deezer:** click **Log in with Deezer**: a small window shows deezer.com's own login
@@ -197,6 +259,11 @@ page (OS webview, private session). Once you are signed in, dust picks up the se
 and closes it. The session token (`arl` cookie) is stored in your OS keychain; **Log out
 of Deezer** in the account menu removes it. Deezer Premium required. Email/password
 sign-in works; Google and Apple sign-in may refuse embedded browsers.
+
+**Family plans:** when the account is a Deezer family plan's owner, dust shows *Who's
+listening?* after sign-in with the members that can be listened as (members who made
+their profile private are left out). The choice is kept in the keychain with the
+session; *Switch profile…* in the account menu changes it.
 
 Fallback: "Paste ARL cookie instead" takes the `arl` value from a logged-in browser
 (DevTools → Application → Cookies). Treat it like a password; "Log out of all devices"

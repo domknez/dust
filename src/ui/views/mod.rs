@@ -13,6 +13,7 @@ mod mini_player;
 mod output_picker;
 mod player_bar;
 mod playlists;
+mod profile_picker;
 mod queue;
 mod settings;
 mod sidebar;
