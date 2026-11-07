@@ -21,6 +21,11 @@ impl App {
             ui.spacing_mut().item_spacing.y = 2.0;
             account_header(ui, name, &label);
             widgets::divider(ui);
+            let switchable = self.client.as_ref().is_some_and(|c| c.id() == crate::deezer::ID) && self.login.family.is_some();
+            if switchable && widgets::menu_row(ui, Some(Icon::Streaming), "Switch profile…", Some(name), false, colors().text).clicked() {
+                acts.push(Action::ChooseProfile);
+                ui.close();
+            }
             self.source_rows(ui, acts);
             widgets::divider(ui);
             if widgets::shortcut_row(ui, Icon::Settings, "Settings…", SETTINGS_HINT).clicked() {

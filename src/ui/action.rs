@@ -95,6 +95,12 @@ pub enum Action {
     OpenServerForm,
     ConnectServer(Server),
     SwitchSource(Shared),
+    /// Open the profile picker of a Deezer family plan.
+    ChooseProfile,
+    /// Listen as this family member (Deezer user id).
+    PickProfile(u64),
+    /// Close the profile picker, staying as before.
+    CancelProfilePicker,
     /// Log out of the source in use (or disconnect the server).
     LogOut,
 }
@@ -199,6 +205,9 @@ impl App {
             Action::OpenServerForm => self.open_server_form(),
             Action::ConnectServer(server) => self.connect_server(server),
             Action::SwitchSource(source) => self.switch_source(source),
+            Action::ChooseProfile => self.choose_profile(),
+            Action::PickProfile(id) => self.pick_profile(id),
+            Action::CancelProfilePicker => self.login.choosing = false,
             Action::LogOut => self.log_out(),
         }
     }

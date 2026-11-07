@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Deezer family plans: after logging in with the plan owner's session (or an `arl`), dust
+  asks *Who's listening?* and lists the members that can be listened as. The pick is
+  remembered; *Switch profile…* in the account menu changes it. dust acts as that member:
+  their library, favourites and history
+- Nix: `flake.nix` with a dev shell (`nix develop`) and a package (`nix run`,
+  `nix profile install`)
+
 ## 0.22.3 (2026-11-01)
 
 - Pick several tracks in a list: click, `⌘`-click (`Ctrl`-click), `Shift`-click for a

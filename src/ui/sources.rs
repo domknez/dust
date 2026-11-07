@@ -75,6 +75,11 @@ pub struct Login {
     pub show_arl: bool,
     /// Store the session in the keychain once the pending login succeeds.
     pub remember: bool,
+    /// The logged-in Deezer account when it is a family plan with several members to
+    /// listen as: what the profile picker lists.
+    pub family: Option<Deezer>,
+    /// The profile picker is showing.
+    pub choosing: bool,
     pub error: Option<String>,
 }
 
@@ -117,7 +122,8 @@ impl App {
     /// At start: log in with the stored logins.
     pub(super) fn start_sources(&mut self) {
         if let Some(arl) = credentials::load(deezer::ID) {
-            self.login.task.start(&self.jobs, move || Deezer::login(&arl));
+            let profile = credentials::load_profile(deezer::ID);
+            self.login.task.start(&self.jobs, move || Deezer::login_as(&arl, profile));
         }
         if let Some(server) = credentials::load(subsonic::ID).and_then(|text| Server::from_json(&text)) {
             self.sources.connecting.start(&self.jobs, move || Subsonic::connect(&server));
@@ -216,6 +222,10 @@ impl App {
     pub(super) fn log_out(&mut self) {
         let Some(id) = self.client.as_ref().map(|c| c.id()) else { return };
         credentials::clear(id);
+        if id == deezer::ID {
+            self.login.family = None;
+            self.login.choosing = false;
+        }
         self.sources.logged_in.remove(&id);
         match self.sources.first() {
             Some(other) => self.switch_source(other),
@@ -229,7 +239,7 @@ impl App {
 
     /// Forget what the previous source had and showed. Its loads in flight go too,
     /// so none of their results can land on the next source (or the login screen).
-    fn clear_content(&mut self) {
+    pub(super) fn clear_content(&mut self) {
         self.library = Library::default();
         self.browse = Browse::default();
         self.lyrics = Default::default();
@@ -512,5 +522,69 @@ mod tests {
         // The player hasn't shown the restored queue yet: it's still empty.
         t.update(Action::SwitchSource(navidrome()));
         assert_eq!(saved(&t, deezer::ID), Some(vec![1, 2]));
+    }
+
+    fn family(profile: Option<u64>) -> Deezer {
+        Deezer::offline_family("Parent", &[(1, "Parent"), (2, "Kid")], profile)
+    }
+
+    #[test]
+    fn a_new_family_login_asks_who_is_listening() {
+        let mut t = TestApp::new("");
+        t.app.login.remember = true;
+        t.app.on_logged_in(family(None));
+        assert!(t.app.login.choosing, "the picker comes first");
+        assert_eq!(in_use(&t), None, "no music before a profile is picked");
+        t.app.login.remember = true;
+        t.app.on_logged_in(family(Some(2)));
+        assert!(!t.app.login.choosing);
+        assert_eq!(in_use(&t), Some("Deezer"));
+        assert_eq!(credentials::load_profile(deezer::ID), Some(2), "remembered for next start");
+        credentials::clear(deezer::ID);
+    }
+
+    #[test]
+    fn a_stored_login_without_a_profile_starts_as_the_owner() {
+        let mut t = TestApp::new("");
+        t.app.on_logged_in(family(None));
+        assert!(!t.app.login.choosing, "no picker at start-up");
+        assert_eq!(in_use(&t), Some("Deezer"));
+        assert!(t.app.login.family.is_some(), "but Switch profile is offered");
+    }
+
+    #[test]
+    fn a_plan_with_one_member_has_nothing_to_pick() {
+        let mut t = TestApp::new("");
+        t.app.login.remember = true;
+        t.app.on_logged_in(Deezer::offline_family("Solo", &[(1, "Solo")], None));
+        assert!(!t.app.login.choosing);
+        assert!(t.app.login.family.is_none());
+        assert_eq!(in_use(&t), Some("Deezer"));
+        credentials::clear(deezer::ID);
+    }
+
+    #[test]
+    fn switching_profile_can_be_cancelled_and_log_out_forgets_the_plan() {
+        let mut t = TestApp::new("");
+        t.app.on_logged_in(family(Some(1)));
+        t.update(Action::ChooseProfile);
+        assert!(t.app.login.choosing);
+        t.update(Action::CancelProfilePicker);
+        assert!(!t.app.login.choosing && in_use(&t) == Some("Deezer"));
+        t.update(Action::ChooseProfile);
+        t.update(Action::PickProfile(1));
+        assert!(!t.app.login.choosing, "the profile already in use is not logged in again");
+        assert!(!t.app.login.task.is_loading());
+        t.update(Action::LogOut);
+        assert!(t.app.login.family.is_none());
+    }
+
+    #[test]
+    fn picking_another_profile_logs_in_again() {
+        let mut t = TestApp::new("");
+        t.app.on_logged_in(family(Some(1)));
+        t.update(Action::ChooseProfile);
+        t.update(Action::PickProfile(2));
+        assert!(t.app.login.task.is_loading() && t.app.login.remember, "logging in as the other member");
     }
 }
