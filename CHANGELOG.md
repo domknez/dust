@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.23.0 (2026-11-16)
+
 - Save the track playing to a playlist from the player bar: **+** next to the heart
   opens your playlists with a field to find one by typing (`Enter` takes the first
   match), and a right-click on the track offers *Add to playlist ›*, *Add to Loved
