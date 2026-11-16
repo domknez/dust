@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.25.0 (2026-11-16)
+
 - Play history: the panel on the right has *up next* and *history*. dust keeps every
   track you hear (the last 2,000, on this computer), shown newest first by day with
   the Flow or album it came from and skips marked; click one to hear it again,
