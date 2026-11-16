@@ -6,6 +6,7 @@ mod artists;
 mod channel;
 mod collection;
 mod content;
+mod crate_view;
 mod home;
 mod login;
 mod lyrics;
@@ -19,6 +20,7 @@ mod settings;
 mod sidebar;
 mod sleep_timer;
 
+pub use crate_view::{CrateView, Filter};
 pub use lyrics::LyricsState;
 pub use settings::reveal_log;
 pub use sleep_timer::SleepChoice;

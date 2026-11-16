@@ -4,6 +4,7 @@
 use super::action::{Action, Actions};
 use super::browse::Browse;
 use super::covers::Covers;
+use super::crate_store::Crate;
 use super::history::Visit;
 use super::library::Library;
 use super::load::Jobs;
@@ -32,6 +33,8 @@ pub enum SidePanel {
     Queue,
     /// The tracks heard, newest first.
     History,
+    /// Saving to the Crate and what's new in it.
+    Crate,
 }
 
 impl App {
@@ -105,6 +108,9 @@ pub struct App {
     pub(super) side_tab: SidePanel,
     /// Every track heard, kept on this computer.
     pub(super) plays: Plays,
+    /// Things to check out later, kept on this computer.
+    pub(super) crate_box: Crate,
+    pub(super) crate_view: super::views::CrateView,
     /// The Settings window is open.
     pub(super) show_settings: bool,
     pub(super) lyrics: super::views::LyricsState,
@@ -170,6 +176,7 @@ impl App {
         player.send(Cmd::Shuffle(prefs.shuffle));
         player.send(Cmd::Repeat(prefs.repeat));
         let plays = Plays::load(queues.dir());
+        let crate_box = Crate::load(queues.dir());
         Self {
             player,
             jobs,
@@ -183,6 +190,8 @@ impl App {
             side_panel: None,
             side_tab: SidePanel::Queue,
             plays,
+            crate_box,
+            crate_view: Default::default(),
             show_settings: false,
             lyrics: Default::default(),
             queue_drag: None,
@@ -263,7 +272,7 @@ impl App {
                 library.favorite_shows.start(&self.jobs, move || client.favorite_shows())
             }
             View::Artists if library.followed.wants_load() => library.followed.start(&self.jobs, move || client.favorite_artists()),
-            View::Home | View::Albums | View::Podcasts | View::Artists | View::Lyrics => {}
+            View::Home | View::Albums | View::Podcasts | View::Artists | View::Lyrics | View::Crate => {}
             View::Artist(artist) => {
                 let id = artist.id.clone();
                 self.browse.artist_page.start(&self.jobs, move || client.artist(&id));
@@ -288,7 +297,8 @@ impl App {
             | View::Podcasts
             | View::Artist(_)
             | View::Channel(_)
-            | View::Lyrics => {}
+            | View::Lyrics
+            | View::Crate => {}
             View::Search if browse.search.trim().is_empty() => {}
             // A pasted link to the source opens what it points at instead of searching.
             View::Search if client.is_link(&browse.search) => {
@@ -501,6 +511,7 @@ impl App {
         }
         self.mini_player_shortcut(ctx, acts);
         self.add_to_recent_shortcut(ctx, st, acts);
+        self.crate_shortcut(ctx, st, acts);
         if self.mini_player.is_none() {
             self.history_input(ctx, acts);
             self.settings_shortcut(ctx, acts);
@@ -599,6 +610,7 @@ impl eframe::App for App {
                 .show(ui, |ui| match panel {
                     SidePanel::Queue => self.queue_panel(ui, &st, &mut acts),
                     SidePanel::History => self.history_panel(ui, &mut acts),
+                    SidePanel::Crate => self.crate_panel(ui, &st, &mut acts),
                 });
         }
         let margin = metrics::CONTENT_MARGIN;

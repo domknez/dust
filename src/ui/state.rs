@@ -23,6 +23,8 @@ pub enum View {
     Channel(Box<ChannelView>),
     /// The playing track's lyrics.
     Lyrics,
+    /// Things saved to check out later.
+    Crate,
 }
 
 /// A page of sections being shown: which, and its title for before it loads.

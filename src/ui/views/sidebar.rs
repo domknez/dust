@@ -49,6 +49,12 @@ impl App {
                 acts.push(Action::Open(view.clone()));
             }
         }
+        // The Crate, with how many in it are new.
+        let new = self.crate_box.new_count();
+        let count = (new > 0).then(|| new.to_string());
+        if widgets::sidebar_item(ui, "Crate", count.as_deref(), self.browse.view == View::Crate).clicked() {
+            acts.push(Action::OpenCrate(None, None));
+        }
         ui.spacing_mut().item_spacing.y = 6.0;
         // "PLAYLISTS / n ›" folds the list away or brings it back; + makes a new,
         // empty playlist.

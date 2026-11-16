@@ -6,6 +6,7 @@ use crate::player::{State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
+use crate::ui::crate_store::Thing;
 use crate::ui::format::total_clock;
 use crate::ui::playlist_edit::{Dialog, Edit};
 use crate::ui::state::{Coll, CollSource, View, playable};
@@ -132,7 +133,8 @@ impl App {
             | View::Podcasts
             | View::Artist(_)
             | View::Channel(_)
-            | View::Lyrics => Header::default(),
+            | View::Lyrics
+            | View::Crate => Header::default(),
         }
     }
 
@@ -260,6 +262,19 @@ impl App {
                         TrackMenu::AddTo(playlist) => Action::EditPlaylist(Edit::Add { playlist, tracks: self.browse.tracks.clone() }),
                         _ => Action::NewPlaylist(playable(self.browse.tracks.clone())),
                     });
+                    // An album can be saved to check out later.
+                    if let View::Collection(coll) = &self.browse.view
+                        && let CollSource::Album(id) = &coll.source
+                        && widgets::menu_row(ui, Some(Icon::Crate), "Save to Crate", None, false, colors().text).clicked()
+                    {
+                        let album = Thing::Album {
+                            id: id.clone(),
+                            title: coll.title.clone(),
+                            artist: coll.subtitle.clone(),
+                            picture: coll.picture.clone(),
+                        };
+                        pick = Some(Action::SaveToCrate(album, String::new()));
+                    }
                     if let Some(playlist) = editable {
                         widgets::divider(ui);
                         if widgets::menu_row(ui, None, "Rename…", None, false, colors().text).clicked() {

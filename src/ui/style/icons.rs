@@ -55,6 +55,8 @@ pub enum Icon {
     /// Back / forward.
     ChevronLeft,
     ChevronRight,
+    /// The Crate: an open box with records in it.
+    Crate,
 }
 
 fn p(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -312,6 +314,15 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             let s = Stroke::new(stroke.width, color);
             painter.add(Shape::line(vec![p(r, 0.28, 0.4), p(r, 0.5, 0.2), p(r, 0.72, 0.4)], s));
             painter.add(Shape::line(vec![p(r, 0.28, 0.6), p(r, 0.5, 0.8), p(r, 0.72, 0.6)], s));
+        }
+        Icon::Crate => {
+            line(p(r, 0.1, 0.44), p(r, 0.9, 0.44));
+            line(p(r, 0.16, 0.44), p(r, 0.16, 0.86));
+            line(p(r, 0.84, 0.44), p(r, 0.84, 0.86));
+            line(p(r, 0.16, 0.86), p(r, 0.84, 0.86));
+            line(p(r, 0.16, 0.65), p(r, 0.84, 0.65));
+            line(p(r, 0.38, 0.14), p(r, 0.38, 0.44));
+            line(p(r, 0.58, 0.22), p(r, 0.58, 0.44));
         }
         Icon::Note => {
             painter.circle_filled(p(r, 0.36, 0.72), w * 0.13, color);

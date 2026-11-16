@@ -39,6 +39,7 @@ impl App {
                 self.channel_view(ui, st, &channel, acts);
             }
             View::Lyrics => self.lyrics_page(ui, st, acts),
+            View::Crate => self.crate_page(ui, acts),
         }
     }
 

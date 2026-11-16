@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Crate: save things to check out later (tracks, albums, artists, or a note of a name
+  you heard), from any source. `⌘⇧S` saves what's playing; *Save to Crate* in track
+  menus, an album's ⋯ menu and on artist pages; a *crate* tab in the panel on the
+  right to save and tick off what you've heard; a Crate page in the sidebar with
+  filters and each entry in detail (play, add to a playlist, search for it, a note)
+
 ## 0.25.0 (2026-11-16)
 
 - Play history: the panel on the right has *up next* and *history*. dust keeps every

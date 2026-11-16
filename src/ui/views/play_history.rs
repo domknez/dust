@@ -7,8 +7,9 @@ use crate::model::Likeable;
 use crate::player::Cmd;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
+use crate::ui::crate_store::Thing;
 use crate::ui::format::{mmss, thousands};
-use crate::ui::plays::{KEEP, Play, when};
+use crate::ui::plays::{KEEP, Play, flow_label, when};
 use crate::ui::state::PlayMode;
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, MenuTarget, Playlists, TrackMenu, text_left};
@@ -89,8 +90,10 @@ impl App {
                             }
                         }
                         let target = MenuTarget { count: 1, playable: track.available };
-                        if let Some(choice) = widgets::track_menu(&resp, playlists, false, mix && !track.is_episode(), target) {
-                            acts.push(Action::TrackMenu(vec![track.clone()], choice));
+                        match widgets::track_menu(&resp, playlists, false, mix && !track.is_episode(), target) {
+                            Some(TrackMenu::Crate) => acts.push(Action::SaveToCrate(Thing::Track(track.clone()), "History".into())),
+                            Some(choice) => acts.push(Action::TrackMenu(vec![track.clone()], choice)),
+                            None => {}
                         }
                         let over_heart = hovered && resp.hover_pos().is_some_and(|pos| pos.x > right - 24.0);
                         if resp.clicked() && !over_heart && track.available {
@@ -140,20 +143,11 @@ fn lines<'a>(plays: impl Iterator<Item = &'a Play>, zone: &when::Zone, radio: bo
 /// next to it are from the same album. None for a mix of things.
 fn from(play: &Play, newer: Option<&Play>, older: Option<&Play>, radio: bool) -> Option<String> {
     if let Some(flow) = &play.flow {
-        let name = if radio { "Radio" } else { "Flow" };
-        return Some(match &flow.mood {
-            Some(mood) => format!("{name} · {}", mood_name(mood)),
-            None => name.to_string(),
-        });
+        return Some(flow_label(flow, radio));
     }
     let album = &play.track.album_id;
     let same = |other: Option<&Play>| other.is_some_and(|o| o.flow.is_none() && !album.is_empty() && o.track.album_id == *album);
     (same(newer) || same(older)).then(|| format!("Album · {}", play.track.album))
-}
-
-/// "genre-classicrock" -> "classicrock", "you_and_me" -> "you and me".
-fn mood_name(mood: &str) -> String {
-    mood.strip_prefix(crate::model::GENRE_FLOW).unwrap_or(mood).replace(['-', '_'], " ")
 }
 
 fn empty_state(ui: &mut Ui) {

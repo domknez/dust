@@ -9,6 +9,7 @@ use crate::player::{State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
+use crate::ui::crate_store::Thing;
 use crate::ui::format::thousands;
 use crate::ui::state::{ArtistView, Coll, CollSource, PlayMode};
 use crate::ui::style::icons::Icon;
@@ -171,6 +172,11 @@ impl App {
             let (label, icon) = if following { ("Following", Icon::Heart) } else { ("Follow", Icon::HeartOutline) };
             if widgets::pill(ui, label, Some(icon), false).clicked() {
                 acts.push(Action::ToggleLike(what));
+            }
+            let save = widgets::pill(ui, "Save", Some(Icon::Crate), false).on_hover_text("Save to your Crate, to check out later");
+            if save.clicked() {
+                let thing = Thing::Artist { id: artist.id.clone(), name: artist.name.clone(), picture: artist.picture.clone() };
+                acts.push(Action::SaveToCrate(thing, String::new()));
             }
         });
     }

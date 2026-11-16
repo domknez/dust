@@ -126,6 +126,15 @@ impl Plays {
     }
 }
 
+/// "Flow", "Flow · chill", "Flow · classicrock" (a server's Radio with `radio`).
+pub fn flow_label(flow: &Flow, radio: bool) -> String {
+    let name = if radio { "Radio" } else { "Flow" };
+    match &flow.mood {
+        Some(mood) => format!("{name} · {}", mood.strip_prefix(crate::model::GENRE_FLOW).unwrap_or(mood).replace(['-', '_'], " ")),
+        None => name.to_string(),
+    }
+}
+
 /// When plays happened, as the history shows it: by local day, and the time of day.
 pub mod when {
     use jiff::civil::Date;

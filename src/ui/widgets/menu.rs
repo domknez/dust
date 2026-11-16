@@ -125,6 +125,8 @@ pub enum TrackMenu {
     Remove,
     /// Play songs like it, starting with it.
     Mix,
+    /// Save to the Crate, to check out later.
+    Crate,
 }
 
 /// What a track menu acts on: one track or several picked together, and whether
@@ -159,6 +161,9 @@ pub fn track_menu(resp: &Response, playlists: Playlists, removable: bool, mix: b
             }
             if let Some(choice) = add_to_playlist(ui, playlists) {
                 pick = Some(choice);
+            }
+            if menu_row(ui, Some(Icon::Crate), "Save to Crate", None, false, colors().text).clicked() {
+                pick = Some(TrackMenu::Crate);
             }
         }
         if removable {
@@ -310,6 +315,9 @@ pub fn now_playing_menu(ui: &mut Ui, playlists: Playlists, offer: NowPlayingOffe
         }
         if offer.mix && menu_row(ui, Some(Icon::Streaming), "Start track mix", None, false, p.text).clicked() {
             pick = Some(NowPlayingMenu::Track(TrackMenu::Mix));
+        }
+        if menu_row(ui, Some(Icon::Crate), "Save to Crate", None, false, p.text).clicked() {
+            pick = Some(NowPlayingMenu::Track(TrackMenu::Crate));
         }
     }
     if offer.artist || offer.album.is_some() {

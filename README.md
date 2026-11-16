@@ -69,7 +69,15 @@ and *Connect a Navidrome server*.
   page of their own (Back, `Esc` or the button again returns), with the queue still
   beside them; synced ones follow the song with the sung line lit, and clicking a line
   jumps there
-- **Play history:** the panel on the right has *up next* and *history*: every track
+- **Crate:** things to check out later, from any source. `⌘⇧S` (or *Save* in the
+  panel's *crate* tab) saves what's playing, with the Flow it came from; right-click
+  any track → *Save to Crate*, an album's ⋯ menu or an artist's *Save* add those, and
+  the tab's field takes a name you heard somewhere ("that Turkish psych band"). Each
+  is *new* until you tick it heard. The Crate page (in the sidebar, with how many are
+  new) lists everything with filters and shows one entry in full: play it, add it to a
+  playlist, open the album or artist, search for a note or for something saved on the
+  other source, and keep a note on it. Kept on this computer in `crate.jsonl`
+- **Play history:** the panel on the right has *up next*, *history* and *crate*: every track
   you heard, from any source, newest first by day, with the Flow or album it came from
   and skips marked. Click one to hear it again, right-click to queue it or add it to a
   playlist, the heart likes it. dust keeps the last 2,000 on this computer, so it works
@@ -365,6 +373,7 @@ src/
 │                      the account menu's rows (MENU), the server form
 │   ├── now_playing.rs media keys and the OS Now Playing widget
 │   ├── plays.rs       the play history (history.jsonl, next to the settings file)
+│   ├── crate_store.rs the Crate (crate.jsonl, a log of changes, next to the settings file)
 │   ├── views/         one file per screen or panel
 │   ├── widgets/       reusable painted components
 │   └── style/         palette, type scale, metrics, icons — all visual constants live here

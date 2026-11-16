@@ -6,11 +6,12 @@
 //! a page's open tab) is still changed in place while drawing.
 
 use super::app::{App, SidePanel};
+use super::crate_store::{Change, Thing};
 use super::load::Load;
 use super::playlist_edit::{Dialog, Edit};
 use super::state::{ArtistView, Coll, CollSource, PlayMode, View, playable};
 use super::style::Appearance;
-use super::views::{SleepChoice, reveal_log};
+use super::views::{Filter, SleepChoice, reveal_log};
 use super::widgets::TrackMenu;
 use crate::model::{ArtistRef, Likeable, Quality, Track};
 use crate::player::{Cmd, Output, Repeat, Sleep};
@@ -65,6 +66,18 @@ pub enum Action {
     /// Ask before renaming or deleting an own playlist.
     PlaylistDialog(Dialog),
 
+    // Crate
+    /// Save to the Crate; the text says where it was found.
+    SaveToCrate(Thing, String),
+    /// A note into the Crate.
+    CrateNote(String),
+    /// Change (or remove) an entry in the Crate.
+    Crate(Change),
+    /// The Crate page, with this entry shown and/or this filter.
+    OpenCrate(Option<String>, Option<Filter>),
+    /// Search the source for this.
+    SearchFor(String),
+
     // Window
     /// Open the panel on the right (at its tab shown last), or close it.
     TogglePanel,
@@ -106,7 +119,14 @@ impl Action {
     fn opens_page(&self) -> bool {
         matches!(
             self,
-            Action::Open(_) | Action::OpenSearch | Action::Back | Action::Forward | Action::OpenArtist(_) | Action::OpenCollection(_)
+            Action::Open(_)
+                | Action::OpenSearch
+                | Action::Back
+                | Action::Forward
+                | Action::OpenArtist(_)
+                | Action::OpenCollection(_)
+                | Action::OpenCrate(..)
+                | Action::SearchFor(_)
         )
     }
 }
@@ -173,7 +193,12 @@ impl App {
                 }
             }
             Action::ToggleLike(what) => self.toggle_like(what),
-            Action::TrackMenu(tracks, choice) => self.track_menu_choice(tracks, choice),
+            Action::TrackMenu(tracks, choice) => self.track_menu_choice(ctx, tracks, choice),
+            Action::SaveToCrate(thing, from) => self.save_to_crate(ctx, thing, from),
+            Action::CrateNote(note) => self.crate_note(note),
+            Action::Crate(change) => self.crate_box.change(change),
+            Action::OpenCrate(entry, filter) => self.open_crate(entry, filter),
+            Action::SearchFor(query) => self.search_for(query),
             Action::EditPlaylist(edit) => self.edit_playlist(edit),
             Action::NewPlaylist(tracks) => self.new_playlist(tracks),
             Action::PlaylistDialog(dialog) => self.library.editing.dialog = Some(dialog),
@@ -204,7 +229,7 @@ impl App {
     }
 
     /// Act on the right-click menu of a track, or of the tracks picked together.
-    fn track_menu_choice(&mut self, tracks: Vec<Track>, choice: TrackMenu) {
+    fn track_menu_choice(&mut self, ctx: &egui::Context, tracks: Vec<Track>, choice: TrackMenu) {
         match choice {
             TrackMenu::Play(mode) => {
                 let tracks = playable(tracks);
@@ -217,6 +242,11 @@ impl App {
             TrackMenu::Mix => {
                 if let Some(track) = tracks.first() {
                     self.play_source(CollSource::TrackMix(track.id.to_string()), PlayMode::Now);
+                }
+            }
+            TrackMenu::Crate => {
+                for track in tracks.into_iter().filter(|t| !t.is_episode()) {
+                    self.save_to_crate(ctx, Thing::Track(track), String::new());
                 }
             }
             TrackMenu::Remove => {
@@ -253,6 +283,25 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn a_track_saved_twice_is_one_entry_new_again() {
+        let mut t = TestApp::new("");
+        t.app.source_ready(deezer());
+        let save = || Action::SaveToCrate(Thing::Track(track(1, true)), "Flow · chill".into());
+        t.update(save());
+        t.update(save());
+        let entries = t.app.crate_box.entries().to_vec();
+        assert_eq!(entries.len(), 1);
+        assert_eq!((entries[0].source.as_str(), entries[0].from.as_str()), ("deezer", "Flow · chill"));
+        t.update(Action::Crate(Change::Heard { id: entries[0].id.clone(), heard: true }));
+        assert_eq!(t.app.crate_box.new_count(), 0);
+        t.update(save());
+        assert_eq!((t.app.crate_box.entries().len(), t.app.crate_box.new_count()), (1, 1), "saved again: new again");
+        t.update(Action::CrateNote("  ".into()));
+        t.update(Action::CrateNote("Elder, from Ana".into()));
+        assert_eq!(t.app.crate_box.entries()[0].title(), "Elder, from Ana", "newest first");
     }
 
     #[test]
