@@ -18,6 +18,9 @@
   with three tracks of each new album and artist
 - Artist pages: a *Timeline* tab in the discography, every release by year, each
   marked heard or not heard (from the play history)
+- Command palette (`⌘K`, or *Commands…* in the account menu): pages, playlists,
+  artists you listen to, and things to do with the track playing, Flow moods and the
+  player, found by typing
 
 ## 0.27.1 (2026-11-16)
 

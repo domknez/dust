@@ -164,7 +164,7 @@ impl crate::ui::app::App {
     }
 
     /// The artists heard most in the last 90 days, by plays heard through.
-    fn listened_artists(&self, source: &str, now: u64) -> Artists {
+    pub(in crate::ui) fn listened_artists(&self, source: &str, now: u64) -> Artists {
         let since = now.saturating_sub(90 * 24 * 60 * 60);
         let mut count: std::collections::HashMap<(String, String), u32> = std::collections::HashMap::new();
         for play in self.plays.oldest_first(source).into_iter().filter(|p| p.at >= since && !p.skipped) {

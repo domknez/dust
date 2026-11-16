@@ -128,6 +128,8 @@ pub struct App {
     pub(super) releases: super::release_watch::Watch,
     /// The Crate's new tracks being put together to play.
     pub(super) crate_radio: super::load::Load<Vec<crate::model::Track>>,
+    /// The command palette, while it's open.
+    pub(super) palette: Option<super::palette::Palette>,
     /// Syncing the Crate and history through a folder, and their daily backup.
     pub(super) sync: SyncState,
     /// The Settings window is open.
@@ -215,6 +217,7 @@ impl App {
             stats_view: Default::default(),
             releases: Default::default(),
             crate_radio: Default::default(),
+            palette: None,
             sync: SyncState::new(sync_dir),
             show_settings: false,
             lyrics: Default::default(),
@@ -541,6 +544,7 @@ impl App {
             self.history_input(ctx, acts);
             self.settings_shortcut(ctx, acts);
             self.nav_shortcuts(ctx, acts);
+            self.palette_shortcut(ctx);
         }
     }
 
@@ -651,6 +655,7 @@ impl eframe::App for App {
         self.playlist_dialog(&ctx, &mut acts);
         self.settings_window(&ctx, &mut acts);
         self.server_dialog(&ctx, &mut acts);
+        self.palette_window(&ctx, &st, &mut acts);
         self.apply(&ctx, acts);
     }
 }

@@ -95,6 +95,8 @@ pub enum Action {
     ShowPanel(Option<SidePanel>),
     ToggleMiniPlayer,
     ShowSettings(bool),
+    /// The command palette.
+    OpenPalette,
     /// Fold the sidebar's playlist list away, or bring it back.
     ToggleSidebarPlaylists,
 
@@ -223,6 +225,7 @@ impl App {
             Action::ShowPanel(panel) => self.show_side_panel(panel),
             Action::ToggleMiniPlayer => self.toggle_mini_player(ctx),
             Action::ShowSettings(show) => self.show_settings = show,
+            Action::OpenPalette => self.palette = Some(Default::default()),
             Action::ToggleSidebarPlaylists => self.prefs.update(|p| p.sidebar_playlists = !p.sidebar_playlists),
             Action::Quality(quality) => self.set_quality(quality),
             Action::Appearance(appearance) => self.set_appearance(appearance),

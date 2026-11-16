@@ -103,6 +103,11 @@ and *Connect a Navidrome server*.
   any artist name to get there. *Mix* plays songs by the artist and artists like them.
   The discography's *Timeline* tab lists every release by year, each marked *heard* or
   *not heard* from your play history, with how many you've heard
+- **Command palette:** `⌘K` (Ctrl+K elsewhere, or *Commands…* in the account menu):
+  type to go to a page, a playlist or an artist you listen to, or to do something:
+  like, add to a playlist or save the track playing to the Crate, play Flow by mood or
+  genre, shuffle, repeat, a sleep timer. `↑` `↓` and Enter; the last row searches for
+  what you typed
 - **Toasts:** what happened off the page (a track that can't be played, a playlist
   change, a like or follow) shows briefly in the bottom right corner
 - **Streamed, not stored:** audio is decoded on the fly — nothing is written to disk
@@ -393,6 +398,7 @@ src/
 │   ├── plays.rs       the play history (history.jsonl, next to the settings file)
 │   ├── stats.rs       what the play history adds up to (the Listening page)
 │   ├── release_watch.rs new releases of the artists followed and played (Deezer)
+│   ├── palette.rs     the command palette (⌘K)
 │   ├── crate_store.rs the Crate (crate.jsonl, a log of changes, next to the settings file)
 │   ├── sync.rs        where the Crate and history are kept: here, or a sync folder (one file
 │                      per computer, merged on read); daily backups

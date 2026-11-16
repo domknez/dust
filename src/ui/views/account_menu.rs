@@ -23,6 +23,10 @@ impl App {
             widgets::divider(ui);
             self.source_rows(ui, acts);
             widgets::divider(ui);
+            if widgets::shortcut_row(ui, Icon::Search, "Commands…", crate::ui::palette::KEYS).clicked() {
+                acts.push(Action::OpenPalette);
+                ui.close();
+            }
             if widgets::shortcut_row(ui, Icon::Settings, "Settings…", SETTINGS_HINT).clicked() {
                 acts.push(Action::ShowSettings(true));
                 ui.close();
