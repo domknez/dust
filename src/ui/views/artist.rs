@@ -54,9 +54,16 @@ impl App {
             let right_width = if two { width - GAP - left_width } else { width };
             let popular = page.top.len().min(POPULAR);
             let popular_height = if popular == 0 { 0.0 } else { 36.0 + popular as f32 * metrics::POPULAR_ROW + 34.0 };
-            let tab = self.browse.discography_tab.min(discography.len().saturating_sub(1));
+            // The tabs, then the timeline: everything by year.
+            let tab = self.browse.discography_tab.min(discography.len());
+            let on_timeline = !discography.is_empty() && tab == discography.len();
+            let years = timeline(&discography);
             let items = discography.get(tab).map_or(&[][..], |(_, s)| &s.items[..]);
-            let grid_height = if discography.is_empty() { 0.0 } else { 40.0 + RELEASES.height(items.len(), right_width) };
+            let grid_height = match (discography.is_empty(), on_timeline) {
+                (true, _) => 0.0,
+                (false, true) => 40.0 + timeline_height(&years),
+                (false, false) => 40.0 + RELEASES.height(items.len(), right_width),
+            };
             let (area, _) = if two {
                 ui.allocate_exact_size(vec2(width, popular_height.max(grid_height)), Sense::hover())
             } else {
@@ -99,12 +106,17 @@ impl App {
             }
             if !discography.is_empty() {
                 caption(ui, right.min, "DISCOGRAPHY");
-                let labels: Vec<&str> = discography.iter().map(|(tab, _)| *tab).collect();
+                let mut labels: Vec<&str> = discography.iter().map(|(tab, _)| *tab).collect();
+                labels.push("Timeline");
                 if let Some(i) = tabs(ui, pos2(right.right(), right.top() + 10.0), &labels, tab) {
                     self.browse.discography_tab = i;
                 }
                 let grid = Rect::from_min_max(right.min + vec2(0.0, 40.0), right.max);
-                RELEASES.show(ui, grid, items.len(), |ui, k| release(ui, &mut self.covers, &items[k], acts));
+                if on_timeline {
+                    show_timeline(ui, &mut self.covers, &self.plays, grid, &years, acts);
+                } else {
+                    RELEASES.show(ui, grid, items.len(), |ui, k| release(ui, &mut self.covers, &items[k], acts));
+                }
             }
             // Playlists featuring them, related artists.
             for (i, section) in page.sections.iter().enumerate() {
@@ -253,6 +265,89 @@ fn release(ui: &mut Ui, covers: &mut Covers, item: &Item, acts: &mut Actions) {
     }
 }
 
+const YEAR_HEAD: f32 = 34.0;
+const TIMELINE_ROW: f32 = 44.0;
+/// The line above the timeline: how much of it was heard.
+const TIMELINE_SUMMARY: f32 = 28.0;
+
+/// Every release of the discography by year, newest first; ones without a year
+/// last.
+fn timeline<'a>(discography: &[(&str, &'a Section)]) -> Vec<(String, Vec<&'a Item>)> {
+    let mut years: Vec<(String, Vec<&Item>)> = Vec::new();
+    for (_, section) in discography {
+        for item in &section.items {
+            let year = item.subtitle.split(" · ").next().filter(|y| y.len() == 4 && y.chars().all(|c| c.is_ascii_digit()));
+            let year = year.unwrap_or("").to_string();
+            match years.iter_mut().find(|(y, _)| *y == year) {
+                Some((_, items)) => items.push(item),
+                None => years.push((year, vec![item])),
+            }
+        }
+    }
+    // Newest first; "" (no year) sorts last.
+    years.sort_by(|a, b| match (a.0.is_empty(), b.0.is_empty()) {
+        (true, false) => std::cmp::Ordering::Greater,
+        (false, true) => std::cmp::Ordering::Less,
+        _ => b.0.cmp(&a.0),
+    });
+    years
+}
+
+fn timeline_height(years: &[(String, Vec<&Item>)]) -> f32 {
+    TIMELINE_SUMMARY + years.iter().map(|(_, items)| YEAR_HEAD + items.len() as f32 * TIMELINE_ROW).sum::<f32>()
+}
+
+/// The timeline: how many releases were heard, then each year with its releases,
+/// each marked heard (a track of it is in the play history) or not.
+fn show_timeline(
+    ui: &mut Ui,
+    covers: &mut Covers,
+    plays: &crate::ui::plays::Plays,
+    area: Rect,
+    years: &[(String, Vec<&Item>)],
+    acts: &mut Actions,
+) {
+    let p = colors();
+    let all: usize = years.iter().map(|(_, items)| items.len()).sum();
+    let heard = years.iter().flat_map(|(_, items)| items).filter(|item| plays.has_heard_album(&item.id)).count();
+    let summary = format!("You've heard {heard} of {all} releases");
+    text_left(ui.painter(), pos2(area.left(), area.top() + 8.0), &summary, ty::SMALL, p.dim, area.width());
+    let mut y = area.top() + TIMELINE_SUMMARY;
+    for (year, items) in years {
+        let label = if year.is_empty() { "Undated" } else { year.as_str() };
+        text_left(ui.painter(), pos2(area.left(), y + YEAR_HEAD / 2.0 + 4.0), label, ty::SECTION_TITLE, p.text, area.width());
+        ui.painter().hline((area.left() + 70.0)..=area.right(), y + YEAR_HEAD / 2.0 + 4.0, egui::Stroke::new(1.0, p.line));
+        y += YEAR_HEAD;
+        for item in items {
+            let rect = Rect::from_min_size(pos2(area.left(), y), vec2(area.width(), TIMELINE_ROW));
+            y += TIMELINE_ROW;
+            let Some(coll) = Coll::from_item(item) else { continue };
+            let resp = ui.interact(rect, ui.scope_id().with(("timeline", &item.id)), Sense::click());
+            if resp.hovered() {
+                ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.hover);
+            }
+            let art = Rect::from_min_size(pos2(rect.left() + 6.0, rect.center().y - 17.0), Vec2::splat(34.0));
+            widgets::cover(ui, covers, item.picture.as_ref(), metrics::THUMB_PX, art, radius::THUMB);
+            let was_heard = plays.has_heard_album(&item.id);
+            let (mark, mark_color) = if was_heard { ("heard", p.accent) } else { ("not heard", p.faint) };
+            let mark_width = ui.painter().layout_no_wrap(mark.into(), ty::META.font(), mark_color).size().x;
+            ui.painter().text(pos2(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, mark, ty::META.font(), mark_color);
+            let x = art.right() + 12.0;
+            let width = rect.right() - x - mark_width - 20.0;
+            let kind = item.subtitle.split(" · ").nth(1).unwrap_or_default();
+            let title_color = if was_heard { p.text } else { p.dim };
+            text_left(ui.painter(), pos2(x, rect.center().y - 7.0), &item.title, ty::BODY.strong(), title_color, width);
+            text_left(ui.painter(), pos2(x, rect.center().y + 9.0), kind, ty::CAPTION, p.faint, width);
+            if let Some(mode) = widgets::queue_menu(&resp) {
+                acts.push(Action::PlaySource(coll.source.clone(), mode));
+            }
+            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                acts.push(Action::OpenCollection(coll));
+            }
+        }
+    }
+}
+
 /// A dashed circle around the artist's picture.
 fn dashed_ring(painter: &egui::Painter, center: egui::Pos2, radius: f32, color: egui::Color32) {
     let dashes = 72;
@@ -262,5 +357,25 @@ fn dashed_ring(painter: &egui::Painter, center: egui::Pos2, radius: f32, color: 
         let (from, to) = (a, a + step * 0.35);
         let point = |t: f32| center + vec2(t.cos(), t.sin()) * radius;
         painter.line_segment([point(from), point(to)], egui::Stroke::new(1.5, color));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::ItemKind;
+
+    fn item(id: &str, subtitle: &str) -> Item {
+        Item { kind: ItemKind::Album, id: id.into(), title: id.into(), subtitle: subtitle.into(), picture: None }
+    }
+
+    #[test]
+    fn the_timeline_goes_by_year_newest_first() {
+        let albums = Section::new("Albums", vec![item("a", "2024 · Album"), item("b", "2019 · Album")]);
+        let singles = Section::new("Singles & EPs", vec![item("c", "2024 · Single"), item("d", "Single")]);
+        let years = timeline(&[("Albums", &albums), ("Singles", &singles)]);
+        let shown: Vec<(&str, Vec<&str>)> =
+            years.iter().map(|(y, items)| (y.as_str(), items.iter().map(|i| i.id.as_str()).collect())).collect();
+        assert_eq!(shown, [("2024", vec!["a", "c"]), ("2019", vec!["b"]), ("", vec!["d"])]);
     }
 }

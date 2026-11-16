@@ -81,6 +81,8 @@ pub struct Plays {
     plays: Vec<Play>,
     /// Every track in `plays`.
     heard: HashSet<TrackId>,
+    /// The albums of those tracks, by id.
+    albums: HashSet<String>,
     log: Log,
     /// Lines in this computer's file, to know when to compact it.
     lines: usize,
@@ -99,7 +101,8 @@ impl Plays {
         }
         let lines = log.own_lines();
         let heard = plays.iter().map(|p| p.track.id.clone()).collect();
-        Plays { plays, heard, log, lines }
+        let albums = plays.iter().filter(|p| !p.track.album_id.is_empty()).map(|p| p.track.album_id.clone()).collect();
+        Plays { plays, heard, albums, log, lines }
     }
 
     /// Read the log again (another computer added to it).
@@ -118,6 +121,9 @@ impl Plays {
     pub fn record(&mut self, play: Play) {
         let line = play.encode().to_string();
         self.heard.insert(play.track.id.clone());
+        if !play.track.album_id.is_empty() {
+            self.albums.insert(play.track.album_id.clone());
+        }
         let at = self.plays.partition_point(|p| p.at <= play.at);
         self.plays.insert(at, play);
         if self.plays.len() > KEEP {
@@ -155,6 +161,11 @@ impl Plays {
     /// Whether `id` was played before (any source, any computer; the plays kept).
     pub fn has_heard(&self, id: &TrackId) -> bool {
         self.heard.contains(id)
+    }
+
+    /// Whether a track of album `id` was played before.
+    pub fn has_heard_album(&self, id: &str) -> bool {
+        self.albums.contains(id)
     }
 
     /// The tracks played before, for Flow to leave out.

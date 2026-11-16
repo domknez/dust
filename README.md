@@ -100,7 +100,9 @@ and *Connect a Navidrome server*.
   to an hour the music fades out over 30 seconds and pauses (your volume is back for
   the next play), or it stops at the end of the track (the next one waits for play)
 - **Artist pages:** popular tracks and the full discography, plus related artists; click
-  any artist name to get there. *Mix* plays songs by the artist and artists like them
+  any artist name to get there. *Mix* plays songs by the artist and artists like them.
+  The discography's *Timeline* tab lists every release by year, each marked *heard* or
+  *not heard* from your play history, with how many you've heard
 - **Toasts:** what happened off the page (a track that can't be played, a playlist
   change, a like or follow) shows briefly in the bottom right corner
 - **Streamed, not stored:** audio is decoded on the fly — nothing is written to disk
