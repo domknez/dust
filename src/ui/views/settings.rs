@@ -62,6 +62,12 @@ impl App {
         if widgets::menu_row(ui, None, title, Some(sub), self.prefs.report_listens, colors().text).clicked() {
             acts.push(Action::ToggleReportListens);
         }
+        if self.features().releases {
+            let sub = "Albums, singles and EPs from artists you follow or play a lot go in your Crate as new";
+            if widgets::menu_row(ui, None, "New releases to the Crate", Some(sub), self.prefs.release_alerts, colors().text).clicked() {
+                acts.push(Action::ReleaseAlerts(!self.prefs.release_alerts));
+            }
+        }
         ui.add_space(12.0);
         self.sync_settings(ui, acts);
         ui.add_space(12.0);

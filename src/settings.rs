@@ -45,6 +45,8 @@ pub struct Prefs {
     pub sidebar_playlists: bool,
     /// Endless Flow (Radio) leaves out the tracks in the play history.
     pub flow_new_only: bool,
+    /// New releases from the artists followed and listened to go in the Crate.
+    pub release_alerts: bool,
     /// Playlists tracks were last added to, the latest first: "Add to playlist"
     /// offers them on top and ⌘D adds to the first. Ids of every source mix here;
     /// each offers only its own.
@@ -84,6 +86,7 @@ impl Prefs {
             auto_update: get("auto_update") != Some("false"),
             sidebar_playlists: get("sidebar_playlists") != Some("closed"),
             flow_new_only: get("flow_new_only") == Some("true"),
+            release_alerts: get("release_alerts") != Some("false"),
             recent_playlists: get("recent_playlists")
                 .map(|ids| ids.split(',').filter(|id| !id.is_empty()).map(PlaylistId::new).collect())
                 .unwrap_or_default(),
@@ -121,7 +124,7 @@ impl Prefs {
     }
 
     /// Every preference as its key and saved value.
-    fn values(&self) -> [(&'static str, String); 14] {
+    fn values(&self) -> [(&'static str, String); 15] {
         let flag = |on: bool| if on { "true" } else { "false" }.to_string();
         [
             ("source", self.source.key.into()),
@@ -135,6 +138,7 @@ impl Prefs {
             ("auto_update", flag(self.auto_update)),
             ("sidebar_playlists", if self.sidebar_playlists { "open" } else { "closed" }.into()),
             ("flow_new_only", flag(self.flow_new_only)),
+            ("release_alerts", flag(self.release_alerts)),
             ("recent_playlists", self.recent_playlists.iter().map(PlaylistId::as_str).collect::<Vec<_>>().join(",")),
             ("sync_folder", self.sync_folder.as_ref().map(|f| f.display().to_string()).unwrap_or_default()),
             ("device", self.device.clone()),
@@ -169,7 +173,7 @@ mod tests {
     use super::*;
 
     /// A file as dust writes it.
-    const SAVED: &str = "auto_update=false\ndevice=Air-3f2a\nflow_new_only=true\noutput=Kitchen\nquality=flac\nrecent_playlists=12,ab-3\nrepeat=all\n\
+    const SAVED: &str = "auto_update=false\ndevice=Air-3f2a\nflow_new_only=true\noutput=Kitchen\nquality=flac\nrecent_playlists=12,ab-3\nrelease_alerts=false\nrepeat=all\n\
                          report_listens=false\nshuffle=true\nsidebar_playlists=closed\nsource=navidrome\n\
                          sync_folder=/Users/me/Dropbox\ntheme=dark\nvolume=0.250\n";
 
@@ -179,7 +183,7 @@ mod tests {
         assert_eq!(p.source, crate::subsonic::ID);
         assert_eq!(p.quality, Quality::Flac);
         assert_eq!(p.theme, Appearance::Dark);
-        assert!(!p.report_listens && p.shuffle && !p.auto_update && !p.sidebar_playlists && p.flow_new_only);
+        assert!(!p.report_listens && p.shuffle && !p.auto_update && !p.sidebar_playlists && p.flow_new_only && !p.release_alerts);
         assert_eq!(p.repeat, Repeat::All);
         assert_eq!(p.output.as_deref(), Some("Kitchen"));
         assert_eq!(p.volume, 0.25);
@@ -203,7 +207,7 @@ mod tests {
         assert_eq!(p.source, crate::deezer::ID);
         assert_eq!(p.quality, Quality::Mp3_320);
         assert_eq!(p.theme, Appearance::System);
-        assert!(p.report_listens && !p.shuffle && p.auto_update && p.sidebar_playlists && !p.flow_new_only);
+        assert!(p.report_listens && !p.shuffle && p.auto_update && p.sidebar_playlists && !p.flow_new_only && p.release_alerts);
         assert_eq!(p.repeat, Repeat::Off);
         assert_eq!(p.output, None);
         assert_eq!(p.volume, 1.0);

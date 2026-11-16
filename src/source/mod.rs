@@ -14,7 +14,7 @@
 use crate::media::{OpenError, Playback};
 use crate::model::{
     AlbumInfo, Art, ArtResolver, ArtistPage, Error, Item, Likeable, Likes, Link, Listen, Lyrics, Page, Playlist, PlaylistId, Quality,
-    Result, SearchResults, Section, Track, TrackId,
+    Release, Result, SearchResults, Section, Track, TrackId,
 };
 use crate::player::library::Library;
 use std::sync::Arc;
@@ -62,15 +62,33 @@ pub struct Features {
     pub quality: bool,
     /// Playlists can be private rather than just the owner's.
     pub private_playlists: bool,
+    /// New releases from the artists followed and listened to are looked for.
+    pub releases: bool,
 }
 
 impl Features {
     /// Everything (what the UI assumes while no source is in use).
-    pub const ALL: Features =
-        Features { flow: true, explore: true, podcasts: true, track_mix: true, links: true, quality: true, private_playlists: true };
+    pub const ALL: Features = Features {
+        flow: true,
+        explore: true,
+        podcasts: true,
+        track_mix: true,
+        links: true,
+        quality: true,
+        private_playlists: true,
+        releases: true,
+    };
     /// Browsing and playing only.
-    pub const NONE: Features =
-        Features { flow: false, explore: false, podcasts: false, track_mix: false, links: false, quality: false, private_playlists: false };
+    pub const NONE: Features = Features {
+        flow: false,
+        explore: false,
+        podcasts: false,
+        track_mix: false,
+        links: false,
+        quality: false,
+        private_playlists: false,
+        releases: false,
+    };
 }
 
 /// A logged-in source, shared between the UI, background loads and the player.
@@ -168,6 +186,11 @@ pub trait Source: Send + Sync {
     }
     fn resolve_link(&self, _pasted: &str) -> Result<Link> {
         Err(unsupported("Links"))
+    }
+    /// An artist's albums, singles and EPs with the day each came out, for the
+    /// new release check.
+    fn releases(&self, _artist: &str) -> Result<Vec<Release>> {
+        Err(unsupported("New release alerts"))
     }
     /// A track's lyrics; None when there are none.
     fn lyrics(&self, _track: &TrackId) -> Result<Option<Lyrics>> {

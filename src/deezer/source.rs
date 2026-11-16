@@ -4,8 +4,8 @@
 use super::{Deezer, SERVICE, images, links};
 use crate::media::{OpenError, Playback};
 use crate::model::{
-    AlbumInfo, Art, ArtistPage, Item, Likeable, Likes, Link, Listen, Lyrics, Page, Playlist, PlaylistId, Quality, Result, SearchResults,
-    Section, Track, TrackId,
+    AlbumInfo, Art, ArtistPage, Item, Likeable, Likes, Link, Listen, Lyrics, Page, Playlist, PlaylistId, Quality, Release, Result,
+    SearchResults, Section, Track, TrackId,
 };
 use crate::source::{Features, Source, SourceId};
 
@@ -88,6 +88,10 @@ impl Source for Deezer {
 
     fn favorite_artists(&self) -> Result<Vec<Item>> {
         Deezer::favorite_artists(self)
+    }
+
+    fn releases(&self, artist: &str) -> Result<Vec<Release>> {
+        Deezer::releases(self, artist)
     }
 
     fn favorite_albums(&self) -> Result<Vec<Item>> {

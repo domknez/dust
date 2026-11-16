@@ -11,6 +11,9 @@
 - *new to me only* on the Flow (Radio) panel: Flow leaves out tracks already in the
   play history (unless a whole batch is heard ones, so it never runs dry)
 - A lime dot on a track's cover in *up next* marks one you've never heard
+- New releases (Deezer): every 12 hours dust checks the artists you follow and the 40
+  you played most in the last 90 days; their new albums, singles and EPs go in the
+  Crate as new, with a toast. Settings → *New releases to the Crate*
 
 ## 0.27.1 (2026-11-16)
 

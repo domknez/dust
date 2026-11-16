@@ -187,6 +187,7 @@ impl App {
             }
             self.clear_content();
             self.restore_queue(new);
+            self.releases = super::release_watch::Watch::load(self.queues.dir(), new.key);
         }
         let c = source.clone();
         self.library.playlists_load.start(&self.jobs, move || c.playlists());

@@ -88,6 +88,14 @@ pub struct Page {
     pub sections: Vec<Section>,
 }
 
+/// One of an artist's albums, singles or EPs, with the day it came out.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Release {
+    pub album: Item,
+    /// "2026-11-14"; may be just a year, or empty when the source doesn't say.
+    pub date: String,
+}
+
 /// An artist's page: header, popular tracks and card sections (discography,
 /// related artists, playlists).
 #[derive(Clone, Debug, Default)]

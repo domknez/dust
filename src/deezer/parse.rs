@@ -2,7 +2,8 @@
 
 use super::images::art;
 use crate::model::{
-    AlbumInfo, Art, ArtistPage, ArtistRef, DeezerSong, Episode, Item, ItemKind, Origin, Playlist, PlaylistId, Section, Track, TrackId,
+    AlbumInfo, Art, ArtistPage, ArtistRef, DeezerSong, Episode, Item, ItemKind, Origin, Playlist, PlaylistId, Release, Section, Track,
+    TrackId,
 };
 use serde_json::Value;
 
@@ -207,6 +208,30 @@ pub fn album_info(page: &Value) -> AlbumInfo {
 pub fn discography(data: &Value) -> Vec<Section> {
     let mut groups: [(&str, Vec<(String, Item)>); 3] =
         [("Albums", Vec::new()), ("Singles & EPs", Vec::new()), ("Live & compilations", Vec::new())];
+    for (group, release) in dated_releases(data) {
+        groups[group].1.push((release.date, release.album));
+    }
+    groups
+        .into_iter()
+        .filter(|(_, items)| !items.is_empty())
+        .map(|(title, mut dated)| {
+            // ISO dates sort as text; the sort is stable, so ties keep Deezer's order.
+            dated.sort_by(|a, b| b.0.cmp(&a.0));
+            Section::new(title, dated.into_iter().map(|(_, item)| item).collect())
+        })
+        .collect()
+}
+
+/// An artist's albums, singles and EPs (not live albums or compilations) with the
+/// day each came out, from `album.getDiscography`.
+pub fn releases(data: &Value) -> Vec<Release> {
+    dated_releases(data).into_iter().filter(|(group, _)| *group < 2).map(|(_, release)| release).collect()
+}
+
+/// Each release with its group: 0 albums, 1 singles and EPs, 2 live albums and
+/// compilations.
+fn dated_releases(data: &Value) -> Vec<(usize, Release)> {
+    let mut all = Vec::new();
     for v in data.as_array().into_iter().flatten() {
         let id = text(&v["ALB_ID"]);
         if id.is_empty() {
@@ -230,17 +255,9 @@ pub fn discography(data: &Value) -> Vec<Section> {
             None => kind.to_string(),
         };
         let picture = art("cover", &text(&v["ALB_PICTURE"]));
-        groups[group].1.push((date, Item { kind: ItemKind::Album, id, title: text(&v["ALB_TITLE"]), subtitle, picture }));
+        all.push((group, Release { album: Item { kind: ItemKind::Album, id, title: text(&v["ALB_TITLE"]), subtitle, picture }, date }));
     }
-    groups
-        .into_iter()
-        .filter(|(_, items)| !items.is_empty())
-        .map(|(title, mut dated)| {
-            // ISO dates sort as text; the sort is stable, so ties keep Deezer's order.
-            dated.sort_by(|a, b| b.0.cmp(&a.0));
-            Section::new(title, dated.into_iter().map(|(_, item)| item).collect())
-        })
-        .collect()
+    all
 }
 
 /// `deezer.pageArtist` plus the full discography.
@@ -586,5 +603,16 @@ mod tests {
         assert_eq!((t.title.as_str(), t.artist.as_str(), t.duration), ("Song (Live)", "A, B", 180));
         assert_eq!(t.origin, Origin::Deezer(DeezerSong { token: "tok".into(), fallback: Some((8, "tok2".into())) }));
         assert!(track(&json!({"SNG_ID": "-5", "TRACK_TOKEN": "x"})).is_none());
+    }
+
+    #[test]
+    fn releases_are_albums_singles_and_eps_with_dates() {
+        let data = json!([
+            {"ALB_ID": "1", "ALB_TITLE": "New", "TYPE": "1", "ORIGINAL_RELEASE_DATE": "2026-11-14", "SUBTYPES": {}},
+            {"ALB_ID": "2", "ALB_TITLE": "Live at X", "TYPE": "1", "PHYSICAL_RELEASE_DATE": "2026-11-10", "SUBTYPES": {"isLive": true}},
+            {"ALB_ID": "3", "ALB_TITLE": "Hit", "TYPE": "0", "PHYSICAL_RELEASE_DATE": "2026-10-01", "SUBTYPES": {}}
+        ]);
+        let found: Vec<_> = releases(&data).into_iter().map(|r| (r.album.id, r.date)).collect();
+        assert_eq!(found, [("1".to_string(), "2026-11-14".to_string()), ("3".to_string(), "2026-10-01".to_string())]);
     }
 }

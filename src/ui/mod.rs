@@ -14,6 +14,7 @@
 //! - [`plays`]: the play history, kept on this computer; [`stats`]: what it adds up to
 //! - [`crate_store`]: the Crate, things to check out later; [`sync`]: where it and
 //!   the play history are kept, synced through a folder, backed up daily
+//! - [`release_watch`]: new releases from the artists followed and listened to
 //! - [`load`]: background loads, each keeping its result or error
 //! - [`toasts`]: short messages in the corner about things that happened off the page
 //! - [`state`], [`format`], [`covers`]: supporting pieces
@@ -31,6 +32,7 @@ mod load;
 mod now_playing;
 mod playlist_edit;
 mod plays;
+mod release_watch;
 mod selection;
 mod sources;
 mod state;

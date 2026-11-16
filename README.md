@@ -143,6 +143,9 @@ and *Connect a Navidrome server*.
   Genre cards on Home open them too; *see all* on a row shows the whole of it
 - **New releases:** this week's albums, the ones from artists you listen to first
   (*New releases for you*), then by genre
+- **New releases in your Crate:** twice a day dust looks through the artists you follow
+  and the ones you've played most lately; a new album, single or EP goes in the Crate
+  as new, with a toast. Settings → *New releases to the Crate* turns it off
 - **Track mixes from any track:** right-click a track → *Start track mix* plays songs
   like it, starting with it
 - **Plays more of the catalogue:** when a track isn't licensed in your region, dust uses
@@ -386,6 +389,7 @@ src/
 │   ├── now_playing.rs media keys and the OS Now Playing widget
 │   ├── plays.rs       the play history (history.jsonl, next to the settings file)
 │   ├── stats.rs       what the play history adds up to (the Listening page)
+│   ├── release_watch.rs new releases of the artists followed and played (Deezer)
 │   ├── crate_store.rs the Crate (crate.jsonl, a log of changes, next to the settings file)
 │   ├── sync.rs        where the Crate and history are kept: here, or a sync folder (one file
 │                      per computer, merged on read); daily backups

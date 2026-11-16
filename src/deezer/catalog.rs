@@ -2,7 +2,9 @@
 //! items open (albums, artists, mixes, Flow).
 
 use super::{Deezer, Error, Result, parse};
-use crate::model::{AlbumInfo, ArtistPage, Item, Likeable, Likes, Page, Playlist, PlaylistId, SearchResults, Section, Track, TrackId};
+use crate::model::{
+    AlbumInfo, ArtistPage, Item, Likeable, Likes, Page, Playlist, PlaylistId, Release, SearchResults, Section, Track, TrackId,
+};
 
 /// The home page's name for `page.get`.
 const HOME: &str = "home";
@@ -89,6 +91,12 @@ impl Deezer {
         let discography =
             self.call("album.getDiscography", json!({"art_id": id, "nb": 500, "nb_songs": 0, "start": 0, "filter_role_id": [0]}))?;
         Ok(parse::artist_page(&page, &discography["data"]))
+    }
+
+    /// An artist's albums, singles and EPs with their release dates.
+    pub fn releases(&self, id: &str) -> Result<Vec<Release>> {
+        let r = self.call("album.getDiscography", json!({"art_id": id, "nb": 500, "nb_songs": 0, "start": 0, "filter_role_id": [0]}))?;
+        Ok(parse::releases(&r["data"]))
     }
 
     /// Artists the account follows, as cards.
