@@ -3,7 +3,7 @@
 use super::art::cover;
 use super::menu::queue_menu;
 use super::text::{artist_links, text_left};
-use crate::model::{ArtistRef, Item, Track};
+use crate::model::{ArtistRef, GENRE_FLOW, Item, Track};
 use crate::ui::covers::Covers;
 use crate::ui::format::mmss;
 use crate::ui::state::{Coll, PlayMode};
@@ -77,9 +77,10 @@ pub fn play_knob(ui: &Ui, center: egui::Pos2, half: f32) {
 pub const FLOW_PANEL: f32 = 176.0;
 
 /// The Flow panel: title, a lime play button for plain Flow and the moods as a
-/// segmented row (`moods` are (id, label); the playing one is lit). Returns plain
-/// Flow (None) or a mood's id when one was picked. With `radio`, it's a music
-/// server's Radio and the moods are genres.
+/// segmented row (`moods` are (id, label); the playing one is lit). Deezer's genre
+/// Flows ([`GENRE_FLOW`]) get their own row, picked with *moods / genres* next to
+/// the title. Returns plain Flow (None) or a mood's id when one was picked. With
+/// `radio`, it's a music server's Radio and the moods are genres.
 pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, radio: bool) -> Option<Option<String>> {
     let (line, name) = if radio { ("radio · endless, from your library", "Radio") } else { ("flow · endless, just for you", "Flow") };
     let p = colors();
@@ -91,8 +92,38 @@ pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, ra
     painter.rect_stroke(rect, corner, egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
     let left = rect.left() + 20.0;
     text_left(&painter, pos2(left, rect.top() + 26.0), line, ty::META, p.dim, rect.width() - 100.0);
-    text_left(&painter, pos2(left, rect.top() + 74.0), name, ty::HERO, p.text, 200.0);
+    let title_end = text_left(&painter, pos2(left, rect.top() + 74.0), name, ty::HERO, p.text, 200.0).right();
     let mut pick = None;
+
+    let (genres, moods): (Vec<_>, Vec<_>) = moods.iter().copied().partition(|(id, _)| !radio && id.starts_with(GENRE_FLOW));
+    let tab_id = ui.scope_id().with("flow-tab");
+    let on_genres = ui.data(|d| d.get_temp::<bool>(tab_id)).unwrap_or_else(|| playing.is_some_and(|m| m.starts_with(GENRE_FLOW)));
+    let on_genres = if genres.is_empty() || moods.is_empty() {
+        !genres.is_empty()
+    } else {
+        let mut x = title_end + 22.0;
+        let mut chosen = on_genres;
+        for (label, is_genres) in [("moods", false), ("genres", true)] {
+            let font = ty::META.font();
+            let size = painter.layout_no_wrap(label.into(), font.clone(), p.text).size();
+            let tab = Rect::from_min_size(pos2(x - 4.0, rect.top() + 60.0), vec2(size.x + 8.0, 28.0));
+            let resp = ui.interact(tab, ui.scope_id().with(("flow-tab", label)), Sense::click());
+            let on = chosen == is_genres;
+            let color = if on || resp.hovered() { p.text } else { p.dim };
+            painter.text(pos2(x, tab.center().y), Align2::LEFT_CENTER, label, font, color);
+            if on {
+                let line = Rect::from_min_size(pos2(x, tab.center().y + size.y / 2.0 + 3.0), vec2(size.x, 2.0));
+                painter.rect_filled(line, CornerRadius::same(1), p.accent);
+            }
+            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                chosen = is_genres;
+                ui.data_mut(|d| d.insert_temp(tab_id, is_genres));
+            }
+            x += size.x + 18.0;
+        }
+        chosen
+    };
+    let moods = if on_genres { genres } else { moods };
 
     let play = Rect::from_min_size(pos2(rect.right() - 68.0, rect.top() + 20.0), Vec2::splat(48.0));
     let resp = ui.interact(play, ui.scope_id().with("flow-play"), Sense::click()).on_hover_text(format!("Play {name}"));
@@ -108,13 +139,13 @@ pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, ra
     let tray_top = rect.bottom() - 20.0 - chip_h - 6.0;
     let mut x = left + 3.0;
     let mut chips = Vec::new();
-    for (id, label) in moods {
+    for &(id, label) in &moods {
         let label = label.to_lowercase();
         let width = painter.layout_no_wrap(label.clone(), ty::META.font(), p.text).size().x + 20.0;
         if x + width > rect.right() - 23.0 {
             break;
         }
-        chips.push((Rect::from_min_size(pos2(x, tray_top + 3.0), vec2(width, chip_h)), *id, label));
+        chips.push((Rect::from_min_size(pos2(x, tray_top + 3.0), vec2(width, chip_h)), id, label));
         x += width + 4.0;
     }
     if let Some(last) = chips.last() {

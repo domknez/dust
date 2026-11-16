@@ -336,8 +336,15 @@ fn english_texts(kind: &str, id: &str, data: &Value, title: String, subtitle: St
             (title, if by.is_empty() { "Podcast".to_string() } else { by })
         }
         "flow" => {
-            let name = match id {
+            let name = match id.strip_prefix(crate::model::GENRE_FLOW).unwrap_or(id) {
                 "default" => "Flow".to_string(),
+                "you_and_me" => "You & me".to_string(),
+                "classicrock" => "Classic rock".to_string(),
+                "indierock" => "Indie rock".to_string(),
+                "hiphop" | "rap" => "Hip Hop".to_string(),
+                "rnb" => "R&B".to_string(),
+                "kpop" => "K-pop".to_string(),
+                "latin" => "Latin".to_string(),
                 other => other.split(['-', '_']).map(capitalize).collect::<Vec<_>>().join(" "),
             };
             (name, String::new())
@@ -448,6 +455,10 @@ mod tests {
         assert_eq!(english_texts("artist", "1", &json!({"NB_FAN": 1}), "X".into(), String::new()).1, "1 fan");
         assert_eq!(english_texts("flow", "motivation", &json!({}), "Vježbanje".into(), String::new()).0, "Motivation");
         assert_eq!(english_texts("flow", "hip-hop", &json!({}), "x".into(), String::new()).0, "Hip Hop");
+        let flow = |id: &str| english_texts("flow", id, &json!({}), "x".into(), String::new()).0;
+        assert_eq!(flow("genre-classicrock"), "Classic rock");
+        assert_eq!(flow("genre-metal"), "Metal");
+        assert_eq!(flow("you_and_me"), "You & me");
         let (t, sub) = english_texts("smarttracklist", "discovery", &json!({}), "Otkriće".into(), "Sadrži Foxy Shazam, The Flynts".into());
         assert_eq!((t.as_str(), sub.as_str()), ("Discovery", "Featuring Foxy Shazam, The Flynts"));
         assert_eq!(thousands(4702289), "4,702,289");

@@ -36,7 +36,7 @@ last. More sources can be added later without changing the rest of the app.
 | | Deezer | Navidrome / Subsonic |
 |---|---|---|
 | **You need** | Deezer Premium | your own [Navidrome](https://www.navidrome.org) (or Subsonic / OpenSubsonic) server |
-| **Home** | your recommendations, Flow and its moods, daily mixes, mixes inspired by tracks | *Radio* (endless, from the whole library or one genre), recently added / played, most played, favourites, mixes per artist |
+| **Home** | your recommendations, Flow by mood or genre, daily mixes, mixes inspired by tracks | *Radio* (endless, from the whole library or one genre), recently added / played, most played, favourites, mixes per artist |
 | **Discover** | *Explore* (genres, moods, decades, charts), *New releases*, artist mixes, track mixes from any track | artist mixes |
 | **Library** | Loved tracks, playlists, albums, followed artists, podcasts | starred songs as *Loved tracks*, playlists, the whole library under *Albums* and *Artists* |
 | **Playlists** | create, add, remove, rename, delete | create, add, remove, rename, delete |
@@ -107,8 +107,9 @@ and *Connect a Navidrome server*.
 
 **Deezer**
 
-- **Home like Deezer's:** your personalised recommendations — Flow and its moods
-  (Chill, Focus, Workout, Party, ...), daily mixes, mixes inspired by tracks you play,
+- **Home like Deezer's:** your personalised recommendations — Flow by mood
+  (Chill, Focus, Party, ...) or by genre (Rock, Jazz, ...: *moods / genres* next to
+  the title), daily mixes, mixes inspired by tracks you play,
   recently played, new releases, artists and albums picked for you
 - **Explore:** Deezer's pages of genres (Rock, Metal, Jazz, ...), moods and activities,
   decades, charts and *For you*, each with its new releases, playlists and top artists.

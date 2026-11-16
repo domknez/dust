@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Flow by genre as well as by mood: *moods / genres* next to the Flow title switches
+  the chips to the genres Deezer picks for you (Rock, Metal, Jazz, ...)
+
 ## 0.23.0 (2026-11-16)
 
 - Save the track playing to a playlist from the player bar: **+** next to the heart

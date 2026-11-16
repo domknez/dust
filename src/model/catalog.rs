@@ -43,6 +43,10 @@ pub enum ItemKind {
     Other(String),
 }
 
+/// Deezer's Flow tunings with this prefix are genres (`genre-rock`); the rest are
+/// moods.
+pub const GENRE_FLOW: &str = "genre-";
+
 impl ItemKind {
     /// Flow or Radio, which play endlessly instead of opening.
     pub fn is_endless(&self) -> bool {
