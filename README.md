@@ -65,8 +65,15 @@ and *Connect a Navidrome server*.
 - **Endless play:** Deezer's Flow and the server's Radio keep going, fetching more as you
   listen
 - **Seeking** on a waveform-style progress bar
-- **Lyrics:** the lyrics button in the player bar opens the playing track's lyrics; synced
-  ones follow the song with the sung line highlighted, and clicking a line jumps there
+- **Lyrics:** the lyrics button in the player bar opens the playing track's lyrics as a
+  page of their own (Back, `Esc` or the button again returns), with the queue still
+  beside them; synced ones follow the song with the sung line lit, and clicking a line
+  jumps there
+- **Play history:** the panel on the right has *up next* and *history*: every track
+  you heard, from any source, newest first by day, with the Flow or album it came from
+  and skips marked. Click one to hear it again, right-click to queue it or add it to a
+  playlist, the heart likes it. dust keeps the last 2,000 on this computer, so it works
+  without Deezer's listening reports too
 - **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs
 - **Sleep timer:** in the player bar's ⋯ menu, with a countdown ring; after 15 minutes
   to an hour the music fades out over 30 seconds and pauses (your volume is back for
@@ -321,10 +328,10 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
   from this playlist* on your own); right-click a card, a playlist or an album's name
   in a track list: *Play next* / *Add to queue*; album and playlist pages have *Add to
   queue* and a ⋯ menu (*Add all to playlist*, *Rename*, *Delete*)
-- Queue panel → *Save*: the queue as a new playlist; sidebar → *+*: a new playlist
+- Queue panel → *save as playlist*: the queue as a new playlist; sidebar → *+*: a new playlist
 - Click *PLAYLISTS* in the sidebar to fold the list away (or bring it back); dust
   remembers it
-- Queue button (next to AirPlay): open the queue; drag rows to reorder
+- Queue button (next to AirPlay): open the queue (*up next*) and *history*; drag rows to reorder
 
 ## Project structure
 
@@ -344,7 +351,8 @@ src/
 │                      streams; source.rs makes it a Source
 ├── media/             decoding any source's byte stream: container reader, decoder, seeks,
 │                      stall-proof network reads
-├── player/            playback engine thread, queue (pure, tested), listen tracking, saved queue,
+├── player/            playback engine thread, queue (pure, tested), listen tracking (also what
+│                      the play history keeps), saved queue,
 │                      opening the next track ahead (preload.rs)
 ├── output/            audio outputs behind the Sink trait (output::open sets one up), resampling
 │   ├── local.rs       sound card (cpal)
@@ -356,6 +364,7 @@ src/
 │   ├── sources.rs     the logged-in sources: starting stored logins, switching, logging out,
 │                      the account menu's rows (MENU), the server form
 │   ├── now_playing.rs media keys and the OS Now Playing widget
+│   ├── plays.rs       the play history (history.jsonl, next to the settings file)
 │   ├── views/         one file per screen or panel
 │   ├── widgets/       reusable painted components
 │   └── style/         palette, type scale, metrics, icons — all visual constants live here

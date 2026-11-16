@@ -134,6 +134,18 @@ pub enum State {
     Paused,
 }
 
+/// A track that was heard, for the play history: when it started, how long it was
+/// heard, and the Flow it came from.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Played {
+    pub track: Track,
+    pub started_unix: u64,
+    pub heard_secs: u64,
+    /// Moved on before half of it was heard.
+    pub skipped: bool,
+    pub flow: Option<Flow>,
+}
+
 /// Snapshot of the engine for the UI.
 #[derive(Clone, Default)]
 pub struct Status {
@@ -151,6 +163,8 @@ pub struct Status {
     pub flow: Option<Flow>,
     pub output: String,
     pub error: Option<String>,
+    /// Tracks heard since the UI last took them ([`PlayerHandle::take_played`]).
+    pub played: Vec<Played>,
 }
 
 /// Shown when the player thread has died.
@@ -200,6 +214,11 @@ impl PlayerHandle {
     #[cfg(test)]
     pub fn set_status(&self, change: impl FnOnce(&mut Status)) {
         change(&mut self.status.lock().unwrap());
+    }
+
+    /// The tracks heard since the last call, oldest first.
+    pub fn take_played(&self) -> Vec<Played> {
+        std::mem::take(&mut self.status.lock().unwrap_or_else(PoisonError::into_inner).played)
     }
 
     pub fn status(&self) -> Status {

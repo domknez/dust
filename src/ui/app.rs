@@ -8,6 +8,7 @@ use super::history::Visit;
 use super::library::Library;
 use super::load::Jobs;
 use super::now_playing::NowPlaying;
+use super::plays::{Play, Plays};
 use super::sources::{Login, Sources};
 use super::state::{ArtistView, Coll, CollSource, PlayMode, View, playable, playable_from};
 use super::style::{self, Appearance, colors, metrics};
@@ -27,15 +28,49 @@ use eframe::egui::{self, Key, Margin, Ui};
 /// What the panel on the right shows.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SidePanel {
+    /// The queue: now playing and up next.
     Queue,
-    Lyrics,
+    /// The tracks heard, newest first.
+    History,
 }
 
 impl App {
-    /// Open `panel` on the right, or close it if it's the one showing.
-    pub(super) fn toggle_side_panel(&mut self, panel: SidePanel) {
-        self.side_panel = (self.side_panel != Some(panel)).then_some(panel);
-        self.lyrics.reopened();
+    /// Open the panel on the right at the tab used last, or close it.
+    pub(super) fn toggle_side_panel(&mut self) {
+        self.side_panel = match self.side_panel {
+            Some(_) => None,
+            None => Some(self.side_tab),
+        };
+    }
+
+    /// Show `panel` on the right (None closes it).
+    pub(super) fn show_side_panel(&mut self, panel: Option<SidePanel>) {
+        if let Some(panel) = panel {
+            self.side_tab = panel;
+        }
+        self.side_panel = panel;
+    }
+
+    /// The lyrics page, or back to the page before it if it's showing.
+    pub(super) fn toggle_lyrics(&mut self) {
+        if self.browse.view != View::Lyrics {
+            self.lyrics.reopened();
+            self.open_view(View::Lyrics);
+        } else if self.browse.history.can_go_back() {
+            self.go_back();
+        } else {
+            self.open_view(View::Home);
+        }
+    }
+
+    /// Keep the tracks the player heard since the last frame.
+    fn record_plays(&mut self) {
+        let played = self.player.take_played();
+        let Some(client) = &self.client else { return };
+        let source = client.id().key;
+        for played in played {
+            self.plays.record(Play::new(source, played));
+        }
     }
 }
 
@@ -66,6 +101,10 @@ pub struct App {
     pub(super) sleep_choice: Option<super::views::SleepChoice>,
     /// The panel open on the right, if any.
     pub(super) side_panel: Option<SidePanel>,
+    /// Its tab shown last, which it opens at.
+    pub(super) side_tab: SidePanel,
+    /// Every track heard, kept on this computer.
+    pub(super) plays: Plays,
     /// The Settings window is open.
     pub(super) show_settings: bool,
     pub(super) lyrics: super::views::LyricsState,
@@ -130,6 +169,7 @@ impl App {
     pub(super) fn with(ctx: &egui::Context, prefs: Prefs, player: PlayerHandle, jobs: Jobs, queues: QueueFiles) -> Self {
         player.send(Cmd::Shuffle(prefs.shuffle));
         player.send(Cmd::Repeat(prefs.repeat));
+        let plays = Plays::load(queues.dir());
         Self {
             player,
             jobs,
@@ -141,6 +181,8 @@ impl App {
             browse: Browse::default(),
             sleep_choice: None,
             side_panel: None,
+            side_tab: SidePanel::Queue,
+            plays,
             show_settings: false,
             lyrics: Default::default(),
             queue_drag: None,
@@ -221,7 +263,7 @@ impl App {
                 library.favorite_shows.start(&self.jobs, move || client.favorite_shows())
             }
             View::Artists if library.followed.wants_load() => library.followed.start(&self.jobs, move || client.favorite_artists()),
-            View::Home | View::Albums | View::Podcasts | View::Artists => {}
+            View::Home | View::Albums | View::Podcasts | View::Artists | View::Lyrics => {}
             View::Artist(artist) => {
                 let id = artist.id.clone();
                 self.browse.artist_page.start(&self.jobs, move || client.artist(&id));
@@ -239,7 +281,14 @@ impl App {
         let browse = &mut self.browse;
         browse.clear_list();
         match view {
-            View::Home | View::Playlists | View::Artists | View::Albums | View::Podcasts | View::Artist(_) | View::Channel(_) => {}
+            View::Home
+            | View::Playlists
+            | View::Artists
+            | View::Albums
+            | View::Podcasts
+            | View::Artist(_)
+            | View::Channel(_)
+            | View::Lyrics => {}
             View::Search if browse.search.trim().is_empty() => {}
             // A pasted link to the source opens what it points at instead of searching.
             View::Search if client.is_link(&browse.search) => {
@@ -513,6 +562,7 @@ impl eframe::App for App {
             self.apply(&ctx, acts);
             return;
         }
+        self.record_plays();
         let st = self.player.status();
         self.shortcuts(&ctx, &st, &mut acts);
         self.persist_playback(&st);
@@ -548,7 +598,7 @@ impl eframe::App for App {
                 .frame(panel_frame(p.sidebar, Margin { left: 14, right: 14, top: 0, bottom: 10 }))
                 .show(ui, |ui| match panel {
                     SidePanel::Queue => self.queue_panel(ui, &st, &mut acts),
-                    SidePanel::Lyrics => self.lyrics_panel(ui, &st, &mut acts),
+                    SidePanel::History => self.history_panel(ui, &mut acts),
                 });
         }
         let margin = metrics::CONTENT_MARGIN;

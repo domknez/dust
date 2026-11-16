@@ -38,6 +38,11 @@ impl QueueFiles {
         QueueFiles { dir: Some(dir) }
     }
 
+    /// The folder they're in; None when there's nowhere to keep files.
+    pub fn dir(&self) -> Option<&std::path::Path> {
+        self.dir.as_deref()
+    }
+
     fn path(&self, source: SourceId) -> Option<PathBuf> {
         Some(self.dir.as_ref()?.join(source.queue_file))
     }
@@ -101,7 +106,7 @@ fn decode(v: &Value) -> Option<Saved> {
 /// The `id` is the source's: a number for Deezer (as always), text for a music
 /// server. Files from 0.19 and before have a number standing for a server song's id
 /// too; its real one is `server.id`, which is still written.
-fn encode_track(t: &Track) -> Value {
+pub(crate) fn encode_track(t: &Track) -> Value {
     let (song, episode, server) = match &t.origin {
         Origin::Deezer(song) => (Some(song), None, None),
         Origin::Episode(episode) => (None, Some(episode), None),
@@ -125,7 +130,7 @@ fn encode_track(t: &Track) -> Value {
     })
 }
 
-fn decode_track(v: &Value) -> Option<Track> {
+pub(crate) fn decode_track(v: &Value) -> Option<Track> {
     let s = |k: &str| v[k].as_str().unwrap_or_default().to_string();
     let artists = v["artists"]
         .as_array()

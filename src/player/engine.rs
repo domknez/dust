@@ -352,7 +352,7 @@ impl Engine {
         // switched to (if any) was never heard.
         self.handoff = None;
         self.preload = None;
-        self.listens.finish(self.library.as_deref());
+        self.finish_listen();
         self.stream = None;
         self.pending.clear();
         self.playing = true;
@@ -406,7 +406,7 @@ impl Engine {
         log_debug!("track ended, continuing on {} without a flush", self.output.name());
         // A track shorter than the sink's buffer may end before it was heard to start.
         self.end_handoff();
-        self.listens.finish(self.library.as_deref());
+        self.finish_listen();
         match self.open(&track, 0.0) {
             Ok(stream) => self.begin(stream, &track),
             Err(OpenError::Transient(e)) => {
@@ -446,7 +446,15 @@ impl Engine {
         // Podcast episodes aren't songs: Deezer's listen reports (history, Flow,
         // Last.fm) are for its catalogue only.
         let Some(stream) = self.stream.as_ref().filter(|_| !track.is_episode()) else { return };
-        self.listens.start(self.library.as_deref(), stream.song_id(), stream.format(), track.duration);
+        let flow = self.queue.flow.clone();
+        self.listens.start(self.library.as_deref(), stream.song_id(), stream.format(), track, flow);
+    }
+
+    /// The current listen is over: report it, and hand it to the UI's play history.
+    fn finish_listen(&mut self) {
+        if let Some(played) = self.listens.finish(self.library.as_deref()) {
+            self.status.lock().unwrap().played.push(played);
+        }
     }
 
     // ------------------------------------------------------------ preloading
@@ -539,7 +547,7 @@ impl Engine {
     /// Finish a handoff now: the previous track's listen ends, the new one's starts.
     fn end_handoff(&mut self) {
         let Some(handoff) = self.handoff.take() else { return };
-        self.listens.finish(self.library.as_deref());
+        self.finish_listen();
         self.start_listen(&handoff.next);
     }
 
@@ -625,7 +633,7 @@ impl Engine {
         // listen is reported.
         self.handoff = None;
         self.preload = None;
-        self.listens.finish(self.library.as_deref());
+        self.finish_listen();
         self.stream = None;
         self.playing = false;
     }
@@ -1413,6 +1421,22 @@ mod tests {
         play_out(&mut e);
         assert!(library.started.lock().unwrap().is_empty());
         assert!(library.listens.lock().unwrap().is_empty());
+        let played = std::mem::take(&mut e.status.lock().unwrap().played);
+        assert_eq!(played.iter().map(|p| (n(&p.track.id), p.heard_secs)).collect::<Vec<_>>(), [(1, 2)], "still in the play history");
+    }
+
+    #[test]
+    fn heard_tracks_go_to_the_play_history() {
+        let (mut e, _library, _tx) = engine(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 60), track(2, 60), track(3, 60), track(4, 60)], 0));
+        e.listens.heard(Duration::from_secs(10));
+        e.handle(Cmd::Next);
+        e.handle(Cmd::Next);
+        e.listens.heard(Duration::from_secs(40));
+        e.handle(Cmd::Next);
+        let played = std::mem::take(&mut e.status.lock().unwrap().played);
+        let shape: Vec<_> = played.iter().map(|p| (n(&p.track.id), p.heard_secs, p.skipped, p.flow.is_some())).collect();
+        assert_eq!(shape, [(1, 10, true, false), (3, 40, false, false)], "2 wasn't heard; 3 was heard past half");
     }
 
     // ------------------------------------------------------------ preloading

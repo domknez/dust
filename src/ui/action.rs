@@ -66,8 +66,10 @@ pub enum Action {
     PlaylistDialog(Dialog),
 
     // Window
-    /// Open a panel on the right, or close it if it's the one showing.
-    TogglePanel(SidePanel),
+    /// Open the panel on the right (at its tab shown last), or close it.
+    TogglePanel,
+    /// The lyrics page, or back from it.
+    ToggleLyrics,
     /// Show this panel on the right; None closes it.
     ShowPanel(Option<SidePanel>),
     ToggleMiniPlayer,
@@ -175,11 +177,9 @@ impl App {
             Action::EditPlaylist(edit) => self.edit_playlist(edit),
             Action::NewPlaylist(tracks) => self.new_playlist(tracks),
             Action::PlaylistDialog(dialog) => self.library.editing.dialog = Some(dialog),
-            Action::TogglePanel(panel) => self.toggle_side_panel(panel),
-            Action::ShowPanel(panel) => {
-                self.side_panel = panel;
-                self.lyrics.reopened();
-            }
+            Action::TogglePanel => self.toggle_side_panel(),
+            Action::ToggleLyrics => self.toggle_lyrics(),
+            Action::ShowPanel(panel) => self.show_side_panel(panel),
             Action::ToggleMiniPlayer => self.toggle_mini_player(ctx),
             Action::ShowSettings(show) => self.show_settings = show,
             Action::ToggleSidebarPlaylists => self.prefs.update(|p| p.sidebar_playlists = !p.sidebar_playlists),

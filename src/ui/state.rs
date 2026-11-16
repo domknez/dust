@@ -21,6 +21,8 @@ pub enum View {
     Artist(Box<ArtistView>),
     /// A page of sections: Explore, New releases, a genre, a "See all".
     Channel(Box<ChannelView>),
+    /// The playing track's lyrics.
+    Lyrics,
 }
 
 /// A page of sections being shown: which, and its title for before it loads.

@@ -1,4 +1,5 @@
-//! Queue panel: now playing, then next up with jump, remove and drag-to-reorder.
+//! The panel on the right: *up next* (now playing, then next up with jump, remove
+//! and drag-to-reorder) and *history* (see [`super::play_history`]).
 
 use crate::player::{Cmd, Status};
 use crate::ui::action::{Action, Actions};
@@ -64,7 +65,7 @@ impl App {
         });
     }
 
-    /// queue | lyrics switch at the top of the right panel, and a close button.
+    /// up next | history switch at the top of the right panel, and a close button.
     pub(in crate::ui) fn side_panel_tabs(&self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
         ui.horizontal(|ui| {
@@ -72,7 +73,7 @@ impl App {
             let corner = CornerRadius::same(radius::CONTROL);
             ui.painter().rect_filled(tray, corner, p.surface);
             ui.painter().rect_stroke(tray, corner, egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
-            let tabs = [(SidePanel::Queue, "queue"), (SidePanel::Lyrics, "lyrics")];
+            let tabs = [(SidePanel::Queue, "up next"), (SidePanel::History, "history")];
             let width = (tray.width() - 6.0) / tabs.len() as f32;
             for (i, (panel, label)) in tabs.into_iter().enumerate() {
                 let tab =

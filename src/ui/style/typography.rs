@@ -63,6 +63,10 @@ pub const PAGE_TITLE: Text = Text::display(34.0);
 pub const WORDMARK: Text = Text::mono(17.0).strong();
 /// Home page section headings.
 pub const SECTION_TITLE: Text = Text::display(19.0);
+/// Synced lyrics on their page, each line the same size so none moves when lit.
+pub const LYRIC: Text = Text::display(24.0);
+/// Lyrics without timing.
+pub const LYRIC_PLAIN: Text = Text::new(17.0);
 /// Taglines and larger supporting text.
 pub const LEAD: Text = Text::new(15.0);
 /// Track titles, buttons, navigation.

@@ -38,6 +38,7 @@ impl App {
                 let channel = channel.as_ref().clone();
                 self.channel_view(ui, st, &channel, acts);
             }
+            View::Lyrics => self.lyrics_page(ui, st, acts),
         }
     }
 

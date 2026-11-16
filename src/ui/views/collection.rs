@@ -131,7 +131,8 @@ impl App {
             | View::Albums
             | View::Podcasts
             | View::Artist(_)
-            | View::Channel(_) => Header::default(),
+            | View::Channel(_)
+            | View::Lyrics => Header::default(),
         }
     }
 

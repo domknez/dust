@@ -11,6 +11,7 @@ mod login;
 mod lyrics;
 mod mini_player;
 mod output_picker;
+mod play_history;
 mod player_bar;
 mod playlists;
 mod queue;

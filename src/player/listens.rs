@@ -1,9 +1,11 @@
 //! Tracks how long the current track has actually been heard and reports each
 //! listen to the source (Deezer's history, Flow and Last.fm, like its own apps; a
-//! server's play counts).
+//! server's play counts). Every listen also comes back as a [`Played`], for dust's
+//! own play history.
 
 use super::library::Library;
-use crate::model::{Format, Listen, TrackId};
+use super::{Flow, Played};
+use crate::model::{Format, Listen, Track, TrackId};
 use std::time::Duration;
 
 /// A listen that played to within this many seconds of the end isn't a skip.
@@ -14,6 +16,9 @@ struct Current {
     heard: Duration,
     track_secs: u32,
     seeked: bool,
+    /// What the play history keeps of it.
+    track: Track,
+    flow: Option<Flow>,
 }
 
 pub struct ListenTracker {
@@ -26,8 +31,10 @@ impl ListenTracker {
         Self { enabled: true, current: None }
     }
 
-    /// A new track started: report the start and begin counting.
-    pub fn start(&mut self, library: Option<&dyn Library>, song_id: TrackId, format: Format, track_secs: u32) {
+    /// A new track started: report the start and begin counting. `flow`: the
+    /// endless Flow it came from, if any.
+    pub fn start(&mut self, library: Option<&dyn Library>, song_id: TrackId, format: Format, track: &Track, flow: Option<Flow>) {
+        let track_secs = track.duration;
         let listen = Listen {
             song_id: song_id.clone(),
             format,
@@ -41,7 +48,7 @@ impl ListenTracker {
         {
             library.report_listen_start(song_id);
         }
-        self.current = Some(Current { listen, heard: Duration::ZERO, track_secs, seeked: false });
+        self.current = Some(Current { listen, heard: Duration::ZERO, track_secs, seeked: false, track: track.clone(), flow });
     }
 
     /// Audio played for `elapsed`.
@@ -57,15 +64,33 @@ impl ListenTracker {
         }
     }
 
-    /// The current track ended or was replaced: report it.
-    pub fn finish(&mut self, library: Option<&dyn Library>) {
-        let Some(current) = self.current.take() else { return };
+    /// The current track ended or was replaced: report it, and return it for the
+    /// play history (also when reports are off). None when none of it was heard.
+    pub fn finish(&mut self, library: Option<&dyn Library>) -> Option<Played> {
+        let current = self.current.take()?;
         let secs = current.heard.as_secs();
-        let (true, Some(library), true) = (self.enabled, library, secs > 0) else { return };
-        let mut listen = current.listen;
-        listen.listened_secs = secs;
-        listen.skipped = current.seeked || secs + SKIP_TOLERANCE_SECS < current.track_secs as u64;
-        library.report_listen(listen);
+        if secs == 0 {
+            return None;
+        }
+        let track_secs = current.track_secs as u64;
+        let ended_early = secs + SKIP_TOLERANCE_SECS < track_secs;
+        let played = Played {
+            track: current.track,
+            started_unix: current.listen.started_unix,
+            heard_secs: secs,
+            // Less than half heard: moved on, rather than seeked around in it.
+            skipped: ended_early && secs * 2 < track_secs,
+            flow: current.flow,
+        };
+        if self.enabled
+            && let Some(library) = library
+        {
+            let mut listen = current.listen;
+            listen.listened_secs = secs;
+            listen.skipped = current.seeked || ended_early;
+            library.report_listen(listen);
+        }
+        Some(played)
     }
 }
 

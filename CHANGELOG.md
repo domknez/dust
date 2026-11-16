@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Play history: the panel on the right has *up next* and *history*. dust keeps every
+  track you hear (the last 2,000, on this computer), shown newest first by day with
+  the Flow or album it came from and skips marked; click one to hear it again,
+  right-click for the track menu
+- Lyrics open as a page in the main area instead of a tab of the queue panel, so the
+  queue can stay open beside them; Back, `Esc` or the lyrics button returns
+
 ## 0.24.0 (2026-11-16)
 
 - Flow by genre as well as by mood: *moods / genres* next to the Flow title switches

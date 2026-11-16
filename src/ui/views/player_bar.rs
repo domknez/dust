@@ -4,9 +4,9 @@
 use crate::model::{Likeable, Track, TrackId};
 use crate::player::{Cmd, Repeat, State, Status};
 use crate::ui::action::{Action, Actions};
-use crate::ui::app::{App, SidePanel};
+use crate::ui::app::App;
 use crate::ui::format::mmss;
-use crate::ui::state::Coll;
+use crate::ui::state::{Coll, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, NowPlayingMenu, NowPlayingOffer, TrackMenu, text_left};
@@ -45,10 +45,11 @@ impl App {
             self.output_button(ui, st, acts);
             // ⋯ (sleep timer, mini player), with the timer's countdown in front of it.
             self.more_button(ui, st, acts);
-            for (panel, icon, hint) in [(SidePanel::Queue, Icon::Queue, "Queue"), (SidePanel::Lyrics, Icon::Lyrics, "Lyrics")] {
-                if toggle_button(ui, icon, self.side_panel == Some(panel)).on_hover_text(hint).clicked() {
-                    acts.push(Action::TogglePanel(panel));
-                }
+            if toggle_button(ui, Icon::Queue, self.side_panel.is_some()).on_hover_text("Queue and history").clicked() {
+                acts.push(Action::TogglePanel);
+            }
+            if toggle_button(ui, Icon::Lyrics, self.browse.view == View::Lyrics).on_hover_text("Lyrics").clicked() {
+                acts.push(Action::ToggleLyrics);
             }
         });
         if st.state == State::Playing {
@@ -290,7 +291,7 @@ fn mode_button(ui: &mut Ui, icon: Icon, on: bool) -> egui::Response {
     widgets::icon_button(ui, icon, 16.0, if on { p.accent } else { p.dim })
 }
 
-/// Queue / lyrics: a raised square behind the icon while its panel is open.
+/// Queue / lyrics: a raised square behind the icon while its panel or page is open.
 fn toggle_button(ui: &mut Ui, icon: Icon, on: bool) -> egui::Response {
     let p = colors();
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::click());

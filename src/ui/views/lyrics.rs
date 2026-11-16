@@ -1,15 +1,20 @@
-//! Lyrics panel: the playing track's lyrics, the sung line highlighted and kept in
-//! view when they're synced; click a line to jump there.
+//! Lyrics page: the playing track's lyrics in the main area, the sung line lit in
+//! lime and kept in view when they're synced; click a line to jump there. Back (or
+//! the lyrics button again, or Esc) returns to the page before.
 
 use crate::model::{Lyrics, TrackId};
 use crate::player::{Cmd, State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::load::Load;
-use crate::ui::style::{colors, metrics, typography as ty};
+use crate::ui::style::{colors, typography as ty};
+use crate::ui::widgets::text_left;
 
-use eframe::egui::{self, RichText, Sense, Ui};
+use eframe::egui::{self, Key, RichText, Sense, Ui, vec2};
 use std::time::Duration;
+
+/// Lines wrap at this width, however wide the window.
+const MAX_WIDTH: f32 = 720.0;
 
 /// Repaint at least this often while synced lyrics play.
 const MAX_WAIT: Duration = Duration::from_millis(500);
@@ -25,17 +30,26 @@ pub struct LyricsState {
 }
 
 impl LyricsState {
-    /// The panel was opened again: bring the sung line back into view.
+    /// The page was opened again: bring the sung line back into view.
     pub fn reopened(&mut self) {
         self.scrolled_to = None;
     }
 }
 
 impl App {
-    pub(in crate::ui) fn lyrics_panel(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
-        ui.add_space(metrics::TOP_INSET);
-        self.side_panel_tabs(ui, acts);
-        ui.add_space(8.0);
+    pub(in crate::ui) fn lyrics_page(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
+        if !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(Key::Escape)) {
+            acts.push(Action::Back);
+        }
+        let p = colors();
+        let head = ui.allocate_exact_size(vec2(ui.available_width(), 64.0), Sense::hover()).0;
+        let (title, by) = match &st.track {
+            Some(track) => (track.title.as_str(), track.artist.as_str()),
+            None => ("Lyrics", ""),
+        };
+        text_left(ui.painter(), head.min + vec2(0.0, 18.0), title, ty::PAGE_TITLE, p.text, head.width());
+        text_left(ui.painter(), head.min + vec2(0.0, 50.0), by, ty::LEAD, p.dim, head.width());
+        ui.add_space(18.0);
         let Some(track) = &st.track else {
             hint(ui, "Play something to see its lyrics");
             return;
@@ -78,18 +92,19 @@ fn synced(ui: &mut Ui, st: &Status, lyrics: &Lyrics, scrolled_to: &mut Option<us
     let p = colors();
     let mut seek = None;
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 10.0;
+        ui.set_max_width(MAX_WIDTH);
+        ui.spacing_mut().item_spacing.y = 14.0;
         for (i, line) in lyrics.synced.iter().enumerate() {
             let now = current == Some(i);
             let color = if now {
-                p.text
+                p.accent
             } else if current.is_some_and(|c| i < c) {
                 p.faint
             } else {
                 p.dim
             };
             let text = if line.text.trim().is_empty() { "…" } else { &line.text };
-            let font = if now { ty::SECTION_TITLE.font() } else { ty::LEAD.strong().font() };
+            let font = ty::LYRIC.font();
             let resp = ui.add(egui::Label::new(RichText::new(text).font(font).color(color)).wrap().sense(Sense::click()));
             if resp.clicked() {
                 seek = Some(line.at_ms);
@@ -115,12 +130,13 @@ fn synced(ui: &mut Ui, st: &Status, lyrics: &Lyrics, scrolled_to: &mut Option<us
 
 fn plain(ui: &mut Ui, lyrics: &Lyrics) {
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 4.0;
+        ui.set_max_width(MAX_WIDTH);
+        ui.spacing_mut().item_spacing.y = 6.0;
         for line in &lyrics.plain {
             if line.trim().is_empty() {
                 ui.add_space(10.0);
             } else {
-                ui.add(egui::Label::new(RichText::new(line).font(ty::LEAD.font()).color(colors().text)).wrap());
+                ui.add(egui::Label::new(RichText::new(line).font(ty::LYRIC_PLAIN.font()).color(colors().text)).wrap());
             }
         }
         credits(ui, lyrics);
