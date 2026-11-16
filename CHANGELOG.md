@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Queue panel: *save as playlist* (the whole queue) sits on its own under the tabs,
+  and *clear* moved next to *NEXT UP*, the tracks it removes
+
 ## 0.26.0 (2026-11-16)
 
 - Crate: save things to check out later (tracks, albums, artists, or a note of a name

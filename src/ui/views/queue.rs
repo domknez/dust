@@ -19,7 +19,7 @@ impl App {
         let has_current = st.track.is_some() && current < queue.len();
         let upcoming = queue.len().saturating_sub(current + 1);
 
-        self.queue_title(ui, upcoming > 0, &queue, acts);
+        self.queue_title(ui, &queue, acts);
         if st.flow.is_some() {
             let label = if self.features().flow { "Flow · keeps going" } else { "Radio · keeps going" };
             text_left(ui.painter(), ui.cursor().min + vec2(4.0, 8.0), label, ty::SMALL, colors().accent, 300.0);
@@ -39,7 +39,21 @@ impl App {
         if upcoming == 0 {
             return;
         }
-        widgets::caption(ui, &format!("NEXT UP · {upcoming}"));
+        // "clear" sits with what it clears: the tracks still to come.
+        let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
+        text_left(
+            ui.painter(),
+            pos2(row.left() + 4.0, row.center().y),
+            &format!("NEXT UP · {upcoming}"),
+            ty::OVERLINE,
+            colors().faint,
+            200.0,
+        );
+        let clear =
+            text_button(ui, pos2(row.right() - 4.0, row.center().y), "clear", None, true).on_hover_text("Remove the tracks still to come");
+        if clear.clicked() {
+            acts.push(Action::Player(Cmd::ClearUpcoming));
+        }
         // The row under the pointer while dragging.
         let mut drop_at = None;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, metrics::QUEUE_ROW, upcoming, |ui, range| {
@@ -50,20 +64,19 @@ impl App {
         self.finish_drag(ui, drop_at, acts);
     }
 
-    fn queue_title(&mut self, ui: &mut Ui, can_clear: bool, queue: &[crate::model::Track], acts: &mut Actions) {
+    /// The tabs, then "+ save as playlist" for the whole queue.
+    fn queue_title(&mut self, ui: &mut Ui, queue: &[crate::model::Track], acts: &mut Actions) {
         self.side_panel_tabs(ui, acts);
-        ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if can_clear && ui.link(RichText::new("clear").font(ty::META.font())).clicked() {
-                    acts.push(Action::Player(Cmd::ClearUpcoming));
-                }
-                let save =
-                    ui.link(RichText::new("save as playlist").font(ty::META.font())).on_hover_text("Save the queue as a new playlist");
-                if !queue.is_empty() && save.clicked() {
-                    acts.push(Action::NewPlaylist(for_playlist(queue.to_vec())));
-                }
-            });
-        });
+        if queue.is_empty() {
+            return;
+        }
+        let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
+        let save = text_button(ui, pos2(row.left() + 4.0, row.center().y), "save as playlist", Some(Icon::Plus), false)
+            .on_hover_text("Save the whole queue as a new playlist");
+        if save.clicked() {
+            acts.push(Action::NewPlaylist(for_playlist(queue.to_vec())));
+        }
+        ui.add_space(4.0);
     }
 
     /// up next | history | crate switch at the top of the right panel, and a close
@@ -148,6 +161,24 @@ impl App {
             self.queue_drag = None;
         }
     }
+}
+
+/// A small text button at `at` (its left edge, or right edge with `right`), with an
+/// icon in front: dim, lit on hover.
+fn text_button(ui: &Ui, at: egui::Pos2, label: &str, icon: Option<Icon>, right: bool) -> egui::Response {
+    let p = colors();
+    let galley = ui.painter().layout_no_wrap(label.to_string(), ty::META.font(), egui::Color32::PLACEHOLDER);
+    let icon_width = if icon.is_some() { 16.0 } else { 0.0 };
+    let width = galley.size().x + icon_width;
+    let left = if right { at.x - width } else { at.x };
+    let rect = Rect::from_min_size(pos2(left - 4.0, at.y - 11.0), vec2(width + 8.0, 22.0));
+    let resp = ui.interact(rect, ui.scope_id().with(("text-button", label)), Sense::click());
+    let color = if resp.hovered() { p.text } else { p.dim };
+    if let Some(icon) = icon {
+        icons::paint(ui.painter(), Rect::from_center_size(pos2(left + 5.0, at.y), Vec2::splat(10.0)), icon, color);
+    }
+    ui.painter().galley(pos2(left + icon_width, at.y - galley.size().y / 2.0), galley, color);
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 fn empty_state(ui: &mut Ui) {
