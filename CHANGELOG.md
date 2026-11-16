@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.27.1 (2026-11-16)
+
 - Right-clicking the track playing in the player bar (title, artist, cover) opens its
   menu again: add to a playlist, Crate, like, go to album or artist
 
