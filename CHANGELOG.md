@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Right-clicking the track playing in the player bar (title, artist, cover) opens its
+  menu again: add to a playlist, Crate, like, go to album or artist
+
 ## 0.27.0 (2026-11-16)
 
 - Sync the Crate and play history between computers through a folder (iCloud Drive,

@@ -60,7 +60,14 @@ impl App {
     /// The track playing: cover, title, artists, the heart and + (add to a playlist);
     /// a right-click anywhere on it opens its menu.
     fn now_playing(&mut self, ui: &mut Ui, area: Rect, st: &Status, acts: &mut Actions) {
-        let shown = ui.scope_builder(UiBuilder::new().max_rect(area), |ui| self.now_playing_track(ui, area, st, acts)).response;
+        let shown = ui
+            .scope_builder(UiBuilder::new().max_rect(area), |ui| {
+                // Everything here is painted at fixed spots, which doesn't grow the
+                // scope; claim the whole area so a right-click anywhere on it counts.
+                ui.expand_to_include_rect(area);
+                self.now_playing_track(ui, area, st, acts);
+            })
+            .response;
         if let Some(track) = &st.track {
             self.now_playing_menu(&shown, track, acts);
         }
