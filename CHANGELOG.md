@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.26.1 (2026-11-16)
+
 - Queue panel: *save as playlist* (the whole queue) sits on its own under the tabs,
   and *clear* moved next to *NEXT UP*, the tracks it removes
 
