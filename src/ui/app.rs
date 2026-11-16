@@ -314,6 +314,14 @@ impl App {
 
     /// A page with a track list: empty it and load the new one.
     fn load_list(&mut self, client: Shared, view: View) {
+        // A list made from the play history is worked out here and now.
+        let history = match &view {
+            View::Collection(coll) => match coll.source {
+                CollSource::History(which) => Some(self.history_list(which)),
+                _ => None,
+            },
+            _ => None,
+        };
         let browse = &mut self.browse;
         browse.clear_list();
         match view {
@@ -340,6 +348,10 @@ impl App {
                 browse.search_load.start(&self.jobs, move || client.search(&query));
             }
             View::Loved => browse.tracks_load.start(&self.jobs, move || client.loved().map(|t| (t, None))),
+            View::Collection(_) if history.is_some() => {
+                let tracks = history.unwrap_or_default();
+                browse.tracks_load.start(&self.jobs, move || Ok((tracks, None)));
+            }
             View::Collection(coll) => {
                 browse.tracks_load.start(&self.jobs, move || match &coll.source {
                     CollSource::Album(id) => client.album_page(id).map(|(t, info)| (t, Some(info))),
@@ -360,6 +372,14 @@ impl App {
                 self.open_collection(Coll { source: CollSource::Playlist(id), kind: "PLAYLIST", title, subtitle: String::new(), picture });
             }
         }
+    }
+
+    /// The tracks of a list made from the play history (the source in use's).
+    pub(super) fn history_list(&self, which: super::stats::Smart) -> Vec<Track> {
+        let source = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
+        let now = jiff::Timestamp::now().as_second().max(0) as u64;
+        let likes = &self.library.likes.likes;
+        super::stats::smart_list(&self.plays.oldest_first(source), which, now, &|id| likes.tracks.contains(id))
     }
 
     /// Open a collection; artists get their full page instead of a track list.
@@ -391,6 +411,11 @@ impl App {
     /// Fetch a collection and play/queue it without opening it.
     pub(super) fn play_source(&mut self, source: CollSource, mode: PlayMode) {
         let Some(client) = self.client.clone() else { return };
+        if let CollSource::History(which) = source {
+            let tracks = self.history_list(which);
+            self.browse.quick_play.start(&self.jobs, move || Ok((tracks, mode)));
+            return;
+        }
         self.browse.quick_play.start(&self.jobs, move || source.fetch(&*client).map(|t| (t, mode)));
     }
 
@@ -758,7 +783,7 @@ pub(super) mod testing {
 
 #[cfg(test)]
 mod tests {
-    use super::testing::{TestApp, deezer, track};
+    use super::testing::{TestApp, deezer, ids, track};
     use super::*;
     use crate::model::Section;
     use crate::ui::load::Load;
@@ -824,6 +849,26 @@ mod tests {
         t.update(Action::Open(View::Channel(Box::new(ChannelView::explore()))));
         t.update(Action::Back);
         assert_eq!((page(&t).0, t.jobs.waiting()), (rock, jobs + 2), "Explore, then Rock again");
+    }
+
+    #[test]
+    fn lists_from_the_history_open_and_play_without_the_network() {
+        use crate::ui::plays::Play;
+        use crate::ui::stats::Smart;
+        let mut t = logged_in();
+        let now = jiff::Timestamp::now().as_second() as u64;
+        for (ago, id) in [(300, 1), (200, 1), (100, 2)] {
+            let played =
+                crate::player::Played { track: track(id, true), started_unix: now - ago, heard_secs: 200, skipped: false, flow: None };
+            t.app.plays.record(Play::new("deezer", played));
+        }
+        t.update(Action::OpenCollection(Coll::history(Smart::OnRepeat)));
+        t.jobs.run_held();
+        t.app.browse.tracks_load.poll();
+        let shown = t.app.browse.tracks_load.ready().map(|(tracks, _)| ids(tracks));
+        assert_eq!(shown, Some(vec![1]), "played twice in the last 30 days");
+        t.update(Action::PlaySource(CollSource::History(Smart::OnRepeat), PlayMode::Now));
+        assert!(t.app.browse.quick_play.is_loading());
     }
 
     #[test]

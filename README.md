@@ -94,7 +94,10 @@ and *Connect a Navidrome server*.
 - **Listening:** a page (in the sidebar) of what that history adds up to over the last
   week, month, year or all of it: time listened, tracks heard and skipped, artists and
   how many you heard for the first time, a chart by day or month, top artists, albums
-  and tracks, the artists you discovered, and what you played this week a year ago
+  and tracks, the artists you discovered, and what you played this week a year ago.
+  Under *Made from your history* are four lists that open like playlists: *On
+  repeat*, *Found lately*, *Not heard in a while* (liked or played often, not lately)
+  and *Never skipped*; they're in the command palette too
 - **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs
 - **Sleep timer:** in the player bar's ⋯ menu, with a countdown ring; after 15 minutes
   to an hour the music fades out over 30 seconds and pauses (your volume is back for

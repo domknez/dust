@@ -183,6 +183,9 @@ impl App {
                 }));
             }
         }
+        for which in crate::ui::stats::Smart::ALL {
+            all.push(Command::new("List", which.title(), move || vec![Action::OpenCollection(Coll::history(which))]));
+        }
         if self.crate_playable() > 0 {
             all.push(Command::new("Crate", "Play the new ones in your Crate", || vec![Action::PlayCrate]));
         }

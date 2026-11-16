@@ -10,8 +10,8 @@ use crate::ui::app::App;
 use crate::ui::crate_store::Thing;
 use crate::ui::format::thousands;
 use crate::ui::plays::when;
-use crate::ui::state::{Coll, PlayMode};
-use crate::ui::stats::{self, Bar, Period, Ranked, Stats};
+use crate::ui::state::{Coll, CollSource, PlayMode};
+use crate::ui::stats::{self, Bar, Period, Ranked, Smart, Stats};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, MenuTarget, Playlists, TrackMenu, text_left};
 use eframe::egui::{self, Align2, CornerRadius, Rect, RichText, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
@@ -27,6 +27,8 @@ const THREE_COLUMNS: f32 = 900.0;
 pub struct StatsView {
     pub period: Period,
     cache: Option<(Key, Stats)>,
+    /// How many tracks each list made from the history holds.
+    lists: Vec<(Smart, usize)>,
 }
 
 #[derive(PartialEq)]
@@ -62,6 +64,9 @@ impl App {
         if self.stats_view.cache.as_ref().is_none_or(|(k, _)| *k != key) {
             let now = jiff::Timestamp::now().as_second().max(0) as u64;
             let worked_out = stats::compute(&plays, key.period, now, &zone);
+            let likes = &self.library.likes.likes;
+            let liked = |id: &crate::model::TrackId| likes.tracks.contains(id);
+            self.stats_view.lists = Smart::ALL.iter().map(|&which| (which, stats::smart_list(&plays, which, now, &liked).len())).collect();
             self.stats_view.cache = Some((key, worked_out));
         }
         let Some((_, st)) = &self.stats_view.cache else { return };
@@ -89,6 +94,8 @@ impl App {
             tiles(ui, &st, self.stats_view.period);
             ui.add_space(22.0);
             chart(ui, &st.chart);
+            ui.add_space(26.0);
+            lists(ui, &self.stats_view.lists, acts);
             ui.add_space(26.0);
 
             let lists = [
@@ -233,6 +240,55 @@ fn play_now(track: &Track, acts: &mut Actions) {
 /// "1 play", "12 plays".
 fn plays_label(n: u32) -> String {
     if n == 1 { "1 play".into() } else { format!("{} plays", thousands(u64::from(n))) }
+}
+
+/// The lists made from the history, as cards: name, what's in it, how many tracks.
+/// Click opens one; right-click plays or queues it.
+fn lists(ui: &mut Ui, lists: &[(Smart, usize)], acts: &mut Actions) {
+    let p = colors();
+    widgets::caption(ui, "MADE FROM YOUR HISTORY");
+    ui.add_space(6.0);
+    let gap = 12.0;
+    let count = lists.len().max(1) as f32;
+    let width = ((ui.available_width() - gap * (count - 1.0)) / count).max(160.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(gap, gap);
+        for &(which, n) in lists {
+            let (rect, resp) = ui.allocate_exact_size(vec2(width, 96.0), if n > 0 { Sense::click() } else { Sense::hover() });
+            let corner = CornerRadius::same(radius::CONTROL);
+            ui.painter().rect_filled(rect, corner, if n > 0 && resp.hovered() { p.raised } else { p.surface });
+            let edge = if n > 0 && resp.hovered() { p.accent } else { p.line };
+            ui.painter().rect_stroke(rect, corner, egui::Stroke::new(1.0, edge), egui::StrokeKind::Inside);
+            let x = rect.left() + 16.0;
+            let inner = rect.width() - 32.0;
+            text_left(
+                ui.painter(),
+                pos2(x, rect.top() + 24.0),
+                which.title(),
+                ty::ITEM.strong(),
+                if n > 0 { p.text } else { p.dim },
+                inner,
+            );
+            let about = egui::text::LayoutJob::simple(which.about().to_string(), ty::CAPTION.font(), p.dim, inner);
+            let galley = ui.painter().layout_job(about);
+            ui.painter().galley(pos2(x, rect.top() + 38.0), galley, p.dim);
+            let tracks = match n {
+                0 => "nothing yet".to_string(),
+                1 => "1 track".to_string(),
+                n => format!("{n} tracks"),
+            };
+            ui.painter().text(pos2(x, rect.bottom() - 14.0), Align2::LEFT_CENTER, tracks, ty::META.font(), p.faint);
+            if n == 0 {
+                continue;
+            }
+            if let Some(mode) = widgets::queue_menu(&resp) {
+                acts.push(Action::PlaySource(CollSource::History(which), mode));
+            }
+            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                acts.push(Action::OpenCollection(Coll::history(which)));
+            }
+        }
+    });
 }
 
 /// Time listened, tracks heard, artists, and new artists, as figures in a row.

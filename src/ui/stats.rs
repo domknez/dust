@@ -257,6 +257,89 @@ fn chart(shown: &[&Play], period: Period, now: u64, oldest: Option<u64>, zone: &
     bars.into_iter().map(|(_, bar)| bar).collect()
 }
 
+/// Lists made from the play history, opened like playlists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Smart {
+    /// Most heard in the last 30 days.
+    OnRepeat,
+    /// First heard in the last 45 days and heard again since.
+    Discovered,
+    /// Liked, or heard through three times or more, but not in the last 60 days.
+    Forgotten,
+    /// Heard through three times or more and never skipped.
+    NeverSkipped,
+}
+
+/// Tracks in each list, at most.
+const SMART_MOST: usize = 50;
+
+impl Smart {
+    pub const ALL: [Smart; 4] = [Smart::OnRepeat, Smart::Discovered, Smart::Forgotten, Smart::NeverSkipped];
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Smart::OnRepeat => "On repeat",
+            Smart::Discovered => "Found lately",
+            Smart::Forgotten => "Not heard in a while",
+            Smart::NeverSkipped => "Never skipped",
+        }
+    }
+
+    pub fn about(self) -> &'static str {
+        match self {
+            Smart::OnRepeat => "What you played most in the last 30 days",
+            Smart::Discovered => "First heard in the last 45 days, and played again since",
+            Smart::Forgotten => "Liked or played often, but not in the last 60 days",
+            Smart::NeverSkipped => "Played three times or more and never skipped",
+        }
+    }
+}
+
+/// One track's plays, for the lists.
+struct TrackPlays<'a> {
+    track: &'a Track,
+    first: u64,
+    last: u64,
+    heard: u32,
+    skipped: u32,
+}
+
+/// The tracks of list `which` from `plays` (oldest first), most heard first;
+/// `liked` says which tracks the account likes.
+pub fn smart_list(plays: &[&Play], which: Smart, now: u64, liked: &dyn Fn(&crate::model::TrackId) -> bool) -> Vec<Track> {
+    let window = match which {
+        Smart::OnRepeat => Some(now.saturating_sub(30 * DAY)),
+        _ => None,
+    };
+    let mut by_track: HashMap<&crate::model::TrackId, TrackPlays> = HashMap::new();
+    for play in plays.iter().filter(|p| window.is_none_or(|from| p.at >= from)) {
+        let entry = by_track.entry(&play.track.id).or_insert(TrackPlays {
+            track: &play.track,
+            first: play.at,
+            last: play.at,
+            heard: 0,
+            skipped: 0,
+        });
+        entry.track = &play.track;
+        entry.last = entry.last.max(play.at);
+        entry.first = entry.first.min(play.at);
+        if play.skipped {
+            entry.skipped += 1;
+        } else {
+            entry.heard += 1;
+        }
+    }
+    let keep = |t: &TrackPlays| match which {
+        Smart::OnRepeat => t.heard >= 2,
+        Smart::Discovered => t.first >= now.saturating_sub(45 * DAY) && t.heard >= 2,
+        Smart::Forgotten => t.last < now.saturating_sub(60 * DAY) && (t.heard >= 3 || liked(&t.track.id)),
+        Smart::NeverSkipped => t.heard >= 3 && t.skipped == 0,
+    };
+    let mut kept: Vec<TrackPlays> = by_track.into_values().filter(|t| keep(t) && !t.track.is_episode()).collect();
+    kept.sort_by(|a, b| b.heard.cmp(&a.heard).then(b.last.cmp(&a.last)));
+    kept.into_iter().take(SMART_MOST).map(|t| t.track.clone()).collect()
+}
+
 /// "12 h 40 min", "35 min", "2 days 4 h".
 pub fn duration(secs: u64) -> String {
     let mins = secs / 60;
@@ -366,6 +449,30 @@ mod tests {
         let s = stats(&plays, Period::Week);
         assert_eq!(s.year_ago.iter().map(|r| r.track.id.clone()).collect::<Vec<_>>(), [TrackId::from(7)]);
         assert_eq!(s.since, Some(NOW - 380 * DAY));
+    }
+
+    #[test]
+    fn lists_from_the_history() {
+        let mut plays = vec![
+            play(200, 1, "Old", "O", false),
+            play(190, 1, "Old", "O", false),
+            play(180, 1, "Old", "O", false),
+            play(150, 2, "Liked", "L", false),
+            play(20, 3, "New", "N", false),
+            play(10, 3, "New", "N", false),
+            play(5, 4, "Mixed", "M", false),
+            play(4, 4, "Mixed", "M", true),
+            play(3, 4, "Mixed", "M", false),
+            play(2, 4, "Mixed", "M", false),
+        ];
+        plays.sort_by_key(|p| p.at);
+        let refs: Vec<&Play> = plays.iter().collect();
+        let liked = |id: &TrackId| *id == TrackId::from(2);
+        let ids = |which| smart_list(&refs, which, NOW, &liked).iter().map(|t| t.id.to_string()).collect::<Vec<_>>();
+        assert_eq!(ids(Smart::OnRepeat), ["4", "3"]);
+        assert_eq!(ids(Smart::Discovered), ["4", "3"]);
+        assert_eq!(ids(Smart::Forgotten), ["1", "2"], "played often, or liked; not lately");
+        assert_eq!(ids(Smart::NeverSkipped), ["1"]);
     }
 
     #[test]

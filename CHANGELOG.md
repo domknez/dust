@@ -21,6 +21,9 @@
 - Command palette (`⌘K`, or *Commands…* in the account menu): pages, playlists,
   artists you listen to, and things to do with the track playing, Flow moods and the
   player, found by typing
+- Lists made from the play history, on the Listening page and in the palette: *On
+  repeat*, *Found lately*, *Not heard in a while* and *Never skipped*; they open like
+  playlists, to play, queue or add to a playlist of your own
 
 ## 0.27.1 (2026-11-16)
 

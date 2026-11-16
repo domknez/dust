@@ -84,6 +84,8 @@ pub enum CollSource {
     ArtistMix(String),
     /// A podcast: its episodes, newest first.
     Show(String),
+    /// A list made from the play history; worked out here, not fetched.
+    History(crate::ui::stats::Smart),
 }
 
 impl CollSource {
@@ -96,6 +98,7 @@ impl CollSource {
             CollSource::Mix(id) => client.mix(id),
             CollSource::ArtistMix(id) => client.artist_mix(id),
             CollSource::Show(id) => client.show_episodes(id),
+            CollSource::History(_) => Err(crate::model::Error::Other("made from the play history".into())),
         }
     }
 }
@@ -112,6 +115,17 @@ pub struct Coll {
 }
 
 impl Coll {
+    /// A list made from the play history.
+    pub fn history(which: crate::ui::stats::Smart) -> Self {
+        Coll {
+            source: CollSource::History(which),
+            kind: "FROM YOUR HISTORY",
+            title: which.title().to_string(),
+            subtitle: which.about().to_string(),
+            picture: None,
+        }
+    }
+
     /// The album a track is on, if Deezer said which.
     pub fn album_of(track: &Track) -> Option<Self> {
         (!track.album_id.is_empty()).then(|| Coll {
