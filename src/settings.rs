@@ -1,7 +1,7 @@
 //! Tiny `key=value` settings file in the platform config directory, read and
 //! written as typed [`Prefs`].
 
-use crate::model::Quality;
+use crate::model::{PlaylistId, Quality};
 use crate::player::Repeat;
 use crate::source::{KINDS, SourceId};
 use crate::ui::Appearance;
@@ -43,6 +43,10 @@ pub struct Prefs {
     pub auto_update: bool,
     /// The sidebar's playlist list is shown.
     pub sidebar_playlists: bool,
+    /// Playlists tracks were last added to, the latest first: "Add to playlist"
+    /// offers them on top and ⌘D adds to the first. Ids of every source mix here;
+    /// each offers only its own.
+    pub recent_playlists: Vec<PlaylistId>,
     /// The settings file changes are saved to; None keeps them in memory.
     file: Option<PathBuf>,
 }
@@ -71,6 +75,9 @@ impl Prefs {
             volume: get("volume").and_then(|v| v.parse::<f32>().ok()).map_or(0.5, |v| v.clamp(0.0, 1.0)),
             auto_update: get("auto_update") != Some("false"),
             sidebar_playlists: get("sidebar_playlists") != Some("closed"),
+            recent_playlists: get("recent_playlists")
+                .map(|ids| ids.split(',').filter(|id| !id.is_empty()).map(PlaylistId::new).collect())
+                .unwrap_or_default(),
             file: None,
         }
     }
@@ -93,8 +100,17 @@ impl Prefs {
         }
     }
 
+    /// Note that tracks were just added to `playlist`.
+    pub fn used_playlist(&mut self, playlist: PlaylistId) {
+        self.update(|p| {
+            p.recent_playlists.retain(|id| *id != playlist);
+            p.recent_playlists.insert(0, playlist);
+            p.recent_playlists.truncate(RECENT_PLAYLISTS);
+        });
+    }
+
     /// Every preference as its key and saved value.
-    fn values(&self) -> [(&'static str, String); 10] {
+    fn values(&self) -> [(&'static str, String); 11] {
         let flag = |on: bool| if on { "true" } else { "false" }.to_string();
         [
             ("source", self.source.key.into()),
@@ -107,9 +123,13 @@ impl Prefs {
             ("volume", format!("{:.3}", self.volume)),
             ("auto_update", flag(self.auto_update)),
             ("sidebar_playlists", if self.sidebar_playlists { "open" } else { "closed" }.into()),
+            ("recent_playlists", self.recent_playlists.iter().map(PlaylistId::as_str).collect::<Vec<_>>().join(",")),
         ]
     }
 }
+
+/// Playlists remembered as used last (a few, so some survive a switch of source).
+const RECENT_PLAYLISTS: usize = 6;
 
 /// A settings file's text; empty when there is none.
 fn read(path: &Path) -> String {
@@ -134,8 +154,8 @@ fn merge(text: &str, changes: &[(&str, String)]) -> String {
 mod tests {
     use super::*;
 
-    /// A file as dust 0.19 writes it.
-    const SAVED: &str = "auto_update=false\noutput=Kitchen\nquality=flac\nrepeat=all\nreport_listens=false\nshuffle=true\n\
+    /// A file as dust writes it.
+    const SAVED: &str = "auto_update=false\noutput=Kitchen\nquality=flac\nrecent_playlists=12,ab-3\nrepeat=all\nreport_listens=false\nshuffle=true\n\
                          sidebar_playlists=closed\nsource=navidrome\ntheme=dark\nvolume=0.250\n";
 
     #[test]
@@ -148,6 +168,17 @@ mod tests {
         assert_eq!(p.repeat, Repeat::All);
         assert_eq!(p.output.as_deref(), Some("Kitchen"));
         assert_eq!(p.volume, 0.25);
+        assert_eq!(p.recent_playlists, [PlaylistId::new("12"), PlaylistId::new("ab-3")]);
+    }
+
+    #[test]
+    fn the_playlist_used_last_comes_first() {
+        let mut p = Prefs::parse(SAVED);
+        p.used_playlist(PlaylistId::new("ab-3"));
+        p.used_playlist(PlaylistId::new("7"));
+        assert_eq!(p.recent_playlists, [PlaylistId::new("7"), PlaylistId::new("ab-3"), PlaylistId::new("12")]);
+        (0..10).for_each(|n| p.used_playlist(PlaylistId::from(n)));
+        assert_eq!(p.recent_playlists.len(), RECENT_PLAYLISTS);
     }
 
     #[test]
@@ -160,6 +191,7 @@ mod tests {
         assert_eq!(p.repeat, Repeat::Off);
         assert_eq!(p.output, None);
         assert_eq!(p.volume, 1.0);
+        assert!(p.recent_playlists.is_empty());
     }
 
     #[test]

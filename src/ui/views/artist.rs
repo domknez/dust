@@ -13,7 +13,7 @@ use crate::ui::format::thousands;
 use crate::ui::state::{ArtistView, Coll, CollSource, PlayMode};
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, radius, typography as ty};
-use crate::ui::widgets::{self, Columns, Grid, GridColumns, RowMenu, Table, text_left};
+use crate::ui::widgets::{self, Columns, Grid, GridColumns, Playlists, RowMenu, Table, text_left};
 use eframe::egui::{self, Align2, CornerRadius, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
 
 /// Popular tracks shown before "Show all".
@@ -78,7 +78,11 @@ impl App {
                     columns: &columns,
                     now,
                     liked: &liked,
-                    menu: RowMenu { playlists: &self.library.playlists, removable: false, mix: self.features().track_mix },
+                    menu: RowMenu {
+                        playlists: Playlists { all: &self.library.playlists, recent: &self.prefs.recent_playlists },
+                        removable: false,
+                        mix: self.features().track_mix,
+                    },
                 };
                 widgets::track_rows(ui, &mut self.covers, &table, None, 0..popular, left.min + vec2(0.0, 28.0), left.width(), acts);
                 if page.top.len() > POPULAR {

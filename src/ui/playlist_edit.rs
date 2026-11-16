@@ -9,7 +9,7 @@ use crate::ui::app::App;
 use crate::ui::load::Load;
 use crate::ui::state::{CollSource, View, for_playlist};
 use crate::ui::style::{colors, typography as ty};
-use crate::ui::widgets;
+use crate::ui::widgets::{self, Playlists};
 use eframe::egui::{self, Key, RichText};
 
 /// A change to make on the music source (Deezer or a server).
@@ -94,7 +94,15 @@ fn run(client: &dyn Source, edit: Edit) -> Result<Done, Error> {
 impl App {
     pub(in crate::ui) fn edit_playlist(&mut self, edit: Edit) {
         let Some(client) = self.client.clone() else { return };
+        if let Edit::Add { playlist, .. } = &edit {
+            self.prefs.used_playlist(playlist.id.clone());
+        }
         self.library.editing.task.start(&self.jobs, move || run(&*client, edit));
+    }
+
+    /// What "Add to playlist" offers: the account's playlists, those used last first.
+    pub(in crate::ui) fn playlist_choices(&self) -> Playlists<'_> {
+        Playlists { all: &self.library.playlists, recent: &self.prefs.recent_playlists }
     }
 
     /// Ask for a name, then create a playlist with `tracks`.

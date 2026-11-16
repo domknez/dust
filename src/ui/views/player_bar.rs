@@ -1,7 +1,7 @@
 //! Player bar, one row: now playing on the left; transport, times and progress in
 //! the middle; lyrics, queue, the ⋯ menu, output and volume on the right.
 
-use crate::model::{Likeable, TrackId};
+use crate::model::{Likeable, Track, TrackId};
 use crate::player::{Cmd, Repeat, State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::{App, SidePanel};
@@ -9,8 +9,8 @@ use crate::ui::format::mmss;
 use crate::ui::state::Coll;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
-use crate::ui::widgets::{self, text_left};
-use eframe::egui::{self, Align2, Rect, Ui, UiBuilder, Vec2, pos2, vec2};
+use crate::ui::widgets::{self, NowPlayingMenu, NowPlayingOffer, TrackMenu, text_left};
+use eframe::egui::{self, Align2, PopupCloseBehavior, Rect, RectAlign, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
 use std::time::Duration;
 
 /// Share of the bar width for the now-playing and the controls columns (capped).
@@ -23,6 +23,8 @@ const VOLUME_WIDTH: f32 = 64.0;
 const TRANSPORT_WIDTH: f32 = 204.0;
 /// Room for "12:34" on each side of the progress bar.
 const TIME_WIDTH: f32 = 40.0;
+/// Adds what's playing to the playlist used last.
+const ADD_TO_RECENT: egui::KeyboardShortcut = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::D);
 /// Progress refresh while playing.
 pub(in crate::ui) const TICK: Duration = Duration::from_millis(500);
 
@@ -54,14 +56,23 @@ impl App {
         }
     }
 
+    /// The track playing: cover, title, artists, the heart and + (add to a playlist);
+    /// a right-click anywhere on it opens its menu.
     fn now_playing(&mut self, ui: &mut Ui, area: Rect, st: &Status, acts: &mut Actions) {
+        let shown = ui.scope_builder(UiBuilder::new().max_rect(area), |ui| self.now_playing_track(ui, area, st, acts)).response;
+        if let Some(track) = &st.track {
+            self.now_playing_menu(&shown, track, acts);
+        }
+    }
+
+    fn now_playing_track(&mut self, ui: &mut Ui, area: Rect, st: &Status, acts: &mut Actions) {
         let art_size = metrics::NOW_PLAYING_ART;
         if let Some(track) = &st.track {
             let art = Rect::from_min_size(pos2(area.left(), area.center().y - art_size / 2.0), Vec2::splat(art_size));
             widgets::cover(ui, &mut self.covers, track.art.as_ref(), metrics::NOW_PLAYING_PX, art, radius::ROW);
             let x = art.right() + 14.0;
-            // Room for the text, leaving space for the heart.
-            let width = area.right() - 36.0 - x;
+            // Room for the text, leaving space for the heart and +.
+            let width = area.right() - 62.0 - x;
             // Heart right after the title or artist, whichever is longer.
             let text_width =
                 |text: &str, style: ty::Text| ui.painter().layout_no_wrap(text.to_string(), style.font(), colors().text).size().x;
@@ -70,8 +81,11 @@ impl App {
             // Episodes can't be liked.
             let what = Likeable::Track(track.id.clone());
             let liked = self.library.likes.likes.contains(&what);
-            if !track.is_episode() && widgets::heart_at(ui, heart, "now-playing", liked, 16.0).clicked() {
-                acts.push(Action::ToggleLike(what));
+            if !track.is_episode() {
+                if widgets::heart_at(ui, heart, "now-playing", liked, 16.0).clicked() {
+                    acts.push(Action::ToggleLike(what));
+                }
+                self.add_button(ui, pos2(heart.x + 26.0, heart.y), track, acts);
             }
             // Cover and title open the album (an episode's podcast).
             let album = Coll::origin_of(track);
@@ -110,6 +124,69 @@ impl App {
         if st.state == State::Loading {
             let spot = Rect::from_center_size(pos2(area.left() + art_size / 2.0, area.center().y), Vec2::splat(art_size));
             ui.put(spot, egui::Spinner::new().size(20.0));
+        }
+    }
+
+    /// + by the heart: pick a playlist for the track playing, typing to find it.
+    fn add_button(&self, ui: &mut Ui, center: egui::Pos2, track: &Track, acts: &mut Actions) {
+        let filter = ui.scope_id().with("now-playing-playlist-filter");
+        let rect = Rect::from_center_size(center, Vec2::splat(24.0));
+        let resp = ui.interact(rect, ui.scope_id().with("now-playing-add"), Sense::click());
+        let color = if resp.hovered() { colors().text } else { colors().dim };
+        icons::paint(ui.painter(), Rect::from_center_size(center, Vec2::splat(15.0)), Icon::Plus, color);
+        if resp.clicked() {
+            ui.data_mut(|d| d.remove::<String>(filter));
+        }
+        let resp = resp.on_hover_text("Add to playlist").on_hover_cursor(egui::CursorIcon::PointingHand);
+        let mut pick = None;
+        egui::Popup::menu(&resp).width(240.0).align(RectAlign::TOP_START).close_behavior(PopupCloseBehavior::CloseOnClickOutside).show(
+            |ui| {
+                pick = widgets::playlist_picker(ui, self.playlist_choices(), Some(filter));
+                if pick.is_some() {
+                    ui.close();
+                }
+            },
+        );
+        if let Some(choice) = pick {
+            acts.push(Action::TrackMenu(vec![track.clone()], choice));
+        }
+    }
+
+    /// The right-click menu of the track playing, on `shown` (where the player bar
+    /// draws it). Not in the mini player: its window is too short for a menu.
+    fn now_playing_menu(&self, shown: &egui::Response, track: &Track, acts: &mut Actions) {
+        let episode = track.is_episode();
+        let offer = NowPlayingOffer {
+            liked: (!episode).then(|| self.library.likes.likes.contains(&Likeable::Track(track.id.clone()))),
+            mix: !episode && self.features().track_mix,
+            artist: !episode && !track.artists.is_empty(),
+            album: Coll::origin_of(track).map(|_| if episode { "Go to podcast" } else { "Go to album" }),
+        };
+        let mut pick = None;
+        shown.container_context_menu(|ui| pick = widgets::now_playing_menu(ui, self.playlist_choices(), offer));
+        let action = match pick {
+            None => None,
+            Some(NowPlayingMenu::Track(choice)) => Some(Action::TrackMenu(vec![track.clone()], choice)),
+            Some(NowPlayingMenu::Like) => Some(Action::ToggleLike(Likeable::Track(track.id.clone()))),
+            Some(NowPlayingMenu::Artist) => track.artists.first().cloned().map(Action::OpenArtist),
+            Some(NowPlayingMenu::Album) => Coll::origin_of(track).map(Action::OpenCollection),
+        };
+        acts.extend(action);
+    }
+
+    /// ⌘D / Ctrl+D: the track playing goes into the playlist tracks were added to
+    /// last.
+    pub(in crate::ui) fn add_to_recent_shortcut(&mut self, ctx: &egui::Context, st: &Status, acts: &mut Actions) {
+        if !ctx.input_mut(|i| i.consume_shortcut(&ADD_TO_RECENT)) {
+            return;
+        }
+        let Some(track) = st.track.as_ref().filter(|t| !t.is_episode()) else { return };
+        let recent = self.prefs.recent_playlists.iter().find_map(|id| self.library.playlists.iter().find(|p| p.owned && p.id == *id));
+        match recent {
+            Some(playlist) => acts.push(Action::TrackMenu(vec![track.clone()], TrackMenu::AddTo(playlist.clone()))),
+            None => {
+                self.toasts.info(ctx, format!("{} adds to the playlist you used last. Pick one with + first", widgets::ADD_TO_RECENT_KEYS))
+            }
         }
     }
 

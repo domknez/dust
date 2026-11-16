@@ -12,7 +12,7 @@ use crate::ui::state::{Coll, CollSource, View, playable};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::views::home::{CARD_ROW_HEIGHT, card_row};
-use crate::ui::widgets::{self, Columns, RowMenu, Table, TrackMenu, column_captions, text_left};
+use crate::ui::widgets::{self, Columns, Playlists, RowMenu, Table, TrackMenu, column_captions, text_left};
 use eframe::egui::{self, Color32, CornerRadius, Key, KeyboardShortcut, Modifiers, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
 
 /// Search page: title and result count, then card rows, then the table captions.
@@ -97,7 +97,11 @@ impl App {
                 columns: &columns,
                 now: (playing_id, playing),
                 liked: &liked,
-                menu: RowMenu { playlists: &self.library.playlists, removable, mix: self.features().track_mix },
+                menu: RowMenu {
+                    playlists: Playlists { all: &self.library.playlists, recent: &self.prefs.recent_playlists },
+                    removable,
+                    mix: self.features().track_mix,
+                },
             };
             let top = origin + vec2(0.0, header_height);
             widgets::track_rows(ui, &mut self.covers, &table, Some(&mut self.browse.selection), first..last, top, table_width, acts);
@@ -251,7 +255,7 @@ impl App {
                 let more = widgets::icon_button(ui, Icon::More, 18.0, colors().dim).on_hover_text("More");
                 egui::Popup::menu(&more).width(220.0).show(|ui| {
                     // Every playable track of the list, to a playlist or a new one.
-                    let mut pick = widgets::add_to_playlist(ui, &self.library.playlists).map(|choice| match choice {
+                    let mut pick = widgets::add_to_playlist(ui, self.playlist_choices()).map(|choice| match choice {
                         TrackMenu::AddTo(playlist) => Action::EditPlaylist(Edit::Add { playlist, tracks: self.browse.tracks.clone() }),
                         _ => Action::NewPlaylist(playable(self.browse.tracks.clone())),
                     });

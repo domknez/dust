@@ -1,13 +1,25 @@
 //! Popover menus and their rows.
 
 use super::text::text_left;
-use crate::model::Playlist;
+use crate::model::{Playlist, PlaylistId};
 use crate::ui::state::PlayMode;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, radius, typography as ty};
-use eframe::egui::{self, Color32, CornerRadius, Response, Sense, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, Color32, CornerRadius, Key, Response, Sense, Ui, Vec2, pos2, vec2};
 
 const CONTEXT_MENU_WIDTH: f32 = 190.0;
+/// Playlists used last, offered on top of "Add to playlist".
+const RECENT: usize = 3;
+/// The shortcut that adds what's playing to the playlist used last, as menus show it.
+pub const ADD_TO_RECENT_KEYS: &str = if cfg!(target_os = "macos") { "⌘D" } else { "Ctrl+D" };
+
+/// The playlists "Add to playlist" offers: the account's own ones of `all`, those
+/// tracks were added to last (`recent`, the latest first) on top.
+#[derive(Clone, Copy)]
+pub struct Playlists<'a> {
+    pub all: &'a [Playlist],
+    pub recent: &'a [PlaylistId],
+}
 
 /// Frame for our popovers.
 pub fn popover_frame(ctx: &egui::Context) -> egui::Frame {
@@ -127,7 +139,7 @@ pub struct MenuTarget {
 /// queue, Start track mix (one track, with `mix`), Add to playlist › (the own ones of
 /// `playlists`), and Remove from this playlist when `removable`. Only removing is
 /// offered for tracks that can't be played.
-pub fn track_menu(resp: &Response, playlists: &[Playlist], removable: bool, mix: bool, target: MenuTarget) -> Option<TrackMenu> {
+pub fn track_menu(resp: &Response, playlists: Playlists, removable: bool, mix: bool, target: MenuTarget) -> Option<TrackMenu> {
     let mut pick = None;
     resp.context_menu(|ui| {
         ui.set_min_width(CONTEXT_MENU_WIDTH);
@@ -164,9 +176,9 @@ pub fn track_menu(resp: &Response, playlists: &[Playlist], removable: bool, mix:
     pick
 }
 
-/// "Add to playlist ›" row with a submenu: New playlist…, then those of
-/// `playlists` the account owns. Returns AddTo or NewPlaylist when one was chosen.
-pub fn add_to_playlist(ui: &mut Ui, playlists: &[Playlist]) -> Option<TrackMenu> {
+/// "Add to playlist ›" row with a submenu: New playlist…, the playlists used last,
+/// then every own one. Returns AddTo or NewPlaylist when one was chosen.
+pub fn add_to_playlist(ui: &mut Ui, playlists: Playlists) -> Option<TrackMenu> {
     let row = menu_row(ui, Some(Icon::Plus), "Add to playlist", None, false, colors().text);
     let chevron = egui::Rect::from_center_size(pos2(row.rect.right() - 16.0, row.rect.center().y), Vec2::splat(12.0));
     icons::paint(ui.painter(), chevron, Icon::ChevronRight, colors().faint);
@@ -174,23 +186,147 @@ pub fn add_to_playlist(ui: &mut Ui, playlists: &[Playlist]) -> Option<TrackMenu>
     egui::containers::menu::SubMenu::new().show(ui, &row, |ui| {
         ui.set_min_width(CONTEXT_MENU_WIDTH);
         ui.set_max_width(CONTEXT_MENU_WIDTH + 40.0);
-        if menu_row(ui, Some(Icon::Plus), "New playlist…", None, false, colors().accent).clicked() {
-            pick = Some(TrackMenu::NewPlaylist);
-        }
-        let own: Vec<&Playlist> = playlists.iter().filter(|p| p.owned).collect();
-        if !own.is_empty() {
-            divider(ui);
-        }
-        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-            for p in own {
-                if menu_row(ui, None, &p.title, None, false, colors().text).clicked() {
-                    pick = Some(TrackMenu::AddTo(p.clone()));
-                }
-            }
-        });
+        pick = playlist_picker(ui, playlists, None);
         if pick.is_some() {
             ui.close();
         }
     });
+    pick
+}
+
+/// The rows of a playlist choice: New playlist…, the playlists used last, then every
+/// own one. With `filter` (where the typed text is kept), a field on top narrows the
+/// list as you type and Enter takes the first match.
+pub fn playlist_picker(ui: &mut Ui, playlists: Playlists, filter: Option<egui::Id>) -> Option<TrackMenu> {
+    let p = colors();
+    let own: Vec<&Playlist> = playlists.all.iter().filter(|pl| pl.owned).collect();
+    let mut query = filter.map(|id| ui.data(|d| d.get_temp::<String>(id)).unwrap_or_default());
+    if let Some(query) = query.as_mut() {
+        let field =
+            ui.add(egui::TextEdit::singleline(query).hint_text("Find a playlist").desired_width(f32::INFINITY).margin(vec2(8.0, 6.0)));
+        field.request_focus();
+        ui.add_space(6.0);
+    }
+    let needle = query.as_deref().unwrap_or_default().trim().to_lowercase();
+    let matches: Vec<&Playlist> = own.iter().copied().filter(|pl| pl.title.to_lowercase().contains(&needle)).collect();
+    let mut pick = None;
+    if needle.is_empty() {
+        if menu_row(ui, Some(Icon::Plus), "New playlist…", None, false, p.accent).clicked() {
+            pick = Some(TrackMenu::NewPlaylist);
+        }
+        let recent: Vec<&Playlist> =
+            playlists.recent.iter().filter_map(|id| own.iter().find(|pl| pl.id == *id).copied()).take(RECENT).collect();
+        if !recent.is_empty() {
+            divider(ui);
+            caption(ui, "RECENT");
+            for (i, pl) in recent.into_iter().enumerate() {
+                let mut row = menu_row(ui, None, &pl.title, None, false, p.text);
+                if i == 0 {
+                    row = row.on_hover_text(format!("{ADD_TO_RECENT_KEYS} adds what's playing here"));
+                }
+                if row.clicked() {
+                    pick = Some(TrackMenu::AddTo(pl.clone()));
+                }
+            }
+            if !own.is_empty() {
+                divider(ui);
+                caption(ui, "ALL");
+            }
+        } else if !own.is_empty() {
+            divider(ui);
+        }
+    }
+    if matches.is_empty() && !needle.is_empty() {
+        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::hover());
+        text_left(
+            ui.painter(),
+            pos2(rect.left() + 10.0, rect.center().y),
+            "No playlist by that name",
+            ty::ITEM,
+            p.faint,
+            rect.width() - 20.0,
+        );
+    }
+    egui::ScrollArea::vertical().id_salt("playlists").max_height(320.0).show(ui, |ui| {
+        for pl in &matches {
+            if menu_row(ui, None, &pl.title, None, false, p.text).clicked() {
+                pick = Some(TrackMenu::AddTo((*pl).clone()));
+            }
+        }
+    });
+    if !needle.is_empty()
+        && pick.is_none()
+        && let Some(first) = matches.first()
+        && ui.input(|i| i.key_pressed(Key::Enter))
+    {
+        pick = Some(TrackMenu::AddTo((*first).clone()));
+    }
+    if let (Some(id), Some(query)) = (filter, query) {
+        ui.data_mut(|d| {
+            if pick.is_some() {
+                d.remove::<String>(id);
+            } else {
+                d.insert_temp(id, query);
+            }
+        });
+    }
+    pick
+}
+
+/// A choice in the right-click menu of the track playing.
+#[derive(Clone, Debug, PartialEq)]
+pub enum NowPlayingMenu {
+    Track(TrackMenu),
+    /// Like it, or take the like back.
+    Like,
+    Artist,
+    Album,
+}
+
+/// What the right-click menu of the track playing offers.
+#[derive(Clone, Copy)]
+pub struct NowPlayingOffer {
+    /// It can be liked (not an episode); whether it is.
+    pub liked: Option<bool>,
+    /// "Start track mix".
+    pub mix: bool,
+    pub artist: bool,
+    /// "Go to album", or "Go to podcast" for an episode.
+    pub album: Option<&'static str>,
+}
+
+/// The rows of the right-click menu of the track playing: Add to playlist ›, like,
+/// Start track mix, then Go to artist / album.
+pub fn now_playing_menu(ui: &mut Ui, playlists: Playlists, offer: NowPlayingOffer) -> Option<NowPlayingMenu> {
+    ui.set_min_width(CONTEXT_MENU_WIDTH + 20.0);
+    ui.set_max_width(CONTEXT_MENU_WIDTH + 20.0);
+    let p = colors();
+    let mut pick = None;
+    if let Some(liked) = offer.liked {
+        pick = add_to_playlist(ui, playlists).map(NowPlayingMenu::Track);
+        let (icon, title) = if liked { (Icon::Heart, "Remove from Loved tracks") } else { (Icon::HeartOutline, "Add to Loved tracks") };
+        if menu_row(ui, Some(icon), title, None, false, p.text).clicked() {
+            pick = Some(NowPlayingMenu::Like);
+        }
+        if offer.mix && menu_row(ui, Some(Icon::Streaming), "Start track mix", None, false, p.text).clicked() {
+            pick = Some(NowPlayingMenu::Track(TrackMenu::Mix));
+        }
+    }
+    if offer.artist || offer.album.is_some() {
+        if offer.liked.is_some() {
+            divider(ui);
+        }
+        if offer.artist && menu_row(ui, None, "Go to artist", None, false, p.text).clicked() {
+            pick = Some(NowPlayingMenu::Artist);
+        }
+        if let Some(title) = offer.album
+            && menu_row(ui, None, title, None, false, p.text).clicked()
+        {
+            pick = Some(NowPlayingMenu::Album);
+        }
+    }
+    if pick.is_some() {
+        ui.close();
+    }
     pick
 }

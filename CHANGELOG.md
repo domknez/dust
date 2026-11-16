@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Save the track playing to a playlist from the player bar: **+** next to the heart
+  opens your playlists with a field to find one by typing (`Enter` takes the first
+  match), and a right-click on the track offers *Add to playlist ›*, *Add to Loved
+  tracks*, *Start track mix*, *Go to artist* and *Go to album*
+- `⌘D` / `Ctrl+D` adds the track playing to the playlist you added to last, also from
+  the mini player
+- *Add to playlist ›* everywhere lists the playlists you used last on top (*Recent*)
+
 ## 0.22.3 (2026-11-01)
 
 - Pick several tracks in a list: click, `⌘`-click (`Ctrl`-click), `Shift`-click for a

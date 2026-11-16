@@ -298,6 +298,18 @@ mod tests {
     }
 
     #[test]
+    fn the_playlist_added_to_comes_first_in_the_menu() {
+        use crate::model::{Playlist, PlaylistId};
+        let mut t = TestApp::new("");
+        t.app.source_ready(deezer());
+        let playlist = |id: u64| Playlist { id: id.into(), title: format!("P{id}"), count: 0, owned: true, private: false, picture: None };
+        t.update(Action::TrackMenu(vec![track(1, true)], TrackMenu::AddTo(playlist(5))));
+        t.update(Action::EditPlaylist(Edit::Add { playlist: playlist(9), tracks: vec![track(2, true)] }));
+        t.update(Action::TrackMenu(vec![track(3, true)], TrackMenu::AddTo(playlist(5))));
+        assert_eq!(t.app.prefs.recent_playlists, [PlaylistId::from(5), PlaylistId::from(9)]);
+    }
+
+    #[test]
     fn a_like_shows_at_once_and_is_sent_in_the_background() {
         let mut t = TestApp::new("");
         t.app.source_ready(deezer());

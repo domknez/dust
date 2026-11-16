@@ -446,11 +446,12 @@ impl App {
     }
 
     /// Keyboard shortcuts that work anywhere (some only in the full window).
-    fn shortcuts(&self, ctx: &egui::Context, acts: &mut Actions) {
+    fn shortcuts(&mut self, ctx: &egui::Context, st: &Status, acts: &mut Actions) {
         if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(Key::Space)) {
             acts.push(Action::Player(Cmd::Toggle));
         }
         self.mini_player_shortcut(ctx, acts);
+        self.add_to_recent_shortcut(ctx, st, acts);
         if self.mini_player.is_none() {
             self.history_input(ctx, acts);
             self.settings_shortcut(ctx, acts);
@@ -512,8 +513,8 @@ impl eframe::App for App {
             self.apply(&ctx, acts);
             return;
         }
-        self.shortcuts(&ctx, &mut acts);
         let st = self.player.status();
+        self.shortcuts(&ctx, &st, &mut acts);
         self.persist_playback(&st);
         self.save_queue_if_changed(&st);
         if let Some(np) = &mut self.now_playing {

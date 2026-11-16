@@ -56,6 +56,10 @@ and *Connect a Navidrome server*.
 - **Queue:** see what's next, jump to any track, reorder by dragging, remove, clear;
   it survives a restart (paused where you left off);
   right-click any track, album or card → *Play next* / *Add to queue*
+- **Save what's playing:** **+** next to the heart in the player bar adds the track to
+  a playlist (type to find one); right-click the track for *Add to playlist ›*, like,
+  *Start track mix*, *Go to artist* / *album*; `⌘D` adds it to the playlist you used
+  last. *Add to playlist ›* menus list your recent playlists on top
 - **Pick several tracks:** click, `⌘`-click and `Shift`-click rows (or `⌘A`), then
   right-click to queue them, add them to a playlist or remove them from your own
 - **Endless play:** Deezer's Flow and the server's Radio keep going, fetching more as you

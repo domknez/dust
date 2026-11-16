@@ -4,8 +4,8 @@
 //! [`Selection`]). Only the rows asked for are drawn, so a long list stays cheap.
 //! Rows report what was clicked as [`Action`]s.
 
-use super::{MenuTarget, TrackMenu, artist_links, cover, equalizer, heart_at, queue_menu, text_left, text_link, track_menu};
-use crate::model::{Likeable, Playlist, Track, TrackId};
+use super::{MenuTarget, Playlists, TrackMenu, artist_links, cover, equalizer, heart_at, queue_menu, text_left, text_link, track_menu};
+use crate::model::{Likeable, Track, TrackId};
 use crate::player::Cmd;
 use crate::ui::action::{Action, Actions};
 use crate::ui::covers::Covers;
@@ -86,7 +86,7 @@ impl Columns {
 /// What a row's right-click menu offers beyond queueing.
 pub struct RowMenu<'a> {
     /// The account's playlists; the own ones are offered for "Add to playlist".
-    pub playlists: &'a [Playlist],
+    pub playlists: Playlists<'a>,
     /// Showing one of the own playlists: rows can be removed from it.
     pub removable: bool,
     /// The source makes track mixes: "Start track mix".
