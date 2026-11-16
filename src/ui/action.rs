@@ -76,6 +76,8 @@ pub enum Action {
     Crate(Change),
     /// The Crate page, with this entry shown and/or this filter.
     OpenCrate(Option<String>, Option<Filter>),
+    /// Play the Crate's new tracks, albums and artists.
+    PlayCrate,
     /// Search the source for this.
     SearchFor(String),
     /// Sync the Crate and history through this folder; None keeps them here only.
@@ -208,6 +210,7 @@ impl App {
             Action::CrateNote(note) => self.crate_note(note),
             Action::Crate(change) => self.crate_box.change(change),
             Action::OpenCrate(entry, filter) => self.open_crate(entry, filter),
+            Action::PlayCrate => self.play_crate(),
             Action::SearchFor(query) => self.search_for(query),
             Action::SyncFolder(folder) => self.set_sync_folder(ctx, folder),
             Action::ExportCrate(export) => self.export_crate(ctx, export),

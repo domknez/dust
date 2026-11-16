@@ -2,7 +2,7 @@
 //! playing, jot a name down, tick off what you've heard) and its page (everything
 //! in it, filtered, one entry in detail). See [`crate::ui::crate_store`].
 
-use crate::model::Likeable;
+use crate::model::{Likeable, Track};
 use crate::player::{Cmd, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
@@ -22,6 +22,8 @@ const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND
 const SAVE_KEYS: &str = if cfg!(target_os = "macos") { "⌘⇧S" } else { "Ctrl+Shift+S" };
 const JOT_HINT: &str = "Jot down a name, a link or a note";
 const ROW: f32 = 56.0;
+/// Tracks played from each new album or artist.
+const EACH: usize = 3;
 /// The page's entry details, right of the list.
 const DETAIL_WIDTH: f32 = 340.0;
 
@@ -99,6 +101,62 @@ impl App {
         }
     }
 
+    /// New entries of the source in use that can be played (not notes).
+    pub(in crate::ui) fn crate_playable(&self) -> usize {
+        let source = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
+        self.crate_box.entries().iter().filter(|e| !e.heard && e.source == source && e.thing != Thing::Note).count()
+    }
+
+    /// New tracks, albums and artists of the source in use, oldest saved first.
+    fn new_to_play(&self) -> Vec<Thing> {
+        let source = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
+        let mut fresh: Vec<&Entry> =
+            self.crate_box.entries().iter().filter(|e| !e.heard && e.source == source && e.thing != Thing::Note).collect();
+        fresh.sort_by_key(|e| e.saved);
+        fresh.into_iter().map(|e| e.thing.clone()).collect()
+    }
+
+    /// Play the new ones: each track, and the first tracks of each album and the
+    /// popular ones of each artist (fetched in the background).
+    pub(in crate::ui) fn play_crate(&mut self) {
+        let Some(client) = self.client.clone() else { return };
+        let things = self.new_to_play();
+        self.crate_radio.start(&self.jobs, move || {
+            let mut tracks: Vec<Track> = Vec::new();
+            for thing in things {
+                let more = match thing {
+                    Thing::Track(track) => vec![track],
+                    Thing::Album { id, .. } => {
+                        client.album(&id).unwrap_or_default().into_iter().filter(|t| t.available).take(EACH).collect()
+                    }
+                    Thing::Artist { id, .. } => {
+                        client.artist_top(&id).unwrap_or_default().into_iter().filter(|t| t.available).take(EACH).collect()
+                    }
+                    Thing::Note => Vec::new(),
+                };
+                for track in more {
+                    if track.available && !tracks.iter().any(|t| t.id == track.id) {
+                        tracks.push(track);
+                    }
+                }
+            }
+            if tracks.is_empty() { Err(crate::model::Error::Other("nothing in your Crate can be played".into())) } else { Ok(tracks) }
+        });
+    }
+
+    /// Start what [`App::play_crate`] put together, once it's ready.
+    pub(in crate::ui) fn crate_radio_tick(&mut self, ctx: &egui::Context) {
+        match self.crate_radio.poll_take() {
+            Some(Ok(tracks)) => {
+                let n = tracks.len();
+                self.player.send(Cmd::Play(tracks, 0));
+                self.toasts.info(ctx, format!("Playing {n} tracks new in your Crate"));
+            }
+            Some(Err(e)) => self.toasts.info(ctx, format!("Couldn't play your Crate: {e}")),
+            None => {}
+        }
+    }
+
     /// Open the Crate page, showing `entry` (or the filter's first).
     pub(in crate::ui) fn open_crate(&mut self, entry: Option<String>, filter: Option<Filter>) {
         if let Some(filter) = filter {
@@ -134,9 +192,20 @@ impl App {
         let p = colors();
         let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
         text_left(ui.painter(), pos2(row.left() + 4.0, row.center().y), &format!("NEW · {}", fresh.len()), ty::OVERLINE, p.faint, 120.0);
-        if !fresh.is_empty() {
-            let hint = "tick when you've heard it";
-            ui.painter().text(pos2(row.right() - 4.0, row.center().y), Align2::RIGHT_CENTER, hint, ty::CAPTION.font(), p.faint);
+        if self.crate_playable() > 0 {
+            let label = "play the new ones";
+            let galley = ui.painter().layout_no_wrap(label.into(), ty::CAPTION.font(), p.dim);
+            let width = galley.size().x + 16.0;
+            let area = Rect::from_min_size(pos2(row.right() - 4.0 - width, row.top()), vec2(width, row.height()));
+            let resp = ui.interact(area, ui.scope_id().with("crate-play-new"), Sense::click());
+            let color = if resp.hovered() { p.accent } else { p.dim };
+            let icon = Rect::from_center_size(pos2(area.left() + 5.0, row.center().y), Vec2::splat(9.0));
+            icons::paint(ui.painter(), icon, Icon::Play, color);
+            ui.painter().text(pos2(area.right(), row.center().y), Align2::RIGHT_CENTER, label, ty::CAPTION.font(), color);
+            let hint = "The new tracks; 3 from each new album and artist. Tick each when you've heard it";
+            if resp.on_hover_text(hint).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                acts.push(Action::PlayCrate);
+            }
         }
         let current = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -232,6 +301,13 @@ impl App {
             let mut save = jot_field_sized(ui, "crate-page-jot", jot, ui.available_width() - 90.0);
             if typed && widgets::pill(ui, "Save", None, true).clicked() {
                 save = Some(std::mem::take(jot));
+            }
+            let playable = self.crate_playable();
+            if !typed && playable > 0 {
+                let pill = widgets::pill(ui, &format!("Play the new ones · {playable}"), Some(Icon::Play), true);
+                if pill.on_hover_text("The new tracks; 3 from each new album and artist").clicked() {
+                    acts.push(Action::PlayCrate);
+                }
             }
             if let Some(note) = save {
                 acts.push(Action::CrateNote(note));

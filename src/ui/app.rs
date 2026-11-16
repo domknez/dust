@@ -126,6 +126,8 @@ pub struct App {
     pub(super) stats_view: super::views::StatsView,
     /// New releases looked for, of the source in use.
     pub(super) releases: super::release_watch::Watch,
+    /// The Crate's new tracks being put together to play.
+    pub(super) crate_radio: super::load::Load<Vec<crate::model::Track>>,
     /// Syncing the Crate and history through a folder, and their daily backup.
     pub(super) sync: SyncState,
     /// The Settings window is open.
@@ -212,6 +214,7 @@ impl App {
             crate_view: Default::default(),
             stats_view: Default::default(),
             releases: Default::default(),
+            crate_radio: Default::default(),
             sync: SyncState::new(sync_dir),
             show_settings: false,
             lyrics: Default::default(),
@@ -598,6 +601,7 @@ impl eframe::App for App {
         self.record_plays();
         self.sync_tick(&ctx);
         self.release_tick(&ctx);
+        self.crate_radio_tick(&ctx);
         let st = self.player.status();
         self.shortcuts(&ctx, &st, &mut acts);
         self.persist_playback(&st);

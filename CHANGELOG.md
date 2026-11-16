@@ -14,6 +14,8 @@
 - New releases (Deezer): every 12 hours dust checks the artists you follow and the 40
   you played most in the last 90 days; their new albums, singles and EPs go in the
   Crate as new, with a toast. Settings → *New releases to the Crate*
+- *Play the new ones* in the Crate (page and panel tab): the new tracks in a row,
+  with three tracks of each new album and artist
 
 ## 0.27.1 (2026-11-16)
 

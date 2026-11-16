@@ -74,7 +74,8 @@ and *Connect a Navidrome server*.
   panel's *crate* tab) saves what's playing, with the Flow it came from; right-click
   any track → *Save to Crate*, an album's ⋯ menu or an artist's *Save* add those, and
   the tab's field takes a name you heard somewhere ("that Turkish psych band"). Each
-  is *new* until you tick it heard. The Crate page (in the sidebar, with how many are
+  is *new* until you tick it heard. *Play the new ones* plays them in a row: each
+  track, and three tracks of each new album and artist. The Crate page (in the sidebar, with how many are
   new) lists everything with filters and shows one entry in full: play it, add it to a
   playlist, open the album or artist, search for a note or for something saved on the
   other source, and keep a note on it
