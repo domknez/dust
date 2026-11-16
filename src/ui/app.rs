@@ -72,9 +72,20 @@ impl App {
         let played = self.player.take_played();
         let Some(client) = &self.client else { return };
         let source = client.id().key;
+        let any = !played.is_empty();
         for played in played {
             self.plays.record(Play::new(source, played));
         }
+        if any && self.prefs.flow_new_only {
+            self.send_skip_heard();
+        }
+    }
+
+    /// Tell the player which tracks Flow leaves out: the ones heard, with *new to me
+    /// only* on.
+    pub(super) fn send_skip_heard(&self) {
+        let heard = self.prefs.flow_new_only.then(|| std::sync::Arc::new(self.plays.heard()));
+        self.player.send(Cmd::SkipHeard(heard));
     }
 }
 

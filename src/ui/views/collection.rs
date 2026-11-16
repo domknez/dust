@@ -164,7 +164,7 @@ impl App {
         );
         ui.scope_builder(UiBuilder::new().max_rect(rows), |ui| {
             for (i, section) in self.browse.search_sections.iter().enumerate() {
-                card_row(ui, &mut self.covers, ("search-row", i), section, st, acts);
+                card_row(ui, &mut self.covers, ("search-row", i), section, st, self.prefs.flow_new_only, acts);
             }
         });
         if !self.browse.tracks.is_empty() {

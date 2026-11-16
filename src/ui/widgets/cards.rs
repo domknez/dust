@@ -81,7 +81,16 @@ pub const FLOW_PANEL: f32 = 176.0;
 /// Flows ([`GENRE_FLOW`]) get their own row, picked with *moods / genres* next to
 /// the title. Returns plain Flow (None) or a mood's id when one was picked. With
 /// `radio`, it's a music server's Radio and the moods are genres.
-pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, radio: bool) -> Option<Option<String>> {
+/// What was picked on the Flow panel.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FlowPick {
+    /// Play Flow, tuned to a mood or genre.
+    Play(Option<String>),
+    /// *new to me only* turned on or off.
+    NewOnly(bool),
+}
+
+pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, radio: bool, new_only: bool) -> Option<FlowPick> {
     let (line, name) = if radio { ("radio · endless, from your library", "Radio") } else { ("flow · endless, just for you", "Flow") };
     let p = colors();
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), FLOW_PANEL), Sense::hover());
@@ -91,9 +100,12 @@ pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, ra
     sound_bars(&painter, Rect::from_min_max(pos2(rect.center().x, rect.top()), rect.max));
     painter.rect_stroke(rect, corner, egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
     let left = rect.left() + 20.0;
-    text_left(&painter, pos2(left, rect.top() + 26.0), line, ty::META, p.dim, rect.width() - 100.0);
-    let title_end = text_left(&painter, pos2(left, rect.top() + 74.0), name, ty::HERO, p.text, 200.0).right();
+    let line_end = text_left(&painter, pos2(left, rect.top() + 26.0), line, ty::META, p.dim, rect.width() - 100.0).right();
     let mut pick = None;
+    if new_only_toggle(ui, &painter, pos2(line_end + 22.0, rect.top() + 26.0), new_only) {
+        pick = Some(FlowPick::NewOnly(!new_only));
+    }
+    let title_end = text_left(&painter, pos2(left, rect.top() + 74.0), name, ty::HERO, p.text, 200.0).right();
 
     let (genres, moods): (Vec<_>, Vec<_>) = moods.iter().copied().partition(|(id, _)| !radio && id.starts_with(GENRE_FLOW));
     let tab_id = ui.scope_id().with("flow-tab");
@@ -131,7 +143,7 @@ pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, ra
     painter.rect_filled(play, CornerRadius::same(radius::CONTROL), fill);
     icons::paint(&painter, Rect::from_center_size(play.center(), Vec2::splat(20.0)), Icon::Play, p.on_accent);
     if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-        pick = Some(None);
+        pick = Some(FlowPick::Play(None));
     }
 
     // Moods: chips in a tray along the bottom, as many as fit.
@@ -166,10 +178,32 @@ pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, ra
         }
         painter.text(chip.center(), Align2::CENTER_CENTER, label, ty::META.font(), fg);
         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-            pick = Some(Some(id.to_string()));
+            pick = Some(FlowPick::Play(Some(id.to_string())));
         }
     }
     pick
+}
+
+/// "□ new to me only" at `at` (its left middle); returns whether it was clicked.
+fn new_only_toggle(ui: &Ui, painter: &egui::Painter, at: egui::Pos2, on: bool) -> bool {
+    let p = colors();
+    let label = "new to me only";
+    let width = painter.layout_no_wrap(label.into(), ty::META.font(), p.dim).size().x;
+    let area = Rect::from_min_size(pos2(at.x - 4.0, at.y - 12.0), vec2(width + 30.0, 24.0));
+    let resp = ui.interact(area, ui.scope_id().with("flow-new-only"), Sense::click());
+    let box_rect = Rect::from_center_size(pos2(at.x + 6.0, at.y), Vec2::splat(12.0));
+    let hot = resp.hovered();
+    if on {
+        painter.rect_filled(box_rect, CornerRadius::same(3), p.accent_fill);
+        let tick = [pos2(-3.5, 0.0), pos2(-1.0, 2.5), pos2(3.5, -2.5)].map(|v| box_rect.center() + v.to_vec2());
+        painter.add(egui::Shape::line(tick.to_vec(), egui::Stroke::new(1.5, p.on_accent)));
+    } else {
+        let edge = if hot { p.text } else { p.dim };
+        painter.rect_stroke(box_rect, CornerRadius::same(3), egui::Stroke::new(1.2, edge), egui::StrokeKind::Inside);
+    }
+    let color = if on || hot { p.text } else { p.dim };
+    painter.text(pos2(box_rect.right() + 7.0, at.y), Align2::LEFT_CENTER, label, ty::META.font(), color);
+    resp.on_hover_text("Leave out tracks already in your play history").on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
 
 /// Faint lime bars, like a still of a level meter, behind the Flow panel.

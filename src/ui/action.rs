@@ -100,6 +100,8 @@ pub enum Action {
     Quality(Quality),
     Appearance(Appearance),
     ToggleReportListens,
+    /// Flow leaves out the tracks heard before, or not.
+    FlowNewOnly(bool),
     AutoUpdate(bool),
     CheckForUpdates,
     /// The sidebar's update button: install and restart, or open the download page.
@@ -220,6 +222,10 @@ impl App {
             Action::Quality(quality) => self.set_quality(quality),
             Action::Appearance(appearance) => self.set_appearance(appearance),
             Action::ToggleReportListens => self.toggle_report_listens(),
+            Action::FlowNewOnly(on) => {
+                self.prefs.update(|p| p.flow_new_only = on);
+                self.send_skip_heard();
+            }
             Action::AutoUpdate(on) => {
                 self.updates.set_auto(on);
                 self.prefs.update(|p| p.auto_update = on);

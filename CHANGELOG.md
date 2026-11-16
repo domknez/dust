@@ -8,6 +8,9 @@
 - The play history keeps the last 15,000 plays (was 2,000) and no longer stores
   Deezer's stream tokens, so each line is half the size; the panel lists the latest
   1,000
+- *new to me only* on the Flow (Radio) panel: Flow leaves out tracks already in the
+  play history (unless a whole batch is heard ones, so it never runs dry)
+- A lime dot on a track's cover in *up next* marks one you've never heard
 
 ## 0.27.1 (2026-11-16)
 

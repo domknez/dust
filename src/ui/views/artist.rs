@@ -109,7 +109,7 @@ impl App {
             // Playlists featuring them, related artists.
             for (i, section) in page.sections.iter().enumerate() {
                 if !DISCOGRAPHY.iter().any(|(title, _)| section.title == *title) {
-                    card_row(ui, &mut self.covers, ("artist-row", i), section, st, acts);
+                    card_row(ui, &mut self.covers, ("artist-row", i), section, st, self.prefs.flow_new_only, acts);
                 }
             }
             ui.add_space(28.0);

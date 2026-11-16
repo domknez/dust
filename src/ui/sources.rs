@@ -179,6 +179,7 @@ impl App {
         self.player.send(Cmd::Client(source.clone()));
         self.player.send(Cmd::Quality(self.prefs.quality));
         self.player.send(Cmd::ReportListens(self.prefs.report_listens));
+        self.send_skip_heard();
         if old != Some(new) {
             if let Some(old) = old {
                 self.save_queue_now(old);

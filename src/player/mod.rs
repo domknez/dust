@@ -19,7 +19,7 @@ pub mod saved;
 pub use crate::output::Output;
 pub use queue::Flow;
 
-use crate::model::{Quality, Track};
+use crate::model::{Quality, Track, TrackId};
 use eframe::egui;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -71,6 +71,8 @@ pub enum Cmd {
     /// Report listens to the source (Deezer's history, Flow, Last.fm; a server's
     /// play counts).
     ReportListens(bool),
+    /// Tracks endless Flow leaves out (the ones heard before); None plays them all.
+    SkipHeard(Option<Arc<std::collections::HashSet<TrackId>>>),
     Output(Output),
 
     /// Replace the queue and play from an index.

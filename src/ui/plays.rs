@@ -3,11 +3,12 @@
 //! sync folder). The side panel's *history* tab shows the current source's, newest
 //! first, by day.
 
-use crate::model::Track;
+use crate::model::{Track, TrackId};
 use crate::player::saved::{decode_track, encode_track};
 use crate::player::{Flow, Played};
 use crate::ui::sync::Log;
 use serde_json::{Value, json};
+use std::collections::HashSet;
 
 /// Plays kept, across sources and computers: about a year of listening, for the
 /// stats.
@@ -78,6 +79,8 @@ fn slim(mut track: Value) -> Value {
 #[derive(Default)]
 pub struct Plays {
     plays: Vec<Play>,
+    /// Every track in `plays`.
+    heard: HashSet<TrackId>,
     log: Log,
     /// Lines in this computer's file, to know when to compact it.
     lines: usize,
@@ -95,7 +98,8 @@ impl Plays {
             plays.drain(..plays.len() - KEEP);
         }
         let lines = log.own_lines();
-        Plays { plays, log, lines }
+        let heard = plays.iter().map(|p| p.track.id.clone()).collect();
+        Plays { plays, heard, log, lines }
     }
 
     /// Read the log again (another computer added to it).
@@ -113,6 +117,7 @@ impl Plays {
     /// Keep `play` and add it to the log.
     pub fn record(&mut self, play: Play) {
         let line = play.encode().to_string();
+        self.heard.insert(play.track.id.clone());
         let at = self.plays.partition_point(|p| p.at <= play.at);
         self.plays.insert(at, play);
         if self.plays.len() > KEEP {
@@ -145,6 +150,16 @@ impl Plays {
     /// The plays of `source`, newest first.
     pub fn of(&self, source: &str) -> impl Iterator<Item = &Play> {
         self.plays.iter().rev().filter(move |p| p.source == source)
+    }
+
+    /// Whether `id` was played before (any source, any computer; the plays kept).
+    pub fn has_heard(&self, id: &TrackId) -> bool {
+        self.heard.contains(id)
+    }
+
+    /// The tracks played before, for Flow to leave out.
+    pub fn heard(&self) -> HashSet<TrackId> {
+        self.heard.clone()
     }
 
     pub fn len(&self) -> usize {

@@ -128,6 +128,13 @@ impl App {
         // A remove button replaces the duration on hover.
         let show_remove = hovered && self.queue_drag.is_none();
         acts.extend(widgets::queue_row(ui, &mut self.covers, rect, track, false, !show_remove).map(Action::OpenArtist));
+        // A lime dot on the cover: never heard before.
+        if !track.is_episode() && !self.plays.has_heard(&track.id) {
+            let corner = pos2(rect.left() + 6.0 + metrics::LIST_ART, rect.center().y - metrics::LIST_ART / 2.0);
+            ui.painter().circle(corner, 4.5, p.accent, egui::Stroke::new(2.0, p.surface));
+            let dot = Rect::from_center_size(corner, Vec2::splat(14.0));
+            ui.interact(dot, ui.scope_id().with(("new-to-you", i)), Sense::hover()).on_hover_text("New to you: not in your play history");
+        }
         let remove = Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), Vec2::splat(24.0));
         let over_remove = resp.hover_pos().is_some_and(|pos| remove.contains(pos));
         if show_remove {

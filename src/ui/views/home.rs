@@ -9,7 +9,7 @@ use crate::ui::covers::Covers;
 use crate::ui::state::{ChannelView, Coll, View};
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, typography as ty};
-use crate::ui::widgets::{self, CardClick, text_left};
+use crate::ui::widgets::{self, CardClick, FlowPick, text_left};
 use eframe::egui::{self, Sense, Ui, pos2, vec2};
 
 /// Height [`card_row`] takes: spacing, section title and one row of cards.
@@ -29,7 +29,7 @@ impl App {
             };
             for i in flow_first(sections) {
                 let section = &sections[i];
-                card_row(ui, &mut self.covers, ("home-row", i), section, st, acts);
+                card_row(ui, &mut self.covers, ("home-row", i), section, st, self.prefs.flow_new_only, acts);
             }
             ui.add_space(24.0);
         });
@@ -65,6 +65,7 @@ pub(in crate::ui) fn card_row(
     id: impl std::hash::Hash + std::fmt::Debug,
     section: &Section,
     st: &Status,
+    new_only: bool,
     acts: &mut Actions,
 ) {
     let items = &section.items;
@@ -79,8 +80,10 @@ pub(in crate::ui) fn card_row(
         ui.add_space(18.0);
         let moods: Vec<(&str, &str)> = items.iter().filter_map(|it| Some((it.kind.tuning()?, it.title.as_str()))).collect();
         let playing = st.flow.as_ref().and_then(|flow| flow.mood.as_deref());
-        if let Some(mood) = widgets::flow_panel(ui, &moods, playing, is_radio) {
-            acts.push(Action::Player(Cmd::PlayFlow(mood)));
+        match widgets::flow_panel(ui, &moods, playing, is_radio, new_only) {
+            Some(FlowPick::Play(mood)) => acts.push(Action::Player(Cmd::PlayFlow(mood))),
+            Some(FlowPick::NewOnly(on)) => acts.push(Action::FlowNewOnly(on)),
+            None => {}
         }
         return;
     }

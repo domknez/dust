@@ -2,6 +2,7 @@
 //! Pure data manipulation — no audio, no network — so it is fully unit-testable.
 
 use crate::model::{Track, TrackId};
+use std::collections::HashSet;
 
 /// Endless Flow (a music server's Radio): the queue refills itself from the source
 /// as it runs out.
@@ -145,6 +146,19 @@ impl Queue {
     }
 
     /// Append tracks not already queued (Flow batches overlap). Returns whether any were added.
+    /// A batch of Flow: like [`Queue::extend_unique`], leaving out the tracks in
+    /// `heard` unless that leaves none (Flow mustn't run dry over it).
+    pub fn extend_flow(&mut self, tracks: Vec<Track>, heard: Option<&HashSet<TrackId>>) -> bool {
+        let fresh: Vec<Track> = match heard {
+            Some(heard) => tracks.iter().filter(|t| !heard.contains(&t.id)).cloned().collect(),
+            None => Vec::new(),
+        };
+        if !fresh.is_empty() && self.extend_unique(fresh) {
+            return true;
+        }
+        self.extend_unique(tracks)
+    }
+
     pub fn extend_unique(&mut self, tracks: Vec<Track>) -> bool {
         let before = self.tracks.len();
         for t in tracks {
@@ -302,6 +316,19 @@ mod tests {
         assert_eq!(q.current().map(number), Some(4));
         assert_eq!(q.remove(1), Removed::Current { replaced: false });
         assert_eq!(q.remove(9), Removed::Nothing);
+    }
+
+    #[test]
+    fn flow_can_leave_out_what_was_heard() {
+        let mut q = Queue::default();
+        q.start_flow(Flow { mood: None });
+        assert!(q.extend_flow(vec![t(1), t(2)], None));
+        let heard: HashSet<TrackId> = [t(3).id, t(4).id].into();
+        assert!(q.extend_flow(vec![t(3), t(4), t(5)], Some(&heard)));
+        let ids = |q: &Queue| q.tracks.iter().map(|x| x.id.clone()).collect::<Vec<_>>();
+        assert_eq!(ids(&q), [t(1).id, t(2).id, t(5).id], "heard ones left out");
+        assert!(q.extend_flow(vec![t(3), t(4)], Some(&heard)), "all heard: kept rather than running dry");
+        assert_eq!(q.tracks.len(), 5);
     }
 
     #[test]

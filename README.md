@@ -63,7 +63,8 @@ and *Connect a Navidrome server*.
 - **Pick several tracks:** click, `⌘`-click and `Shift`-click rows (or `⌘A`), then
   right-click to queue them, add them to a playlist or remove them from your own
 - **Endless play:** Deezer's Flow and the server's Radio keep going, fetching more as you
-  listen
+  listen. *new to me only* on the Flow panel leaves out tracks already in your play
+  history, and a lime dot in *up next* marks each track you've never heard
 - **Seeking** on a waveform-style progress bar
 - **Lyrics:** the lyrics button in the player bar opens the playing track's lyrics as a
   page of their own (Back, `Esc` or the button again returns), with the queue still

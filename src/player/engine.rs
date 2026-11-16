@@ -14,10 +14,11 @@ use super::preload::{self, Preload, Spawner};
 use super::queue::{Flow, Queue, Removed};
 use super::{Cmd, Output, Repeat, SLEEP_FADE, Sleep, State, Status};
 use crate::media::{Decoded, OpenError, Playback};
-use crate::model::{Quality, Track};
+use crate::model::{Quality, Track, TrackId};
 use crate::output::{self, RATE, Sink};
 use crate::source::SourceId;
 use eframe::egui;
+use std::collections::HashSet;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -65,6 +66,8 @@ pub struct Engine {
     quality: Quality,
     queue: Queue,
     listens: ListenTracker,
+    /// Tracks Flow leaves out, see [`Cmd::SkipHeard`].
+    skip_heard: Option<Arc<HashSet<TrackId>>>,
     output: Output,
     sink: Option<Box<dyn Sink>>,
     make_sink: SinkFactory,
@@ -110,6 +113,7 @@ impl Engine {
             quality: Quality::Mp3_320,
             queue: Queue::default(),
             listens: ListenTracker::new(),
+            skip_heard: None,
             output: Output::Local,
             sink: None,
             make_sink,
@@ -185,6 +189,7 @@ impl Engine {
                 self.quality = q;
             }
             Cmd::ReportListens(on) => self.listens.enabled = on,
+            Cmd::SkipHeard(heard) => self.skip_heard = heard,
             Cmd::Output(o) => self.switch_output(o),
 
             Cmd::Play(tracks, index) => {
@@ -336,7 +341,7 @@ impl Engine {
     fn extend_flow(&mut self) -> bool {
         let (Some(flow), Some(library)) = (self.queue.flow.clone(), self.library.clone()) else { return false };
         match library.flow(flow.mood.as_deref()) {
-            Ok(tracks) => self.queue.extend_unique(tracks),
+            Ok(tracks) => self.queue.extend_flow(tracks, self.skip_heard.as_deref()),
             Err(e) => {
                 self.error(format!("Flow: {e}"));
                 false
@@ -490,7 +495,7 @@ impl Engine {
         }
         if let Some((flow, tracks)) = self.preload.as_mut().and_then(Preload::poll) {
             // Still the same Flow (not cleared or replaced meanwhile), and new tracks.
-            if self.queue.flow.as_ref() == Some(&flow) && self.queue.extend_unique(tracks) {
+            if self.queue.flow.as_ref() == Some(&flow) && self.queue.extend_flow(tracks, self.skip_heard.as_deref()) {
                 self.preload = None;
             }
         }
