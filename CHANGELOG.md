@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.27.0 (2026-11-16)
+
 - Sync the Crate and play history between computers through a folder (iCloud Drive,
   Dropbox, Syncthing, Google Drive, OneDrive or any other): Settings → *Crate and
   history*. Each computer writes its own file there and reads all of them, and the
