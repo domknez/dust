@@ -40,6 +40,7 @@ impl App {
             }
             View::Lyrics => self.lyrics_page(ui, st, acts),
             View::Crate => self.crate_page(ui, acts),
+            View::Stats => self.stats_page(ui, acts),
         }
     }
 

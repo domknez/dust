@@ -25,6 +25,8 @@ pub enum View {
     Lyrics,
     /// Things saved to check out later.
     Crate,
+    /// What the play history adds up to.
+    Stats,
 }
 
 /// A page of sections being shown: which, and its title for before it loads.

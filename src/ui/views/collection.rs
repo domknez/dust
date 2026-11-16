@@ -134,7 +134,8 @@ impl App {
             | View::Artist(_)
             | View::Channel(_)
             | View::Lyrics
-            | View::Crate => Header::default(),
+            | View::Crate
+            | View::Stats => Header::default(),
         }
     }
 

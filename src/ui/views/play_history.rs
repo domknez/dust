@@ -15,6 +15,9 @@ use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, MenuTarget, Playlists, TrackMenu, text_left};
 use eframe::egui::{self, Align2, CornerRadius, RichText, Sense, Ui, pos2, vec2};
 
+/// Plays the panel lists, newest first; the stats count all of them.
+const SHOWN: usize = 1000;
+
 /// A line of the history: a day, where a run of plays came from, the end of such a
 /// run, or a play.
 enum Line<'a> {
@@ -32,7 +35,7 @@ impl App {
         let Some(client) = &self.client else { return };
         let radio = !self.features().flow;
         let zone = when::zone();
-        let lines = lines(self.plays.of(client.id().key), &zone, radio);
+        let lines = lines(self.plays.of(client.id().key).take(SHOWN), &zone, radio);
         if lines.is_empty() {
             empty_state(ui);
             return;
@@ -107,7 +110,11 @@ impl App {
                 }
             }
             ui.add_space(14.0);
-            let note = format!("Kept on this computer: the last {} tracks you heard.", thousands(KEEP as u64));
+            let note = format!(
+                "The latest {} plays. dust keeps the last {} for the Listening page.",
+                thousands(SHOWN as u64),
+                thousands(KEEP as u64)
+            );
             ui.label(RichText::new(note).font(ty::CAPTION.font()).color(p.faint));
             ui.add_space(10.0);
         });

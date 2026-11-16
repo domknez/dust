@@ -9,11 +9,12 @@ use crate::player::{Flow, Played};
 use crate::ui::sync::Log;
 use serde_json::{Value, json};
 
-/// Plays kept, across sources and computers.
-pub const KEEP: usize = 2000;
+/// Plays kept, across sources and computers: about a year of listening, for the
+/// stats.
+pub const KEEP: usize = 15_000;
 /// This computer's file is rewritten with the last [`KEEP`] once it holds this many
 /// lines.
-const COMPACT_AT: usize = 2 * KEEP;
+const COMPACT_AT: usize = KEEP + 1000;
 
 /// One track heard.
 #[derive(Clone, Debug, PartialEq)]
@@ -48,7 +49,7 @@ impl Play {
             "heard": self.heard_secs,
             "skipped": self.skipped,
             "flow": self.flow.as_ref().map(|f| json!({ "mood": f.mood })),
-            "track": encode_track(&self.track),
+            "track": slim(encode_track(&self.track)),
         })
     }
 
@@ -62,6 +63,15 @@ impl Play {
             track: decode_track(&v["track"])?,
         })
     }
+}
+
+/// A track as the history keeps it: without the Deezer stream token, which is most
+/// of its size and expires anyway (playing it again fetches a fresh one).
+fn slim(mut track: Value) -> Value {
+    if let Some(token) = track.get_mut("token").filter(|t| t.is_string()) {
+        *token = json!("");
+    }
+    track
 }
 
 /// The plays kept, oldest first, and the log they're kept in.
@@ -125,6 +135,11 @@ impl Plays {
         if self.log.rewrite(&self.lines()) {
             self.lines = self.plays.len();
         }
+    }
+
+    /// The plays of `source`, oldest first.
+    pub fn oldest_first(&self, source: &str) -> Vec<&Play> {
+        self.plays.iter().filter(|p| p.source == source).collect()
     }
 
     /// The plays of `source`, newest first.
@@ -225,7 +240,7 @@ mod tests {
             art: None,
             available: true,
             available_from: String::new(),
-            origin: Origin::Deezer(DeezerSong { token: "t".into(), fallback: None }),
+            origin: Origin::Deezer(DeezerSong { token: String::new(), fallback: None }),
         }
     }
 
@@ -256,6 +271,16 @@ mod tests {
         assert_eq!(again.of("deezer").cloned().collect::<Vec<_>>(), [flow, play("deezer", 1)], "newest first, this source's");
         assert_eq!(again.of("navidrome").count(), 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stream_tokens_are_not_kept() {
+        let mut heard = play("deezer", 1);
+        heard.track.origin = Origin::Deezer(DeezerSong { token: "a-long-token".into(), fallback: None });
+        let line = heard.encode().to_string();
+        assert!(!line.contains("a-long-token"));
+        let back = Play::decode(&serde_json::from_str(&line).unwrap()).unwrap();
+        assert_eq!(back.track.origin, Origin::Deezer(DeezerSong { token: String::new(), fallback: None }));
     }
 
     #[test]

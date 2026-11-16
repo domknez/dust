@@ -55,6 +55,9 @@ impl App {
         if widgets::sidebar_item(ui, "Crate", count.as_deref(), self.browse.view == View::Crate).clicked() {
             acts.push(Action::OpenCrate(None, None));
         }
+        if widgets::sidebar_item(ui, "Listening", None, self.browse.view == View::Stats).clicked() {
+            acts.push(Action::Open(View::Stats));
+        }
         ui.spacing_mut().item_spacing.y = 6.0;
         // "PLAYLISTS / n ›" folds the list away or brings it back; + makes a new,
         // empty playlist.

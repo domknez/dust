@@ -11,7 +11,7 @@
 //! - [`sources`]: the logged-in music sources: connecting, switching, the account menu's rows
 //! - [`library`]: the source's playlists, likes and lists; [`browse`]: the page on screen
 //! - [`selection`]: the rows picked in the track list on screen
-//! - [`plays`]: the play history, kept on this computer
+//! - [`plays`]: the play history, kept on this computer; [`stats`]: what it adds up to
 //! - [`crate_store`]: the Crate, things to check out later; [`sync`]: where it and
 //!   the play history are kept, synced through a folder, backed up daily
 //! - [`load`]: background loads, each keeping its result or error
@@ -34,6 +34,7 @@ mod plays;
 mod selection;
 mod sources;
 mod state;
+mod stats;
 mod style;
 mod sync;
 mod toasts;

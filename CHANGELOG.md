@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- *Listening* page (sidebar): time listened, tracks, artists and new artists over the
+  last week, month, year or all time, a chart by day or month, top artists, albums
+  and tracks, the artists first heard, and this week a year ago
+- The play history keeps the last 15,000 plays (was 2,000) and no longer stores
+  Deezer's stream tokens, so each line is half the size; the panel lists the latest
+  1,000
+
 ## 0.27.1 (2026-11-16)
 
 - Right-clicking the track playing in the player bar (title, artist, cover) opens its

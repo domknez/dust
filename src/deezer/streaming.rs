@@ -35,9 +35,14 @@ impl Deezer {
             Origin::Server(_) => return Err(Error::Other("not a Deezer track".into())),
         };
         let with_id = |(url, format): (String, Format), song_id| StreamSource { url, format, song_id, duration: track.duration };
-        let first_error = match self.media_url(&song.token, quality) {
-            Ok(found) => return Ok(with_id(found, track.id.clone())),
-            Err(e) => e,
+        // The play history keeps tracks without their token: straight to a fresh one.
+        let first_error = if song.token.is_empty() {
+            Error::Other("no stream token".into())
+        } else {
+            match self.media_url(&song.token, quality) {
+                Ok(found) => return Ok(with_id(found, track.id.clone())),
+                Err(e) => e,
+            }
         };
         if let Ok(found) = self.refresh_token(&track.id).and_then(|t| self.media_url(&t, quality)) {
             return Ok(with_id(found, track.id.clone()));

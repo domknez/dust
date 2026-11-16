@@ -112,6 +112,7 @@ pub struct App {
     /// Things to check out later, kept on this computer.
     pub(super) crate_box: Crate,
     pub(super) crate_view: super::views::CrateView,
+    pub(super) stats_view: super::views::StatsView,
     /// Syncing the Crate and history through a folder, and their daily backup.
     pub(super) sync: SyncState,
     /// The Settings window is open.
@@ -196,6 +197,7 @@ impl App {
             plays,
             crate_box,
             crate_view: Default::default(),
+            stats_view: Default::default(),
             sync: SyncState::new(sync_dir),
             show_settings: false,
             lyrics: Default::default(),
@@ -277,7 +279,7 @@ impl App {
                 library.favorite_shows.start(&self.jobs, move || client.favorite_shows())
             }
             View::Artists if library.followed.wants_load() => library.followed.start(&self.jobs, move || client.favorite_artists()),
-            View::Home | View::Albums | View::Podcasts | View::Artists | View::Lyrics | View::Crate => {}
+            View::Home | View::Albums | View::Podcasts | View::Artists | View::Lyrics | View::Crate | View::Stats => {}
             View::Artist(artist) => {
                 let id = artist.id.clone();
                 self.browse.artist_page.start(&self.jobs, move || client.artist(&id));
@@ -303,7 +305,8 @@ impl App {
             | View::Artist(_)
             | View::Channel(_)
             | View::Lyrics
-            | View::Crate => {}
+            | View::Crate
+            | View::Stats => {}
             View::Search if browse.search.trim().is_empty() => {}
             // A pasted link to the source opens what it points at instead of searching.
             View::Search if client.is_link(&browse.search) => {

@@ -87,8 +87,12 @@ and *Connect a Navidrome server*.
 - **Play history:** the panel on the right has *up next*, *history* and *crate*: every track
   you heard, from any source, newest first by day, with the Flow or album it came from
   and skips marked. Click one to hear it again, right-click to queue it or add it to a
-  playlist, the heart likes it. dust keeps the last 2,000 on this computer, so it works
-  without Deezer's listening reports too
+  playlist, the heart likes it. dust keeps the last 15,000 on this computer (about a
+  year), so it works without Deezer's listening reports too
+- **Listening:** a page (in the sidebar) of what that history adds up to over the last
+  week, month, year or all of it: time listened, tracks heard and skipped, artists and
+  how many you heard for the first time, a chart by day or month, top artists, albums
+  and tracks, the artists you discovered, and what you played this week a year ago
 - **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs
 - **Sleep timer:** in the player bar's ⋯ menu, with a countdown ring; after 15 minutes
   to an hour the music fades out over 30 seconds and pauses (your volume is back for
@@ -380,6 +384,7 @@ src/
 │                      the account menu's rows (MENU), the server form
 │   ├── now_playing.rs media keys and the OS Now Playing widget
 │   ├── plays.rs       the play history (history.jsonl, next to the settings file)
+│   ├── stats.rs       what the play history adds up to (the Listening page)
 │   ├── crate_store.rs the Crate (crate.jsonl, a log of changes, next to the settings file)
 │   ├── sync.rs        where the Crate and history are kept: here, or a sync folder (one file
 │                      per computer, merged on read); daily backups
