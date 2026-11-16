@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.28.0 (2026-11-16)
+
 - *Listening* page (sidebar): time listened, tracks, artists and new artists over the
   last week, month, year or all time, a chart by day or month, top artists, albums
   and tracks, the artists first heard, and this week a year ago
