@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.26.0 (2026-11-16)
+
 - Crate: save things to check out later (tracks, albums, artists, or a note of a name
   you heard), from any source. `⌘⇧S` saves what's playing; *Save to Crate* in track
   menus, an album's ⋯ menu and on artist pages; a *crate* tab in the panel on the
