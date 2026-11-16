@@ -11,13 +11,14 @@ use super::load::Load;
 use super::playlist_edit::{Dialog, Edit};
 use super::state::{ArtistView, Coll, CollSource, PlayMode, View, playable};
 use super::style::Appearance;
-use super::views::{Filter, SleepChoice, reveal_log};
+use super::views::{Export, Filter, SleepChoice, reveal_log};
 use super::widgets::TrackMenu;
 use crate::model::{ArtistRef, Likeable, Quality, Track};
 use crate::player::{Cmd, Output, Repeat, Sleep};
 use crate::source::Shared;
 use crate::subsonic::Server;
 use eframe::egui;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 pub enum Action {
@@ -77,6 +78,11 @@ pub enum Action {
     OpenCrate(Option<String>, Option<Filter>),
     /// Search the source for this.
     SearchFor(String),
+    /// Sync the Crate and history through this folder; None keeps them here only.
+    SyncFolder(Option<PathBuf>),
+    ExportCrate(Export),
+    /// Bring back the daily backup in this folder.
+    RestoreBackup(PathBuf),
 
     // Window
     /// Open the panel on the right (at its tab shown last), or close it.
@@ -199,6 +205,9 @@ impl App {
             Action::Crate(change) => self.crate_box.change(change),
             Action::OpenCrate(entry, filter) => self.open_crate(entry, filter),
             Action::SearchFor(query) => self.search_for(query),
+            Action::SyncFolder(folder) => self.set_sync_folder(ctx, folder),
+            Action::ExportCrate(export) => self.export_crate(ctx, export),
+            Action::RestoreBackup(dir) => self.restore_backup(ctx, dir),
             Action::EditPlaylist(edit) => self.edit_playlist(edit),
             Action::NewPlaylist(tracks) => self.new_playlist(tracks),
             Action::PlaylistDialog(dialog) => self.library.editing.dialog = Some(dialog),

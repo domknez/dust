@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Sync the Crate and play history between computers through a folder (iCloud Drive,
+  Dropbox, Syncthing, Google Drive, OneDrive or any other): Settings → *Crate and
+  history*. Each computer writes its own file there and reads all of them, and the
+  section shows when it last synced and on which computers
+- Daily backups of the Crate and history next to the settings (the last 14), with
+  *Restore a backup…*; *Copy Crate as Markdown* and *Save Crate as JSON* export it
+
 ## 0.26.1 (2026-11-16)
 
 - Queue panel: *save as playlist* (the whole queue) sits on its own under the tabs,

@@ -1,19 +1,19 @@
-//! Play history: every track heard, from every source, kept on this computer in
-//! `history.jsonl` next to `settings.conf`, one line per play, newest last. The
-//! side panel's *history* tab shows the current source's, newest first, by day.
+//! Play history: every track heard, from every source, one line per play in the
+//! `history` [`Log`] (this computer's `history.jsonl`, or every computer's file in a
+//! sync folder). The side panel's *history* tab shows the current source's, newest
+//! first, by day.
 
 use crate::model::Track;
 use crate::player::saved::{decode_track, encode_track};
 use crate::player::{Flow, Played};
+use crate::ui::sync::Log;
 use serde_json::{Value, json};
-use std::io::Write;
-use std::path::{Path, PathBuf};
 
-/// Plays kept, across sources.
+/// Plays kept, across sources and computers.
 pub const KEEP: usize = 2000;
-/// The file is rewritten with the last [`KEEP`] once it holds this many lines.
+/// This computer's file is rewritten with the last [`KEEP`] once it holds this many
+/// lines.
 const COMPACT_AT: usize = 2 * KEEP;
-const FILE: &str = "history.jsonl";
 
 /// One track heard.
 #[derive(Clone, Debug, PartialEq)]
@@ -64,65 +64,93 @@ impl Play {
     }
 }
 
-/// The plays kept, oldest first, and the file they're kept in (None: memory only).
+/// The plays kept, oldest first, and the log they're kept in.
 #[derive(Default)]
 pub struct Plays {
     plays: Vec<Play>,
-    file: Option<PathBuf>,
-    /// Lines in the file, to know when to compact it.
+    log: Log,
+    /// Lines in this computer's file, to know when to compact it.
     lines: usize,
 }
 
 impl Plays {
-    /// The history kept in `dir`, if any; unreadable lines are skipped.
-    pub fn load(dir: Option<&Path>) -> Self {
-        let Some(file) = dir.map(|d| d.join(FILE)) else { return Plays::default() };
-        let text = std::fs::read_to_string(&file).unwrap_or_default();
-        let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-        let mut plays: Vec<Play> = lines.iter().filter_map(|l| serde_json::from_str(l).ok()).filter_map(|v| Play::decode(&v)).collect();
+    /// The history in `log`, every computer's merged; unreadable lines are skipped.
+    pub fn load(log: Log) -> Self {
+        let mut plays: Vec<Play> =
+            log.read().iter().filter_map(|l| serde_json::from_str(l).ok()).filter_map(|v| Play::decode(&v)).collect();
+        plays.sort_by_key(|p| p.at);
+        // The same play in two files (a computer's file rewritten with all of them).
+        plays.dedup_by(|a, b| a.at == b.at && a.source == b.source && a.track.id == b.track.id);
         if plays.len() > KEEP {
             plays.drain(..plays.len() - KEEP);
         }
-        Plays { plays, file: Some(file), lines: lines.len() }
+        let lines = log.own_lines();
+        Plays { plays, log, lines }
     }
 
-    /// Keep `play` and add it to the file.
+    /// Read the log again (another computer added to it).
+    pub fn reload(&mut self) {
+        *self = Plays::load(std::mem::take(&mut self.log));
+    }
+
+    /// Keep the history in `log` from now on, starting it with what's kept here.
+    pub fn move_to(&mut self, log: Log) {
+        self.log = log;
+        self.rewrite();
+        self.reload();
+    }
+
+    /// Keep `play` and add it to the log.
     pub fn record(&mut self, play: Play) {
         let line = play.encode().to_string();
-        self.plays.push(play);
+        let at = self.plays.partition_point(|p| p.at <= play.at);
+        self.plays.insert(at, play);
         if self.plays.len() > KEEP {
             self.plays.remove(0);
         }
-        let Some(file) = &self.file else { return };
         if self.lines + 1 >= COMPACT_AT {
             self.rewrite();
-            return;
-        }
-        if let Some(dir) = file.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let appended = std::fs::OpenOptions::new().create(true).append(true).open(file).and_then(|mut f| writeln!(f, "{line}"));
-        match appended {
-            Ok(()) => self.lines += 1,
-            Err(e) => log_warn!("could not add to the play history at {}: {e}", file.display()),
+        } else if self.log.append(&line) {
+            self.lines += 1;
         }
     }
 
-    /// Write the file afresh with what's kept.
+    /// The history as the log's lines, oldest first.
+    pub fn lines(&self) -> Vec<String> {
+        self.plays.iter().map(|p| p.encode().to_string()).collect()
+    }
+
+    /// Write this computer's file afresh with what's kept.
     fn rewrite(&mut self) {
-        let Some(file) = &self.file else { return };
-        let text: String = self.plays.iter().map(|p| p.encode().to_string() + "\n").collect();
-        // Write then rename, so a crash mid-write can't lose the history.
-        let tmp = file.with_extension("jsonl.tmp");
-        match std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, file)) {
-            Ok(()) => self.lines = self.plays.len(),
-            Err(e) => log_warn!("could not rewrite the play history at {}: {e}", file.display()),
+        if self.log.rewrite(&self.lines()) {
+            self.lines = self.plays.len();
         }
     }
 
     /// The plays of `source`, newest first.
     pub fn of(&self, source: &str) -> impl Iterator<Item = &Play> {
         self.plays.iter().rev().filter(move |p| p.source == source)
+    }
+
+    pub fn len(&self) -> usize {
+        self.plays.len()
+    }
+
+    pub fn log(&self) -> &Log {
+        &self.log
+    }
+
+    /// Add the plays of a backup that aren't here.
+    pub fn restore(&mut self, backup: &Plays) {
+        let missing: Vec<Play> = backup
+            .plays
+            .iter()
+            .filter(|b| !self.plays.iter().any(|p| p.at == b.at && p.source == b.source && p.track.id == b.track.id))
+            .cloned()
+            .collect();
+        for play in missing {
+            self.record(play);
+        }
     }
 }
 
@@ -183,6 +211,7 @@ pub mod when {
 mod tests {
     use super::*;
     use crate::model::{DeezerSong, Origin, TrackId};
+    use std::path::{Path, PathBuf};
 
     fn track(id: u64) -> Track {
         Track {
@@ -210,16 +239,20 @@ mod tests {
         dir
     }
 
+    fn log(dir: &Path) -> Log {
+        Log::new("history", Some(dir), None)
+    }
+
     #[test]
     fn plays_survive_a_restart() {
         let dir = dir("restart");
-        let mut plays = Plays::load(Some(&dir));
+        let mut plays = Plays::load(log(&dir));
         plays.record(play("deezer", 1));
         let mut flow = play("deezer", 2);
         flow.flow = Some(Flow { mood: Some("chill".into()) });
         plays.record(flow.clone());
         plays.record(play("navidrome", 3));
-        let again = Plays::load(Some(&dir));
+        let again = Plays::load(log(&dir));
         assert_eq!(again.of("deezer").cloned().collect::<Vec<_>>(), [flow, play("deezer", 1)], "newest first, this source's");
         assert_eq!(again.of("navidrome").count(), 1);
         let _ = std::fs::remove_dir_all(&dir);
@@ -228,16 +261,36 @@ mod tests {
     #[test]
     fn only_the_last_plays_are_kept() {
         let dir = dir("keep");
-        let mut plays = Plays::load(Some(&dir));
+        let mut plays = Plays::load(log(&dir));
         for id in 0..(COMPACT_AT as u64 + 5) {
             plays.record(play("deezer", id));
         }
         assert_eq!(plays.of("deezer").count(), KEEP);
         assert_eq!(plays.of("deezer").next().map(|p| p.track.id.clone()), Some(TrackId::from(COMPACT_AT as u64 + 4)));
-        let lines = std::fs::read_to_string(dir.join(FILE)).unwrap().lines().count();
+        let lines = std::fs::read_to_string(dir.join("history.jsonl")).unwrap().lines().count();
         assert!(lines < COMPACT_AT, "the file was compacted, {lines} lines");
-        assert_eq!(Plays::load(Some(&dir)).of("deezer").count(), KEEP);
+        assert_eq!(Plays::load(log(&dir)).of("deezer").count(), KEEP);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn every_computers_plays_are_merged_once() {
+        use crate::ui::sync::SyncDir;
+        let root = dir("two");
+        std::fs::create_dir_all(&root).unwrap();
+        let on = |device: &str| Log::new("history", Some(&root.join(device)), Some(&SyncDir::new(&root, device)));
+        let mut air = Plays::load(on("Air-0001"));
+        let mut imac = Plays::load(on("iMac-0002"));
+        air.record(play("deezer", 3));
+        imac.record(play("deezer", 1));
+        imac.record(play("deezer", 5));
+        air.reload();
+        let order: Vec<_> = air.of("deezer").map(|p| p.track.id.to_string()).collect();
+        assert_eq!(order, ["5", "3", "1"], "newest first, across computers");
+        air.rewrite();
+        imac.reload();
+        assert_eq!(imac.len(), 3, "a play in two files is one play");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -245,8 +298,8 @@ mod tests {
         let dir = dir("broken");
         std::fs::create_dir_all(&dir).unwrap();
         let good = play("deezer", 1).encode().to_string();
-        std::fs::write(dir.join(FILE), format!("not json\n{good}\n{{\"source\":\"deezer\"}}\n")).unwrap();
-        assert_eq!(Plays::load(Some(&dir)).of("deezer").count(), 1);
+        std::fs::write(dir.join("history.jsonl"), format!("not json\n{good}\n{{\"source\":\"deezer\"}}\n")).unwrap();
+        assert_eq!(Plays::load(log(&dir)).of("deezer").count(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

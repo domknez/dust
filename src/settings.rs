@@ -47,6 +47,12 @@ pub struct Prefs {
     /// offers them on top and ⌘D adds to the first. Ids of every source mix here;
     /// each offers only its own.
     pub recent_playlists: Vec<PlaylistId>,
+    /// The folder the Crate and play history are synced through; None keeps them
+    /// on this computer only.
+    pub sync_folder: Option<PathBuf>,
+    /// This computer's name in the sync folder's file names; made when sync is
+    /// first turned on.
+    pub device: String,
     /// The settings file changes are saved to; None keeps them in memory.
     file: Option<PathBuf>,
 }
@@ -78,6 +84,8 @@ impl Prefs {
             recent_playlists: get("recent_playlists")
                 .map(|ids| ids.split(',').filter(|id| !id.is_empty()).map(PlaylistId::new).collect())
                 .unwrap_or_default(),
+            sync_folder: get("sync_folder").filter(|f| !f.is_empty()).map(PathBuf::from),
+            device: get("device").unwrap_or_default().to_string(),
             file: None,
         }
     }
@@ -110,7 +118,7 @@ impl Prefs {
     }
 
     /// Every preference as its key and saved value.
-    fn values(&self) -> [(&'static str, String); 11] {
+    fn values(&self) -> [(&'static str, String); 13] {
         let flag = |on: bool| if on { "true" } else { "false" }.to_string();
         [
             ("source", self.source.key.into()),
@@ -124,6 +132,8 @@ impl Prefs {
             ("auto_update", flag(self.auto_update)),
             ("sidebar_playlists", if self.sidebar_playlists { "open" } else { "closed" }.into()),
             ("recent_playlists", self.recent_playlists.iter().map(PlaylistId::as_str).collect::<Vec<_>>().join(",")),
+            ("sync_folder", self.sync_folder.as_ref().map(|f| f.display().to_string()).unwrap_or_default()),
+            ("device", self.device.clone()),
         ]
     }
 }
@@ -155,8 +165,9 @@ mod tests {
     use super::*;
 
     /// A file as dust writes it.
-    const SAVED: &str = "auto_update=false\noutput=Kitchen\nquality=flac\nrecent_playlists=12,ab-3\nrepeat=all\nreport_listens=false\nshuffle=true\n\
-                         sidebar_playlists=closed\nsource=navidrome\ntheme=dark\nvolume=0.250\n";
+    const SAVED: &str = "auto_update=false\ndevice=Air-3f2a\noutput=Kitchen\nquality=flac\nrecent_playlists=12,ab-3\nrepeat=all\n\
+                         report_listens=false\nshuffle=true\nsidebar_playlists=closed\nsource=navidrome\n\
+                         sync_folder=/Users/me/Dropbox\ntheme=dark\nvolume=0.250\n";
 
     #[test]
     fn reads_a_saved_file() {
@@ -169,6 +180,7 @@ mod tests {
         assert_eq!(p.output.as_deref(), Some("Kitchen"));
         assert_eq!(p.volume, 0.25);
         assert_eq!(p.recent_playlists, [PlaylistId::new("12"), PlaylistId::new("ab-3")]);
+        assert_eq!((p.sync_folder.as_deref(), p.device.as_str()), (Some(Path::new("/Users/me/Dropbox")), "Air-3f2a"));
     }
 
     #[test]
@@ -192,6 +204,7 @@ mod tests {
         assert_eq!(p.output, None);
         assert_eq!(p.volume, 1.0);
         assert!(p.recent_playlists.is_empty());
+        assert!(p.sync_folder.is_none() && p.device.is_empty());
     }
 
     #[test]

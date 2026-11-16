@@ -76,7 +76,14 @@ and *Connect a Navidrome server*.
   is *new* until you tick it heard. The Crate page (in the sidebar, with how many are
   new) lists everything with filters and shows one entry in full: play it, add it to a
   playlist, open the album or artist, search for a note or for something saved on the
-  other source, and keep a note on it. Kept on this computer in `crate.jsonl`
+  other source, and keep a note on it
+- **Crate and history on every computer:** Settings → *Crate and history* keeps them
+  on this computer only, or syncs them through a folder: dust finds iCloud Drive,
+  Dropbox, Syncthing, Google Drive and OneDrive, or takes any folder's path. Each
+  computer writes its own file in `<folder>/dust/` and reads everyone's, so two never
+  overwrite each other. Either way both are backed up next to the settings every day
+  (the last 14 kept), and *Restore a backup…* puts the Crate back as it was that day.
+  *Copy Crate as Markdown* and *Save Crate as JSON* export it
 - **Play history:** the panel on the right has *up next*, *history* and *crate*: every track
   you heard, from any source, newest first by day, with the Flow or album it came from
   and skips marked. Click one to hear it again, right-click to queue it or add it to a
@@ -374,6 +381,8 @@ src/
 │   ├── now_playing.rs media keys and the OS Now Playing widget
 │   ├── plays.rs       the play history (history.jsonl, next to the settings file)
 │   ├── crate_store.rs the Crate (crate.jsonl, a log of changes, next to the settings file)
+│   ├── sync.rs        where the Crate and history are kept: here, or a sync folder (one file
+│                      per computer, merged on read); daily backups
 │   ├── views/         one file per screen or panel
 │   ├── widgets/       reusable painted components
 │   └── style/         palette, type scale, metrics, icons — all visual constants live here

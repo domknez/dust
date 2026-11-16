@@ -19,8 +19,10 @@ mod queue;
 mod settings;
 mod sidebar;
 mod sleep_timer;
+mod sync_settings;
 
 pub use crate_view::{CrateView, Filter};
 pub use lyrics::LyricsState;
 pub use settings::reveal_log;
 pub use sleep_timer::SleepChoice;
+pub use sync_settings::Export;

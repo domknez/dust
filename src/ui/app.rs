@@ -13,6 +13,7 @@ use super::plays::{Play, Plays};
 use super::sources::{Login, Sources};
 use super::state::{ArtistView, Coll, CollSource, PlayMode, View, playable, playable_from};
 use super::style::{self, Appearance, colors, metrics};
+use super::sync::{Log, SyncDir, SyncState};
 use super::toasts::Toasts;
 use super::updates::Updates;
 use crate::credentials;
@@ -111,6 +112,8 @@ pub struct App {
     /// Things to check out later, kept on this computer.
     pub(super) crate_box: Crate,
     pub(super) crate_view: super::views::CrateView,
+    /// Syncing the Crate and history through a folder, and their daily backup.
+    pub(super) sync: SyncState,
     /// The Settings window is open.
     pub(super) show_settings: bool,
     pub(super) lyrics: super::views::LyricsState,
@@ -175,8 +178,9 @@ impl App {
     pub(super) fn with(ctx: &egui::Context, prefs: Prefs, player: PlayerHandle, jobs: Jobs, queues: QueueFiles) -> Self {
         player.send(Cmd::Shuffle(prefs.shuffle));
         player.send(Cmd::Repeat(prefs.repeat));
-        let plays = Plays::load(queues.dir());
-        let crate_box = Crate::load(queues.dir());
+        let sync_dir = prefs.sync_folder.as_ref().filter(|_| !prefs.device.is_empty()).map(|f| SyncDir::new(f, &prefs.device));
+        let plays = Plays::load(Log::new("history", queues.dir(), sync_dir.as_ref()));
+        let crate_box = Crate::load(Log::new("crate", queues.dir(), sync_dir.as_ref()));
         Self {
             player,
             jobs,
@@ -192,6 +196,7 @@ impl App {
             plays,
             crate_box,
             crate_view: Default::default(),
+            sync: SyncState::new(sync_dir),
             show_settings: false,
             lyrics: Default::default(),
             queue_drag: None,
@@ -574,6 +579,7 @@ impl eframe::App for App {
             return;
         }
         self.record_plays();
+        self.sync_tick(&ctx);
         let st = self.player.status();
         self.shortcuts(&ctx, &st, &mut acts);
         self.persist_playback(&st);

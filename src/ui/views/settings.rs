@@ -1,5 +1,5 @@
-//! The Settings window: appearance, streaming quality, listen sharing, updates and
-//! troubleshooting. Opens from the account menu or with ⌘, (Ctrl+, elsewhere).
+//! The Settings window: appearance, streaming quality, listen sharing, where the
+//! Crate and history are kept, updates and troubleshooting. Opens from the account menu or with ⌘, (Ctrl+, elsewhere).
 
 use crate::model::Quality;
 use crate::ui::action::{Action, Actions};
@@ -62,6 +62,8 @@ impl App {
         if widgets::menu_row(ui, None, title, Some(sub), self.prefs.report_listens, colors().text).clicked() {
             acts.push(Action::ToggleReportListens);
         }
+        ui.add_space(12.0);
+        self.sync_settings(ui, acts);
         ui.add_space(12.0);
         widgets::caption(ui, "UPDATES");
         let auto = self.updates.auto;

@@ -12,7 +12,8 @@
 //! - [`library`]: the source's playlists, likes and lists; [`browse`]: the page on screen
 //! - [`selection`]: the rows picked in the track list on screen
 //! - [`plays`]: the play history, kept on this computer
-//! - [`crate_store`]: the Crate, things to check out later
+//! - [`crate_store`]: the Crate, things to check out later; [`sync`]: where it and
+//!   the play history are kept, synced through a folder, backed up daily
 //! - [`load`]: background loads, each keeping its result or error
 //! - [`toasts`]: short messages in the corner about things that happened off the page
 //! - [`state`], [`format`], [`covers`]: supporting pieces
@@ -34,6 +35,7 @@ mod selection;
 mod sources;
 mod state;
 mod style;
+mod sync;
 mod toasts;
 mod updates;
 mod views;
