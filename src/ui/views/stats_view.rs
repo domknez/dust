@@ -242,6 +242,10 @@ fn plays_label(n: u32) -> String {
     if n == 1 { "1 play".into() } else { format!("{} plays", thousands(u64::from(n))) }
 }
 
+/// Where a list card's description starts, and the room under it for the count.
+const ABOUT_TOP: f32 = 38.0;
+const COUNT_SPACE: f32 = 36.0;
+
 /// The lists made from the history, as cards: name, what's in it, how many tracks.
 /// Click opens one; right-click plays or queues it.
 fn lists(ui: &mut Ui, lists: &[(Smart, usize)], acts: &mut Actions) {
@@ -251,16 +255,27 @@ fn lists(ui: &mut Ui, lists: &[(Smart, usize)], acts: &mut Actions) {
     let gap = 12.0;
     let count = lists.len().max(1) as f32;
     let width = ((ui.available_width() - gap * (count - 1.0)) / count).max(160.0);
+    let inner = width - 32.0;
+    // Each card's description, wrapped to the card; all cards as tall as the
+    // longest needs, so the count below never runs into it.
+    let abouts: Vec<_> = lists
+        .iter()
+        .map(|(which, _)| {
+            let job = egui::text::LayoutJob::simple(which.about().to_string(), ty::CAPTION.font(), p.dim, inner);
+            ui.painter().layout_job(job)
+        })
+        .collect();
+    let about_height = abouts.iter().map(|g| g.size().y).fold(0.0, f32::max);
+    let height = (ABOUT_TOP + about_height + COUNT_SPACE).max(96.0);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(gap, gap);
-        for &(which, n) in lists {
-            let (rect, resp) = ui.allocate_exact_size(vec2(width, 96.0), if n > 0 { Sense::click() } else { Sense::hover() });
+        for (&(which, n), galley) in lists.iter().zip(abouts) {
+            let (rect, resp) = ui.allocate_exact_size(vec2(width, height), if n > 0 { Sense::click() } else { Sense::hover() });
             let corner = CornerRadius::same(radius::CONTROL);
             ui.painter().rect_filled(rect, corner, if n > 0 && resp.hovered() { p.raised } else { p.surface });
             let edge = if n > 0 && resp.hovered() { p.accent } else { p.line };
             ui.painter().rect_stroke(rect, corner, egui::Stroke::new(1.0, edge), egui::StrokeKind::Inside);
             let x = rect.left() + 16.0;
-            let inner = rect.width() - 32.0;
             text_left(
                 ui.painter(),
                 pos2(x, rect.top() + 24.0),
@@ -269,9 +284,7 @@ fn lists(ui: &mut Ui, lists: &[(Smart, usize)], acts: &mut Actions) {
                 if n > 0 { p.text } else { p.dim },
                 inner,
             );
-            let about = egui::text::LayoutJob::simple(which.about().to_string(), ty::CAPTION.font(), p.dim, inner);
-            let galley = ui.painter().layout_job(about);
-            ui.painter().galley(pos2(x, rect.top() + 38.0), galley, p.dim);
+            ui.painter().galley(pos2(x, rect.top() + ABOUT_TOP), galley, p.dim);
             let tracks = match n {
                 0 => "nothing yet".to_string(),
                 1 => "1 track".to_string(),

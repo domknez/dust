@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Listening: the cards of lists made from your history grow to fit their
+  description, so it no longer runs into the track count on narrow windows
+
 ## 0.31.0 (2026-11-17)
 
 - Nix: `flake.nix` with a dev shell (`nix develop`), an installable package (`nix run`,
