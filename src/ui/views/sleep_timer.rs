@@ -24,6 +24,21 @@ const GAP: f32 = 8.0;
 pub enum SleepChoice {
     Minutes(u64),
     EndOfTrack,
+    EndOfAlbum,
+    EndOfQueue,
+}
+
+/// The "at the end of" choices: what each is called in its cell and in the chip,
+/// and what the panel says while it's set.
+const ENDS: [(SleepChoice, Sleep, &str, &str); 3] = [
+    (SleepChoice::EndOfTrack, Sleep::EndOfTrack, "Track", "Stops when this track ends"),
+    (SleepChoice::EndOfAlbum, Sleep::EndOfAlbum, "Album", "Stops after the last track of this album"),
+    (SleepChoice::EndOfQueue, Sleep::EndOfQueue, "Queue", "Stops when the queue runs out, even on repeat"),
+];
+
+/// The chip's word for a sleep at the end of something.
+fn end_word(sleep: Sleep) -> Option<&'static str> {
+    ENDS.iter().find(|e| e.1 == sleep).map(|e| e.2)
 }
 
 impl App {
@@ -55,8 +70,8 @@ impl App {
         });
         if let Some(s) = sleep {
             let label = match s {
-                Sleep::EndOfTrack => "end".to_string(),
                 Sleep::At(at) => short_left(at),
+                end => end_word(end).unwrap_or("end").to_lowercase(),
             };
             if sleep_chip(ui, &label).on_hover_text("Sleep timer").clicked() {
                 egui::Popup::toggle_id(ui.ctx(), menu_id);
@@ -85,8 +100,8 @@ fn sleep_panel(ui: &mut Ui, sleep: Option<Sleep>, choice: Option<SleepChoice>) -
         _ => Duration::from_secs(1),
     };
     let share = match (sleep, left) {
-        (Some(Sleep::EndOfTrack), _) => 1.0,
         (_, Some(left)) => (left.as_secs_f32() / full.as_secs_f32()).clamp(0.0, 1.0),
+        (Some(_), None) => 1.0,
         _ => 0.0,
     };
     ring(ui.painter(), center, RING / 2.0 - 3.0, share);
@@ -97,30 +112,39 @@ fn sleep_panel(ui: &mut Ui, sleep: Option<Sleep>, choice: Option<SleepChoice>) -
     let width = top.right() - x;
     let (big, note) = match (sleep, left) {
         (Some(Sleep::At(_)), Some(left)) => (clock(left), format!("Fades out over {} s, then pauses", SLEEP_FADE.as_secs())),
-        (Some(Sleep::EndOfTrack), _) => ("End".to_string(), "Stops when this track ends".to_string()),
+        (Some(end), _) if end_word(end).is_some() => {
+            let note = ENDS.iter().find(|e| e.1 == end).map_or("", |e| e.3);
+            ("End".to_string(), note.to_string())
+        }
         _ => ("Off".to_string(), "Pick when the music stops".to_string()),
     };
     text_left(ui.painter(), pos2(x, center.y - 12.0), &big, ty::PAGE_TITLE, p.text, width);
     let note_rect = Rect::from_min_size(pos2(x, center.y + 10.0), vec2(width, 34.0));
     ui.put(note_rect, egui::Label::new(egui::RichText::new(note).font(ty::SMALL.font()).color(p.dim)).wrap());
 
-    // 15 min · 30 min · 45 min / 1 hour · End of track
+    // 15 min · 30 min · 45 min · 1 hour, then at the end of: Track · Album · Queue
     ui.add_space(12.0);
     let full_width = ui.available_width();
+    let quarter = (full_width - 3.0 * GAP) / 4.0;
     let third = (full_width - 2.0 * GAP) / 3.0;
-    let (grid, _) = ui.allocate_exact_size(vec2(full_width, 2.0 * CHOICE_HEIGHT + GAP), Sense::hover());
+    let (timed, _) = ui.allocate_exact_size(vec2(full_width, CHOICE_HEIGHT), Sense::hover());
     let mut cells: Vec<(Rect, SleepChoice, String)> = MINUTES
         .iter()
         .enumerate()
         .map(|(k, &m)| {
-            let (col, row) = ((k % 3) as f32, (k / 3) as f32);
-            let rect = Rect::from_min_size(grid.min + vec2(col * (third + GAP), row * (CHOICE_HEIGHT + GAP)), vec2(third, CHOICE_HEIGHT));
+            let rect = Rect::from_min_size(timed.min + vec2(k as f32 * (quarter + GAP), 0.0), vec2(quarter, CHOICE_HEIGHT));
             let label = if m == 60 { "1 hour".to_string() } else { format!("{m} min") };
             (rect, SleepChoice::Minutes(m), label)
         })
         .collect();
-    let end = Rect::from_min_size(grid.min + vec2(third + GAP, CHOICE_HEIGHT + GAP), vec2(2.0 * third + GAP, CHOICE_HEIGHT));
-    cells.push((end, SleepChoice::EndOfTrack, "End of track".to_string()));
+    ui.add_space(10.0);
+    ui.label(egui::RichText::new("AT THE END OF").font(ty::OVERLINE.font()).color(p.dim));
+    ui.add_space(4.0);
+    let (ends, _) = ui.allocate_exact_size(vec2(full_width, CHOICE_HEIGHT), Sense::hover());
+    for (k, (choice, _, label, _)) in ENDS.iter().enumerate() {
+        let rect = Rect::from_min_size(ends.min + vec2(k as f32 * (third + GAP), 0.0), vec2(third, CHOICE_HEIGHT));
+        cells.push((rect, *choice, label.to_string()));
+    }
     for (rect, this, label) in cells {
         let resp = ui.interact(rect, ui.scope_id().with(("sleep-choice", label.as_str())), Sense::click());
         let on = choice == Some(this);

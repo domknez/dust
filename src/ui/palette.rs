@@ -145,7 +145,9 @@ impl App {
                 vec![Action::Sleep(Some(SleepChoice::Minutes(minutes)))]
             }));
         }
-        all.push(Command::new("Player", "Sleep at the end of the track", || vec![Action::Sleep(Some(SleepChoice::EndOfTrack))]));
+        for (what, choice) in [("track", SleepChoice::EndOfTrack), ("album", SleepChoice::EndOfAlbum), ("queue", SleepChoice::EndOfQueue)] {
+            all.push(Command::new("Player", format!("Sleep at the end of the {what}"), move || vec![Action::Sleep(Some(choice))]));
+        }
         if st.sleep.is_some() {
             all.push(Command::new("Player", "Sleep timer off", || vec![Action::Sleep(None)]));
         }

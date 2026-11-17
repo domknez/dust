@@ -25,6 +25,8 @@ pub enum Thing {
         title: String,
         artist: String,
         picture: Option<Art>,
+        /// What it is: [`About`] filled in when saved, or looked up later.
+        about: About,
     },
     Artist {
         id: String,
@@ -33,6 +35,38 @@ pub enum Thing {
     },
     /// Just the note: a name to look for, a link, anything.
     Note,
+}
+
+/// What kind of release an album is, when it came out and how long it is; empty
+/// (and 0) until known.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct About {
+    /// "Album", "EP", "Single", "Live", "Compilation".
+    pub kind: String,
+    /// "2026".
+    pub year: String,
+    pub tracks: u32,
+}
+
+impl About {
+    /// Not looked up yet: saved before dust kept it, or found without it.
+    pub fn unknown(&self) -> bool {
+        self.tracks == 0
+    }
+
+    /// "EP · 5 tracks", "Album", "1 track"; empty when nothing is known.
+    pub fn summary(&self) -> String {
+        let mut parts = Vec::new();
+        if !self.kind.is_empty() {
+            parts.push(self.kind.clone());
+        }
+        match self.tracks {
+            0 => {}
+            1 => parts.push("1 track".into()),
+            n => parts.push(format!("{n} tracks")),
+        }
+        parts.join(" · ")
+    }
 }
 
 impl Thing {
@@ -59,9 +93,10 @@ impl Thing {
     fn encode(&self) -> Value {
         match self {
             Thing::Track(t) => json!({"kind": "track", "track": encode_track(t)}),
-            Thing::Album { id, title, artist, picture } => {
-                json!({"kind": "album", "id": id, "title": title, "artist": artist, "art": picture.as_ref().map(Art::as_str)})
-            }
+            Thing::Album { id, title, artist, picture, about } => json!({
+                "kind": "album", "id": id, "title": title, "artist": artist, "art": picture.as_ref().map(Art::as_str),
+                "type": about.kind, "year": about.year, "tracks": about.tracks,
+            }),
             Thing::Artist { id, name, picture } => {
                 json!({"kind": "artist", "id": id, "name": name, "art": picture.as_ref().map(Art::as_str)})
             }
@@ -74,7 +109,13 @@ impl Thing {
         let art = || v["art"].as_str().and_then(Art::new);
         Some(match v["kind"].as_str()? {
             "track" => Thing::Track(decode_track(&v["track"])?),
-            "album" => Thing::Album { id: v["id"].as_str()?.into(), title: s("title"), artist: s("artist"), picture: art() },
+            "album" => Thing::Album {
+                id: v["id"].as_str()?.into(),
+                title: s("title"),
+                artist: s("artist"),
+                picture: art(),
+                about: About { kind: s("type"), year: s("year"), tracks: v["tracks"].as_u64().unwrap_or(0) as u32 },
+            },
             "artist" => Thing::Artist { id: v["id"].as_str()?.into(), name: s("name"), picture: art() },
             "note" => Thing::Note,
             _ => return None,
@@ -256,6 +297,18 @@ impl Crate {
         id
     }
 
+    /// Fill in what an album entry is (looked up after it was saved). Goes in the
+    /// log as the entry again, which older versions of dust read too.
+    pub fn set_about(&mut self, id: &str, about: About) {
+        let Some(mut entry) = self.get(id).cloned() else { return };
+        let Thing::Album { about: known, .. } = &mut entry.thing else { return };
+        if *known == about {
+            return;
+        }
+        *known = about;
+        self.change(Change::Add(Box::new(entry)));
+    }
+
     /// Apply `change` and add it to the log.
     pub fn change(&mut self, change: Change) {
         let at = unix_now();
@@ -397,7 +450,13 @@ mod tests {
         let mut c = Crate::load(log(&dir));
         let song = c.add("deezer", Thing::Track(track(1)), "Flow · chill", "");
         let note = c.add("deezer", Thing::Note, "", "  that Turkish psych band  ");
-        let album = Thing::Album { id: "302127".into(), title: "Wild God".into(), artist: "Nick Cave".into(), picture: None };
+        let album = Thing::Album {
+            id: "302127".into(),
+            title: "Wild God".into(),
+            artist: "Nick Cave".into(),
+            picture: None,
+            about: About::default(),
+        };
         let gone = c.add("deezer", album, "", "from Ana");
         c.change(Change::Heard { id: song.clone(), heard: true });
         c.change(Change::Note { id: song.clone(), note: "great bass".into() });
@@ -411,6 +470,36 @@ mod tests {
         let saved = again.get(&note).unwrap();
         assert_eq!((saved.title(), saved.source.as_str()), ("that Turkish psych band", ""));
         assert_eq!(again.new_count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_album_keeps_what_it_is_and_old_entries_learn_it() {
+        let dir = dir("about");
+        let mut c = Crate::load(log(&dir));
+        let album = |about| Thing::Album { id: "1".into(), title: "Sun".into(), artist: "A".into(), picture: None, about };
+        let ep = About { kind: "EP".into(), year: "2026".into(), tracks: 5 };
+        let known = c.add("deezer", album(ep.clone()), "", "");
+        // Saved by an older dust: no type, year or tracks in the log.
+        let line = json!({"op": "add", "at": 1, "id": "old", "source": "deezer", "saved": 1,
+            "thing": {"kind": "album", "id": "2", "title": "Moon", "artist": "B"}});
+        assert!(c.log.append(&line.to_string()));
+        let mut c = Crate::load(log(&dir));
+        let about = |c: &Crate, id: &str| match &c.get(id).unwrap().thing {
+            Thing::Album { about, .. } => about.clone(),
+            _ => unreachable!(),
+        };
+        assert_eq!(about(&c, &known), ep);
+        assert_eq!(ep.summary(), "EP · 5 tracks");
+        assert!(about(&c, "old").unknown());
+        assert_eq!(about(&c, "old").summary(), "");
+        c.change(Change::Heard { id: "old".into(), heard: true });
+        let single = About { kind: "Single".into(), year: "2025".into(), tracks: 1 };
+        c.set_about("old", single.clone());
+        let again = Crate::load(log(&dir));
+        assert_eq!(about(&again, "old"), single);
+        assert_eq!(single.summary(), "Single · 1 track");
+        assert!(again.get("old").unwrap().heard, "what it is changes, nothing else");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

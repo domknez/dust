@@ -200,7 +200,9 @@ pub fn album_info(page: &Value) -> AlbumInfo {
             picture: art("cover", &text(&v["ALB_PICTURE"])),
         })
         .collect();
-    AlbumInfo { year: year(data), label: text(&data["LABEL_NAME"]), more }
+    // An album page without a type says nothing of what it is.
+    let kind = if text(&data["TYPE"]).is_empty() { String::new() } else { release_kind(data).1.to_string() };
+    AlbumInfo { year: year(data), label: text(&data["LABEL_NAME"]), kind, more }
 }
 
 /// Releases grouped like Deezer's artist page: albums, singles and EPs, then live
@@ -222,6 +224,23 @@ pub fn discography(data: &Value) -> Vec<Section> {
         .collect()
 }
 
+/// What kind of release an album is (by its `TYPE` and `SUBTYPES`), and its group
+/// on the artist page: 0 albums, 1 singles and EPs, 2 live albums and compilations.
+fn release_kind(v: &Value) -> (usize, &'static str) {
+    let subtypes = &v["SUBTYPES"];
+    if subtypes["isLive"].as_bool() == Some(true) {
+        (2, "Live")
+    } else if subtypes["isCompilation"].as_bool() == Some(true) {
+        (2, "Compilation")
+    } else {
+        match text(&v["TYPE"]).as_str() {
+            "1" => (0, "Album"),
+            "3" => (1, "EP"),
+            _ => (1, "Single"),
+        }
+    }
+}
+
 /// An artist's albums, singles and EPs (not live albums or compilations) with the
 /// day each came out, from `album.getDiscography`.
 pub fn releases(data: &Value) -> Vec<Release> {
@@ -237,18 +256,7 @@ fn dated_releases(data: &Value) -> Vec<(usize, Release)> {
         if id.is_empty() {
             continue;
         }
-        let subtypes = &v["SUBTYPES"];
-        let (group, kind) = if subtypes["isLive"].as_bool() == Some(true) {
-            (2, "Live")
-        } else if subtypes["isCompilation"].as_bool() == Some(true) {
-            (2, "Compilation")
-        } else {
-            match text(&v["TYPE"]).as_str() {
-                "1" => (0, "Album"),
-                "3" => (1, "EP"),
-                _ => (1, "Single"),
-            }
-        };
+        let (group, kind) = release_kind(v);
         let date = Some(text(&v["ORIGINAL_RELEASE_DATE"])).filter(|d| !d.is_empty()).unwrap_or_else(|| text(&v["PHYSICAL_RELEASE_DATE"]));
         let subtitle = match date.get(..4) {
             Some(year) => format!("{year} · {kind}"),
@@ -403,14 +411,14 @@ mod tests {
     #[test]
     fn album_info_has_year_label_and_other_releases() {
         let page = serde_json::json!({
-            "DATA": {"ALB_ID": "1", "ORIGINAL_RELEASE_DATE": "2021-04-30", "LABEL_NAME": "Roadrunner Records"},
+            "DATA": {"ALB_ID": "1", "ORIGINAL_RELEASE_DATE": "2021-04-30", "LABEL_NAME": "Roadrunner Records", "TYPE": "3"},
             "ALBUMS": {"data": [
                 {"ALB_ID": "1", "ALB_TITLE": "Fortitude", "PHYSICAL_RELEASE_DATE": "2021-04-30"},
                 {"ALB_ID": "2", "ALB_TITLE": "Magma", "PHYSICAL_RELEASE_DATE": "2016-06-17", "ALB_PICTURE": "abc"}
             ]}
         });
         let info = album_info(&page);
-        assert_eq!((info.year.as_str(), info.label.as_str()), ("2021", "Roadrunner Records"));
+        assert_eq!((info.year.as_str(), info.label.as_str(), info.kind.as_str()), ("2021", "Roadrunner Records", "EP"));
         assert_eq!(info.more.len(), 1, "the album itself is left out");
         assert_eq!((info.more[0].title.as_str(), info.more[0].subtitle.as_str()), ("Magma", "2016"));
         assert_eq!(info.more[0].picture, art("cover", "abc"));

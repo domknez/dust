@@ -102,7 +102,8 @@ and *Connect a Navidrome server*.
 - **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs
 - **Sleep timer:** in the player bar's ⋯ menu, with a countdown ring; after 15 minutes
   to an hour the music fades out over 30 seconds and pauses (your volume is back for
-  the next play), or it stops at the end of the track (the next one waits for play)
+  the next play), or it stops at the end of the track, the album (after its last track
+  in the queue) or the queue (even on repeat); the next track waits for play
 - **Artist pages:** popular tracks and the full discography, plus related artists; click
   any artist name to get there. *Mix* plays songs by the artist and artists like them.
   The discography's *Timeline* tab lists every release by year, each marked *heard* or

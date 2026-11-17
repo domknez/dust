@@ -316,7 +316,10 @@ fn markdown(entries: &[Entry]) -> String {
             let mut line = match &entry.thing {
                 Thing::Note => format!("- {}", entry.note),
                 Thing::Artist { .. } => format!("- **{}** (artist)", entry.title()),
-                Thing::Album { .. } => format!("- **{}** by {} (album)", entry.title(), entry.by()),
+                Thing::Album { about, .. } => {
+                    let kind = if about.kind.is_empty() { "album".to_string() } else { about.kind.to_lowercase() };
+                    format!("- **{}** by {} ({kind})", entry.title(), entry.by())
+                }
                 Thing::Track(_) => format!("- **{}** by {}", entry.title(), entry.by()),
             };
             if entry.thing != Thing::Note && !entry.note.is_empty() {
@@ -352,7 +355,8 @@ mod tests {
     #[test]
     fn the_crate_reads_as_markdown() {
         let mut c = Crate::default();
-        let album = Thing::Album { id: "1".into(), title: "Wild God".into(), artist: "Nick Cave".into(), picture: None };
+        let album =
+            Thing::Album { id: "1".into(), title: "Wild God".into(), artist: "Nick Cave".into(), picture: None, about: Default::default() };
         c.add("deezer", album, "", "start with Joy");
         c.add("", Thing::Note, "", "that Turkish psych band");
         let text = markdown(c.entries());

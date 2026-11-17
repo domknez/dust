@@ -136,6 +136,10 @@ pub struct App {
     pub(super) releases: super::release_watch::Watch,
     /// The Crate's new tracks being put together to play.
     pub(super) crate_radio: super::load::Load<Vec<crate::model::Track>>,
+    /// What the Crate's albums saved without it are (type, year, tracks), being
+    /// looked up; and the entries looked up this run, found or not.
+    pub(super) crate_about: super::load::Load<Vec<(String, super::crate_store::About)>>,
+    pub(super) crate_about_tried: std::collections::HashSet<String>,
     /// The command palette, while it's open.
     pub(super) palette: Option<super::palette::Palette>,
     /// Syncing the Crate and history through a folder, and their daily backup.
@@ -226,6 +230,8 @@ impl App {
             stats_view: Default::default(),
             releases: Default::default(),
             crate_radio: Default::default(),
+            crate_about: Default::default(),
+            crate_about_tried: Default::default(),
             palette: None,
             sync: SyncState::new(sync_dir),
             show_settings: false,
@@ -641,6 +647,7 @@ impl eframe::App for App {
         self.sync_tick(&ctx);
         self.release_tick(&ctx);
         self.crate_radio_tick(&ctx);
+        self.crate_about_tick();
         let st = self.player.status();
         super::widgets::offer_crate(&ctx, self.prefs.crate_on);
         self.shortcuts(&ctx, &st, &mut acts);

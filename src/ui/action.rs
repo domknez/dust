@@ -306,6 +306,8 @@ impl App {
         let sleep = choice.map(|c| match c {
             SleepChoice::Minutes(m) => Sleep::At(Instant::now() + Duration::from_secs(m * 60)),
             SleepChoice::EndOfTrack => Sleep::EndOfTrack,
+            SleepChoice::EndOfAlbum => Sleep::EndOfAlbum,
+            SleepChoice::EndOfQueue => Sleep::EndOfQueue,
         });
         self.player.send(Cmd::Sleep(sleep));
     }

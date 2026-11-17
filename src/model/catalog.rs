@@ -129,6 +129,8 @@ pub struct AlbumInfo {
     /// Release year, empty if unknown.
     pub year: String,
     pub label: String,
+    /// "Album", "EP", "Single", "Live" or "Compilation"; empty if unknown.
+    pub kind: String,
     /// The artist's other releases (newest first), as album cards whose subtitle is
     /// the year.
     pub more: Vec<Item>,

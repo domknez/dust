@@ -6,7 +6,7 @@ use crate::model::{Likeable, Track};
 use crate::player::{Cmd, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
-use crate::ui::crate_store::{Change, Entry, Thing};
+use crate::ui::crate_store::{About, Change, Entry, Thing};
 use crate::ui::plays::{flow_label, when};
 use crate::ui::state::{ArtistView, Coll, CollSource, PlayMode, View};
 use crate::ui::style::icons::{self, Icon};
@@ -64,6 +64,20 @@ pub struct CrateView {
     note: Option<(String, String)>,
     /// On a narrow page, the selected entry is shown in place of the list.
     pub open: bool,
+}
+
+/// Albums looked up at a time, and the pause between two.
+const ABOUT_BATCH: usize = 40;
+const ABOUT_PAUSE: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// What an album is, from its page: the page's type and year where it says, else
+/// what was known.
+fn about_from(known: About, tracks: usize, info: crate::model::AlbumInfo) -> About {
+    About {
+        kind: if info.kind.is_empty() { known.kind } else { info.kind },
+        year: if info.year.is_empty() { known.year } else { info.year },
+        tracks: tracks as u32,
+    }
 }
 
 impl App {
@@ -159,6 +173,48 @@ impl App {
             Some(Err(e)) => self.toasts.info(ctx, format!("Couldn't play your Crate: {e}")),
             None => {}
         }
+    }
+
+    /// Look up what the Crate's albums saved without it are (an EP? how many
+    /// tracks?) in the background, a batch at a time, and keep it.
+    pub(in crate::ui) fn crate_about_tick(&mut self) {
+        if let Some(found) = self.crate_about.poll_take() {
+            for (id, about) in found.unwrap_or_default() {
+                self.crate_box.set_about(&id, about);
+            }
+        }
+        if !self.prefs.crate_on || self.crate_about.is_loading() {
+            return;
+        }
+        let Some(client) = self.client.clone() else { return };
+        let source = client.id().key;
+        let wanted: Vec<(String, String, About)> = self
+            .crate_box
+            .entries()
+            .iter()
+            .filter(|e| e.source == source && !self.crate_about_tried.contains(&e.id))
+            .filter_map(|e| match &e.thing {
+                Thing::Album { id, about, .. } if about.unknown() => Some((e.id.clone(), id.clone(), about.clone())),
+                _ => None,
+            })
+            .take(ABOUT_BATCH)
+            .collect();
+        if wanted.is_empty() {
+            return;
+        }
+        self.crate_about_tried.extend(wanted.iter().map(|(entry, ..)| entry.clone()));
+        self.crate_about.start(&self.jobs, move || {
+            let mut found = Vec::new();
+            for (k, (entry, album, known)) in wanted.into_iter().enumerate() {
+                if k > 0 {
+                    std::thread::sleep(ABOUT_PAUSE);
+                }
+                if let Ok((tracks, info)) = client.album_page(&album) {
+                    found.push((entry, about_from(known, tracks.len(), info)));
+                }
+            }
+            Ok(found)
+        });
     }
 
     /// Open the Crate page, showing `entry` (or the filter's first).
@@ -458,7 +514,10 @@ impl App {
     fn entry_detail(&mut self, ui: &mut Ui, entry: &Entry, current: &str, acts: &mut Actions) {
         let p = colors();
         let here = entry.source.is_empty() || entry.source == current;
-        let mut kind = entry.thing.kind().to_uppercase();
+        let mut kind = match &entry.thing {
+            Thing::Album { about, .. } if !about.kind.is_empty() => about.kind.to_uppercase(),
+            thing => thing.kind().to_uppercase(),
+        };
         if !here {
             kind = format!("{kind} · ON {}", source_name(&entry.source).to_uppercase());
         }
@@ -477,6 +536,13 @@ impl App {
         if !entry.by().is_empty() {
             ui.label(RichText::new(entry.by()).font(ty::SECONDARY.font()).color(p.dim));
         }
+        if let Thing::Album { about, .. } = &entry.thing {
+            let tracks = About { kind: String::new(), ..about.clone() }.summary();
+            let line = [about.year.as_str(), tracks.as_str()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ");
+            if !line.is_empty() {
+                ui.label(RichText::new(line).font(ty::SMALL.font()).color(p.faint));
+            }
+        }
         ui.add_space(12.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
@@ -488,7 +554,7 @@ impl App {
                     }
                     self.crate_add_to_playlist(ui, track, acts);
                 }
-                (Thing::Album { id, title, artist, picture }, true) => {
+                (Thing::Album { id, title, artist, picture, .. }, true) => {
                     if widgets::pill(ui, "Open album", None, true).clicked() {
                         acts.push(Action::OpenCollection(Coll {
                             source: CollSource::Album(id.clone()),
@@ -645,8 +711,9 @@ fn entry_row(ui: &Ui, covers: &mut crate::ui::covers::Covers, rect: Rect, entry:
         Thing::Artist { .. } => parts.push("artist".into()),
         Thing::Note => parts.push("note".into()),
     }
-    if matches!(entry.thing, Thing::Album { .. }) {
-        parts.push("album".into());
+    if let Thing::Album { about, .. } = &entry.thing {
+        let summary = about.summary();
+        parts.push(if summary.is_empty() { "album".into() } else { summary });
     }
     if !entry.from.is_empty() {
         parts.push(entry.from.clone());
@@ -729,6 +796,39 @@ mod tests {
         assert!(t.app.crate_box.get(&id).is_some_and(|e| !e.heard), "new again");
         t.update(menu_change(widgets::CrateMenu::Remove, &entry));
         assert!(t.app.crate_box.get(&id).is_none(), "removed");
+    }
+
+    fn album(id: &str, about: About) -> Thing {
+        Thing::Album { id: id.into(), title: format!("Album {id}"), artist: "A".into(), picture: None, about }
+    }
+
+    #[test]
+    fn albums_saved_without_what_they_are_get_looked_up_once() {
+        let mut t = TestApp::new("");
+        t.app.source_ready(deezer());
+        let known = About { kind: "EP".into(), year: "2026".into(), tracks: 5 };
+        t.app.crate_box.add("deezer", album("1", known), "", "");
+        let new_release = About { kind: "Single".into(), year: "2026".into(), tracks: 0 };
+        let wanted = t.app.crate_box.add("deezer", album("2", new_release), "New release · 6 Nov", "");
+        t.app.crate_box.add("navidrome", album("3", About::default()), "", "");
+        t.app.crate_box.add("deezer", Thing::Note, "", "a note");
+        let waiting = t.jobs.waiting();
+
+        t.app.crate_about_tick();
+        assert_eq!(t.jobs.waiting(), waiting + 1, "one look for the batch");
+        assert_eq!(t.app.crate_about_tried.iter().collect::<Vec<_>>(), [&wanted], "only the unknown album of this source");
+        t.app.crate_about = Default::default();
+        t.app.crate_about_tick();
+        assert_eq!(t.jobs.waiting(), waiting + 1, "not looked up again this run");
+    }
+
+    #[test]
+    fn an_albums_page_says_what_it_is() {
+        let known = About { kind: "Single".into(), year: "2026".into(), tracks: 0 };
+        let info = crate::model::AlbumInfo { kind: "EP".into(), ..Default::default() };
+        assert_eq!(about_from(known.clone(), 4, info), About { kind: "EP".into(), year: "2026".into(), tracks: 4 });
+        let silent = crate::model::AlbumInfo { year: "2025".into(), ..Default::default() };
+        assert_eq!(about_from(known, 1, silent), About { kind: "Single".into(), year: "2025".into(), tracks: 1 });
     }
 
     #[test]

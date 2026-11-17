@@ -152,7 +152,7 @@ pub fn playlist(v: &Value, user: &str) -> Option<Playlist> {
 
 /// What kind of release an album is: OpenSubsonic's release types, else whether
 /// it's a compilation. Index into `DISCOGRAPHY`, and the label shown under it.
-fn release_kind(v: &Value) -> (usize, &'static str) {
+pub fn release_kind(v: &Value) -> (usize, &'static str) {
     let types: Vec<String> = list(v, "releaseTypes").into_iter().map(|t| text(t).to_lowercase()).collect();
     let has = |t: &str| types.iter().any(|x| x == t);
     if has("live") {

@@ -6,7 +6,7 @@ use crate::player::{State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
-use crate::ui::crate_store::Thing;
+use crate::ui::crate_store::{About, Thing};
 use crate::ui::format::total_clock;
 use crate::ui::playlist_edit::{Dialog, Edit};
 use crate::ui::state::{Coll, CollSource, View, playable};
@@ -285,11 +285,18 @@ impl App {
                         && self.prefs.crate_on
                         && widgets::menu_row(ui, Some(Icon::Crate), "Save to Crate", None, false, colors().text).clicked()
                     {
+                        let info = self.browse.album_info.as_ref();
+                        let about = About {
+                            kind: info.map(|i| i.kind.clone()).unwrap_or_default(),
+                            year: info.map(|i| i.year.clone()).unwrap_or_default(),
+                            tracks: self.browse.tracks.len() as u32,
+                        };
                         let album = Thing::Album {
                             id: id.clone(),
                             title: coll.title.clone(),
                             artist: coll.subtitle.clone(),
                             picture: coll.picture.clone(),
+                            about,
                         };
                         pick = Some(Action::SaveToCrate(album, String::new()));
                     }

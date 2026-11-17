@@ -91,7 +91,8 @@ impl Subsonic {
         // Album cards on the album page show just the year.
         let more =
             more.into_iter().map(|i| Item { subtitle: i.subtitle.split(" · ").next().unwrap_or_default().to_string(), ..i }).collect();
-        Ok((tracks, AlbumInfo { year, label, more }))
+        let kind = parse::release_kind(album).1.to_string();
+        Ok((tracks, AlbumInfo { year, label, kind, more }))
     }
 
     /// Artist page: popular songs, discography, similar artists.

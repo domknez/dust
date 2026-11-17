@@ -183,11 +183,14 @@ impl crate::ui::app::App {
     /// Put the releases found in the Crate as new (those not in it already) and say
     /// so.
     fn add_releases(&mut self, ctx: &eframe::egui::Context, source: &str, found: Vec<Found>) {
-        use crate::ui::crate_store::Thing;
+        use crate::ui::crate_store::{About, Thing};
         let mut added = Vec::new();
         for f in found {
             let album = f.release.album;
-            let thing = Thing::Album { id: album.id, title: album.title, artist: f.artist.clone(), picture: album.picture };
+            // The card's subtitle is "2026 · EP"; how many tracks is looked up later.
+            let kind = album.subtitle.rsplit(" · ").next().unwrap_or_default().to_string();
+            let about = About { kind, year: f.release.date.get(..4).unwrap_or_default().to_string(), tracks: 0 };
+            let thing = Thing::Album { id: album.id, title: album.title, artist: f.artist.clone(), picture: album.picture, about };
             if self.crate_box.find(source, &thing).is_some() {
                 continue;
             }

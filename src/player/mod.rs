@@ -125,6 +125,11 @@ pub enum Sleep {
     At(std::time::Instant),
     /// Stop when the playing track ends (the next one waits, paused).
     EndOfTrack,
+    /// Stop after the last track of the playing album: when the next one in the
+    /// queue is from another album, or there is none.
+    EndOfAlbum,
+    /// Stop when the queue runs out, even with repeat on.
+    EndOfQueue,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]

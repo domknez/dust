@@ -396,7 +396,7 @@ impl Engine {
     /// Continue with the next track after the current one ended and the sink drained
     /// (no preloaded track to switch to), without flushing the sink.
     fn continue_after_end(&mut self) {
-        if self.sleep == Some(Sleep::EndOfTrack) {
+        if self.stops_here() {
             self.sleep_now();
             return;
         }
@@ -485,7 +485,7 @@ impl Engine {
     /// shuffle or repeat changed) is dropped and the right one started; one outside
     /// that window (a seek back) is dropped.
     fn update_preload(&mut self) {
-        let due = self.sleep != Some(Sleep::EndOfTrack)
+        let due = !self.stops_here()
             && self.stream.as_ref().is_some_and(|s| {
                 s.finished() || self.queue.current().is_some_and(|t| t.duration > 0 && s.written() >= t.duration as f64 - PRELOAD_BEFORE)
             });
@@ -600,10 +600,36 @@ impl Engine {
         }
     }
 
+    /// Whether the sleep timer stops the music when the current track ends: set to
+    /// the end of the track, of the album with the next track from another (or none,
+    /// or the queue starting over), or of the queue with nothing after this one.
+    fn stops_here(&self) -> bool {
+        let last = !self.queue.has_next();
+        match self.sleep {
+            Some(Sleep::EndOfTrack) => true,
+            Some(Sleep::EndOfAlbum) => {
+                let album = |t: &Track| if t.album_id.is_empty() { t.album.clone() } else { t.album_id.clone() };
+                last || match (self.queue.current(), self.upcoming()) {
+                    (Some(now), Some(next)) => album(now).is_empty() || album(now) != album(next),
+                    _ => true,
+                }
+            }
+            Some(Sleep::EndOfQueue) => last,
+            _ => false,
+        }
+    }
+
     /// The track ended with the sleep timer set to its end: stop, with the next track
     /// waiting at its start for play.
     fn sleep_now(&mut self) {
-        log_info!("sleep timer: stopping at the end of the track");
+        log_info!(
+            "sleep timer: stopping at the end of the {}",
+            match self.sleep {
+                Some(Sleep::EndOfAlbum) => "album",
+                Some(Sleep::EndOfQueue) => "queue",
+                _ => "track",
+            }
+        );
         self.sleep = None;
         self.end_handoff();
         self.stop();
@@ -745,7 +771,7 @@ impl Engine {
     /// next track, wait for the one being preloaded, or else let the sink drain and
     /// open the next one here (also how open errors are reported).
     fn end_of_stream(&mut self) {
-        if self.sleep != Some(Sleep::EndOfTrack) {
+        if !self.stops_here() {
             if self.hand_over() {
                 self.publish(true);
                 return;
@@ -1091,6 +1117,45 @@ mod tests {
         e.handle(Cmd::Toggle);
         assert_eq!(now_playing(&e), Some(2));
         assert!(e.playing);
+    }
+
+    fn on_album(id: u64, album: &str) -> Track {
+        Track { album_id: album.into(), ..track(id, 5) }
+    }
+
+    #[test]
+    fn sleep_timer_at_end_of_album_plays_the_album_out_then_waits_at_the_next() {
+        let (mut e, _library, _tx) = engine(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![on_album(1, "a"), on_album(2, "a"), on_album(3, "b")], 0));
+        e.handle(Cmd::Sleep(Some(Sleep::EndOfAlbum)));
+        play_out(&mut e);
+        let st = e.status.lock().unwrap();
+        assert_eq!((st.state, st.track.as_ref().map(|t| n(&t.id))), (State::Paused, Some(3)), "both tracks of a, then waits at b");
+        assert_eq!(st.sleep, None, "used up");
+    }
+
+    #[test]
+    fn sleep_timer_at_end_of_album_stops_when_repeat_starts_over() {
+        let (mut e, _library, _tx) = engine(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![on_album(1, "a"), on_album(2, "a")], 0));
+        e.handle(Cmd::Repeat(Repeat::All));
+        e.handle(Cmd::Sleep(Some(Sleep::EndOfAlbum)));
+        play_out(&mut e);
+        let st = e.status.lock().unwrap();
+        assert_eq!((st.state, st.track.as_ref().map(|t| n(&t.id))), (State::Paused, Some(1)));
+        assert_eq!(st.sleep, None);
+    }
+
+    #[test]
+    fn sleep_timer_at_end_of_queue_stops_even_with_repeat_on() {
+        let (mut e, _library, _tx) = engine(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![on_album(1, "a"), on_album(2, "b"), on_album(3, "c")], 0));
+        e.handle(Cmd::Repeat(Repeat::All));
+        e.handle(Cmd::Sleep(Some(Sleep::EndOfQueue)));
+        play_out(&mut e);
+        let st = e.status.lock().unwrap();
+        assert_eq!((st.state, st.track.as_ref().map(|t| n(&t.id))), (State::Paused, Some(1)), "all three played, back at the first");
+        assert_eq!(st.sleep, None);
     }
 
     /// Remembers every volume it was given.
