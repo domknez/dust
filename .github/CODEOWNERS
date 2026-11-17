@@ -1,4 +1,0 @@
-# Nix packaging is maintained by its contributor.
-/flake.nix @untypequicode
-/flake.lock @untypequicode
-/docs/nix.md @untypequicode

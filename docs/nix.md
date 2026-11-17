@@ -1,5 +1,7 @@
 # Install with Nix
 
+Nix packaging is maintained by @untypequicode; please tag them on Nix issues.
+
 The repository is a flake (`flake.nix`): the package includes the desktop entry, the
 icons and the libraries dust loads at run time (Wayland, X11, OpenGL, WebKitGTK for the
 login window). Nix manages the updates, so dust doesn't check for them by itself (it can
