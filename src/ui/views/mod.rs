@@ -15,6 +15,7 @@ mod output_picker;
 mod play_history;
 mod player_bar;
 mod playlists;
+mod profile_picker;
 mod queue;
 mod settings;
 mod sidebar;

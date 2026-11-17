@@ -55,7 +55,7 @@ pub struct Watch {
 impl Watch {
     /// The watch of `source`, as remembered in `dir`.
     pub fn load(dir: Option<&Path>, source: &str) -> Self {
-        let file = dir.map(|d| d.join(format!("releases-{source}.json")));
+        let file = dir.map(|d| d.join(format!("releases-{}.json", source.replace(':', "-"))));
         let saved: Value =
             file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         let seen = saved["seen"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
@@ -161,13 +161,13 @@ impl crate::ui::app::App {
         if let Some(found) = self.releases.poll(now)
             && self.prefs.crate_on
         {
-            self.add_releases(ctx, client.id().key, found);
+            self.add_releases(ctx, &client.data_key(), found);
         }
         if !client.features().releases || !self.prefs.release_alerts || !self.prefs.crate_on || !self.releases.due(now) {
             return;
         }
         // With the history off, only the artists followed.
-        let listened = if self.prefs.history_on { self.listened_artists(client.id().key, now) } else { Vec::new() };
+        let listened = if self.prefs.history_on { self.listened_artists(&client.data_key(), now) } else { Vec::new() };
         let today = crate::ui::plays::when::today(&crate::ui::plays::when::zone());
         self.releases.start(&self.jobs, client, listened, today);
     }

@@ -51,7 +51,7 @@ enum Kind {
 impl App {
     pub(in crate::ui) fn stats_page(&mut self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
-        let Some(source) = self.client.as_ref().map(|c| c.id().key.to_string()) else { return };
+        let Some(source) = self.client.as_ref().map(|c| c.data_key()) else { return };
         let zone = when::zone();
         let key = Key {
             source,

@@ -34,7 +34,7 @@ impl App {
                 acts.push(Action::PlayCrate);
             }
         }
-        let current = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
+        let current = self.client.as_ref().map(|c| c.data_key()).unwrap_or_default();
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             if fresh.is_empty() {
                 widgets::empty_panel(
@@ -53,7 +53,7 @@ impl App {
                     ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.hover);
                 }
                 let tick = Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), Vec2::splat(26.0));
-                entry_row(ui, &mut self.covers, rect.with_max_x(tick.left() - 4.0), entry, current);
+                entry_row(ui, &mut self.covers, rect.with_max_x(tick.left() - 4.0), entry, &current);
                 let over_tick = resp.hover_pos().is_some_and(|pos| tick.contains(pos));
                 tick_box(ui, tick, over_tick);
                 if resp.clicked() {
@@ -84,8 +84,8 @@ impl App {
         let p = colors();
         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 54.0), Sense::click());
         let track = st.track.as_ref().filter(|t| !t.is_episode());
-        let source = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
-        let saved = track.and_then(|t| self.crates.store.find(source, &Thing::Track(t.clone()))).is_some_and(|e| !e.heard);
+        let source = self.client.as_ref().map(|c| c.data_key()).unwrap_or_default();
+        let saved = track.and_then(|t| self.crates.store.find(&source, &Thing::Track(t.clone()))).is_some_and(|e| !e.heard);
         let enabled = track.is_some() && !saved;
         let corner = CornerRadius::same(radius::CONTROL);
         ui.painter().rect_filled(rect, corner, if enabled && resp.hovered() { p.raised } else { p.surface });
