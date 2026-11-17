@@ -2,11 +2,14 @@
 
 ## Unreleased
 
+## 0.30.0 (2026-11-17)
+
 - Crate: albums say whether they're an album, EP, single, live album or
   compilation, with how many tracks and the year, in the list and in full. Albums
   saved earlier are looked up in the background
 - Sleep timer: stop at the end of the album or of the queue (even on repeat), not
   only at the end of the track; also in the command palette
+- Deezer: compilations no longer show up as singles in artist discographies
 
 ## 0.29.0 (2026-11-17)
 
