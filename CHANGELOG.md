@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.31.0 (2026-11-17)
+
 - Nix: `flake.nix` with a dev shell (`nix develop`), an installable package (`nix run`,
   `nix profile install`, NixOS) with the desktop entry and icons, and `nix flake check`
   (run by CI); see `docs/nix.md`. New cargo feature `self-update` (on by default): without
