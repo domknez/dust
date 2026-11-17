@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.29.0 (2026-11-17)
+
 - Settings is a bigger window with sections on the left: General, Playback,
   Features, Sidebar, Crate and history, Updates, Troubleshooting; on/off settings
   are switches
