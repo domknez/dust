@@ -22,7 +22,7 @@ pub use grid::{Grid, GridColumns};
 pub use load_state::load_state;
 pub use menu::{
     ADD_TO_RECENT_KEYS, CrateMenu, MenuTarget, NowPlayingMenu, NowPlayingOffer, Playlists, TrackMenu, add_to_playlist, caption, crate_menu,
-    divider, menu_row, now_playing_menu, playlist_picker, popover_frame, queue_menu, shortcut_row, track_menu,
+    divider, menu_row, now_playing_menu, offer_crate, playlist_picker, popover_frame, queue_menu, shortcut_row, switch_row, track_menu,
 };
 pub use nav::sidebar_item;
 pub use text::{artist_links, text_left, text_link};

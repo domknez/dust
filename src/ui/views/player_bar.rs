@@ -42,13 +42,16 @@ impl App {
             ui.spacing_mut().item_spacing.x = 4.0;
             self.volume(ui, st, acts);
             ui.add_space(6.0);
-            self.output_button(ui, st, acts);
+            // A speaker still playing keeps its button, to switch back from it.
+            if self.prefs.airplay || st.output != crate::output::Output::Local.name() {
+                self.output_button(ui, st, acts);
+            }
             // ⋯ (sleep timer, mini player), with the timer's countdown in front of it.
             self.more_button(ui, st, acts);
             if toggle_button(ui, Icon::Queue, self.side_panel.is_some()).on_hover_text("Queue and history").clicked() {
                 acts.push(Action::TogglePanel);
             }
-            if toggle_button(ui, Icon::Lyrics, self.browse.view == View::Lyrics).on_hover_text("Lyrics").clicked() {
+            if self.prefs.lyrics && toggle_button(ui, Icon::Lyrics, self.browse.view == View::Lyrics).on_hover_text("Lyrics").clicked() {
                 acts.push(Action::ToggleLyrics);
             }
         });

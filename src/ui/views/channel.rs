@@ -37,7 +37,7 @@ impl App {
                 if section.grid || alone {
                     card_grid(ui, &mut self.covers, section, acts);
                 } else {
-                    card_row(ui, &mut self.covers, ("channel-row", i), section, st, self.prefs.flow_new_only, acts);
+                    card_row(ui, &mut self.covers, ("channel-row", i), section, st, self.prefs.new_only(), acts);
                 }
             }
             ui.add_space(24.0);

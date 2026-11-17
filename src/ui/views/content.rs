@@ -23,6 +23,11 @@ impl App {
             }
         });
         ui.add_space(20.0);
+        // Back or Forward to a page turned off since.
+        if !self.view_allowed(&self.browse.view) {
+            acts.push(Action::Open(View::Home));
+            return;
+        }
         match &self.browse.view {
             View::Home => self.home_page(ui, st, acts),
             View::Playlists => self.playlists_page(ui, acts),

@@ -152,13 +152,16 @@ impl crate::ui::app::App {
     pub(in crate::ui) fn release_tick(&mut self, ctx: &eframe::egui::Context) {
         let Some(client) = self.client.clone() else { return };
         let now = jiff::Timestamp::now().as_second().max(0) as u64;
-        if let Some(found) = self.releases.poll(now) {
+        if let Some(found) = self.releases.poll(now)
+            && self.prefs.crate_on
+        {
             self.add_releases(ctx, client.id().key, found);
         }
-        if !client.features().releases || !self.prefs.release_alerts || !self.releases.due(now) {
+        if !client.features().releases || !self.prefs.release_alerts || !self.prefs.crate_on || !self.releases.due(now) {
             return;
         }
-        let listened = self.listened_artists(client.id().key, now);
+        // With the history off, only the artists followed.
+        let listened = if self.prefs.history_on { self.listened_artists(client.id().key, now) } else { Vec::new() };
         let today = crate::ui::plays::when::today(&crate::ui::plays::when::zone());
         self.releases.start(&self.jobs, client, listened, today);
     }

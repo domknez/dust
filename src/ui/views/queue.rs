@@ -88,7 +88,10 @@ impl App {
             let corner = CornerRadius::same(radius::CONTROL);
             ui.painter().rect_filled(tray, corner, p.surface);
             ui.painter().rect_stroke(tray, corner, egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
-            let tabs = [(SidePanel::Queue, "up next"), (SidePanel::History, "history"), (SidePanel::Crate, "crate")];
+            let tabs: Vec<_> = [(SidePanel::Queue, "up next"), (SidePanel::History, "history"), (SidePanel::Crate, "crate")]
+                .into_iter()
+                .filter(|(panel, _)| self.panel_allowed(*panel))
+                .collect();
             let width = (tray.width() - 6.0) / tabs.len() as f32;
             for (i, (panel, label)) in tabs.into_iter().enumerate() {
                 let tab =
@@ -129,7 +132,7 @@ impl App {
         let show_remove = hovered && self.queue_drag.is_none();
         acts.extend(widgets::queue_row(ui, &mut self.covers, rect, track, false, !show_remove).map(Action::OpenArtist));
         // A lime dot on the cover: never heard before.
-        if !track.is_episode() && !self.plays.has_heard(&track.id) {
+        if self.prefs.history_on && !track.is_episode() && !self.plays.has_heard(&track.id) {
             let corner = pos2(rect.left() + 6.0 + metrics::LIST_ART, rect.center().y - metrics::LIST_ART / 2.0);
             ui.painter().circle(corner, 4.5, p.accent, egui::Stroke::new(2.0, p.surface));
             let dot = Rect::from_center_size(corner, Vec2::splat(14.0));

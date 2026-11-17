@@ -67,10 +67,18 @@ impl App {
         }
     }
 
-    /// Keep the tracks the player heard since the last frame.
+    /// Look for AirPlay speakers in the background.
+    pub(super) fn start_discovery(&mut self, ctx: &egui::Context) {
+        let repaint = ctx.clone();
+        self.discovery =
+            Discovery::start(move || repaint.request_repaint()).inspect_err(|e| log_warn!("AirPlay discovery unavailable: {e}")).ok();
+    }
+
+    /// Keep the tracks the player heard since the last frame (none, with the
+    /// history turned off).
     fn record_plays(&mut self) {
         let played = self.player.take_played();
-        let Some(client) = &self.client else { return };
+        let Some(client) = self.client.as_ref().filter(|_| self.prefs.history_on) else { return };
         let source = client.id().key;
         let any = !played.is_empty();
         for played in played {
@@ -84,7 +92,7 @@ impl App {
     /// Tell the player which tracks Flow leaves out: the ones heard, with *new to me
     /// only* on.
     pub(super) fn send_skip_heard(&self) {
-        let heard = self.prefs.flow_new_only.then(|| std::sync::Arc::new(self.plays.heard()));
+        let heard = (self.prefs.flow_new_only && self.prefs.history_on).then(|| std::sync::Arc::new(self.plays.heard()));
         self.player.send(Cmd::SkipHeard(heard));
     }
 }
@@ -134,6 +142,7 @@ pub struct App {
     pub(super) sync: SyncState,
     /// The Settings window is open.
     pub(super) show_settings: bool,
+    pub(super) settings_section: super::views::Section,
     pub(super) lyrics: super::views::LyricsState,
     /// Queue row being dragged (index into the queue).
     pub(super) queue_drag: Option<usize>,
@@ -182,9 +191,9 @@ impl App {
 
         let player = PlayerHandle::spawn(ctx.clone(), prefs.volume);
         let mut app = Self::with(ctx, prefs, player, Jobs::threads(ctx), QueueFiles::in_settings_dir());
-        let repaint = ctx.clone();
-        app.discovery =
-            Discovery::start(move || repaint.request_repaint()).inspect_err(|e| log_warn!("AirPlay discovery unavailable: {e}")).ok();
+        if app.prefs.airplay {
+            app.start_discovery(ctx);
+        }
         app.remote_control = start_remote_control(app.player.clone());
         app.now_playing = NowPlaying::start(cc, app.player.clone());
         app.start_sources();
@@ -220,6 +229,7 @@ impl App {
             palette: None,
             sync: SyncState::new(sync_dir),
             show_settings: false,
+            settings_section: Default::default(),
             lyrics: Default::default(),
             queue_drag: None,
             seek_drag: None,
@@ -632,6 +642,7 @@ impl eframe::App for App {
         self.release_tick(&ctx);
         self.crate_radio_tick(&ctx);
         let st = self.player.status();
+        super::widgets::offer_crate(&ctx, self.prefs.crate_on);
         self.shortcuts(&ctx, &st, &mut acts);
         self.persist_playback(&st);
         self.save_queue_if_changed(&st);

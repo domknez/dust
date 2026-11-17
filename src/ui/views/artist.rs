@@ -113,7 +113,8 @@ impl App {
                 }
                 let grid = Rect::from_min_max(right.min + vec2(0.0, 40.0), right.max);
                 if on_timeline {
-                    show_timeline(ui, &mut self.covers, &self.plays, grid, &years, acts);
+                    let plays = self.prefs.history_on.then_some(&self.plays);
+                    show_timeline(ui, &mut self.covers, plays, grid, &years, acts);
                 } else {
                     RELEASES.show(ui, grid, items.len(), |ui, k| release(ui, &mut self.covers, &items[k], acts));
                 }
@@ -121,7 +122,7 @@ impl App {
             // Playlists featuring them, related artists.
             for (i, section) in page.sections.iter().enumerate() {
                 if !DISCOGRAPHY.iter().any(|(title, _)| section.title == *title) {
-                    card_row(ui, &mut self.covers, ("artist-row", i), section, st, self.prefs.flow_new_only, acts);
+                    card_row(ui, &mut self.covers, ("artist-row", i), section, st, self.prefs.new_only(), acts);
                 }
             }
             ui.add_space(28.0);
@@ -176,7 +177,7 @@ impl App {
             + widgets::pill_width(ui, "Shuffle", false, false)
             + widgets::pill_width(ui, "Mix", true, false)
             + widgets::pill_width(ui, follow, true, false)
-            + widgets::pill_width(ui, "Save", true, false)
+            + if self.prefs.crate_on { widgets::pill_width(ui, "Save", true, false) } else { 0.0 }
             + 4.0 * ui.spacing().item_spacing.x;
         let narrow = full > buttons.width();
         ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
@@ -196,8 +197,9 @@ impl App {
             if widgets::pill_fit(ui, follow, follow_icon, narrow).clicked() {
                 acts.push(Action::ToggleLike(what));
             }
-            let save = widgets::pill_fit(ui, "Save", Icon::Crate, narrow).on_hover_text("Save to your Crate, to check out later");
-            if save.clicked() {
+            if self.prefs.crate_on
+                && widgets::pill_fit(ui, "Save", Icon::Crate, narrow).on_hover_text("Save to your Crate, to check out later").clicked()
+            {
                 let thing = Thing::Artist { id: artist.id.clone(), name: artist.name.clone(), picture: artist.picture.clone() };
                 acts.push(Action::SaveToCrate(thing, String::new()));
             }
@@ -309,19 +311,21 @@ fn timeline_height(years: &[(String, Vec<&Item>)]) -> f32 {
 }
 
 /// The timeline: how many releases were heard, then each year with its releases,
-/// each marked heard (a track of it is in the play history) or not.
+/// each marked heard (a track of it is in the play history) or not; without
+/// `plays` (the history turned off), only the years and releases.
 fn show_timeline(
     ui: &mut Ui,
     covers: &mut Covers,
-    plays: &crate::ui::plays::Plays,
+    plays: Option<&crate::ui::plays::Plays>,
     area: Rect,
     years: &[(String, Vec<&Item>)],
     acts: &mut Actions,
 ) {
     let p = colors();
     let all: usize = years.iter().map(|(_, items)| items.len()).sum();
-    let heard = years.iter().flat_map(|(_, items)| items).filter(|item| plays.has_heard_album(&item.id)).count();
-    let summary = format!("You've heard {heard} of {all} releases");
+    let heard_album = |id: &str| plays.is_some_and(|p| p.has_heard_album(id));
+    let heard = years.iter().flat_map(|(_, items)| items).filter(|item| heard_album(&item.id)).count();
+    let summary = if plays.is_some() { format!("You've heard {heard} of {all} releases") } else { format!("{all} releases") };
     text_left(ui.painter(), pos2(area.left(), area.top() + 8.0), &summary, ty::SMALL, p.dim, area.width());
     let mut y = area.top() + TIMELINE_SUMMARY;
     for (year, items) in years {
@@ -339,14 +343,18 @@ fn show_timeline(
             }
             let art = Rect::from_min_size(pos2(rect.left() + 6.0, rect.center().y - 17.0), Vec2::splat(34.0));
             widgets::cover(ui, covers, item.picture.as_ref(), metrics::THUMB_PX, art, radius::THUMB);
-            let was_heard = plays.has_heard_album(&item.id);
-            let (mark, mark_color) = if was_heard { ("heard", p.accent) } else { ("not heard", p.faint) };
+            let was_heard = heard_album(&item.id);
+            let (mark, mark_color) = match (plays, was_heard) {
+                (None, _) => ("", p.faint),
+                (_, true) => ("heard", p.accent),
+                (_, false) => ("not heard", p.faint),
+            };
             let mark_width = ui.painter().layout_no_wrap(mark.into(), ty::META.font(), mark_color).size().x;
             ui.painter().text(pos2(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, mark, ty::META.font(), mark_color);
             let x = art.right() + 12.0;
             let width = rect.right() - x - mark_width - 20.0;
             let kind = item.subtitle.split(" · ").nth(1).unwrap_or_default();
-            let title_color = if was_heard { p.text } else { p.dim };
+            let title_color = if was_heard || plays.is_none() { p.text } else { p.dim };
             text_left(ui.painter(), pos2(x, rect.center().y - 7.0), &item.title, ty::BODY.strong(), title_color, width);
             text_left(ui.painter(), pos2(x, rect.center().y + 9.0), kind, ty::CAPTION, p.faint, width);
             if let Some(mode) = widgets::queue_menu(&resp) {

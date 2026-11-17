@@ -8,7 +8,7 @@ use crate::player::{Cmd, Repeat, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::{App, SidePanel};
 use crate::ui::crate_store::Thing;
-use crate::ui::state::{ChannelView, Coll, View};
+use crate::ui::state::{Coll, View};
 use crate::ui::style::{colors, radius, typography as ty};
 use crate::ui::views::SleepChoice;
 use crate::ui::widgets::{self, TrackMenu, text_left};
@@ -107,36 +107,16 @@ impl App {
         if let Some(track) = st.track.as_ref().filter(|t| !t.is_episode()) {
             all.extend(playing_commands(self, track, features.track_mix));
         }
-        // Pages.
-        let pages: Vec<(&str, View, Option<&str>)> = vec![
-            ("Home", View::Home, Some("1")),
-            ("Loved tracks", View::Loved, Some("2")),
-            ("Playlists", View::Playlists, Some("3")),
-            ("Albums", View::Albums, Some("4")),
-            ("Artists", View::Artists, Some("5")),
-            ("Crate", View::Crate, None),
-            ("Listening", View::Stats, None),
-        ];
-        for (label, view, digit) in pages {
-            let command = Command::new("Page", label, move || vec![Action::Open(view.clone())]);
-            all.push(match digit {
-                Some(d) => command.keys(&command_keys(d)),
+        // Pages: Home, the ones turned on, the Crate.
+        all.push(Command::new("Page", "Home", || vec![Action::Open(View::Home)]).keys(&command_keys("1")));
+        for page in self.pages_on() {
+            let command = Command::new("Page", page.label(), move || vec![Action::Open(page.view())]);
+            all.push(match page.key_code() {
+                Some(key) => command.keys(&command_keys(key.symbol_or_name())),
                 None => command,
             });
         }
-        if features.podcasts {
-            all.push(Command::new("Page", "Podcasts", || vec![Action::Open(View::Podcasts)]).keys(&command_keys("6")));
-        }
-        if features.explore {
-            all.push(
-                Command::new("Page", "Explore", || vec![Action::Open(View::Channel(Box::new(ChannelView::explore())))])
-                    .keys(&command_keys("7")),
-            );
-            all.push(
-                Command::new("Page", "New releases", || vec![Action::Open(View::Channel(Box::new(ChannelView::new_releases())))])
-                    .keys(&command_keys("8")),
-            );
-        }
+        all.push(Command::new("Page", "Crate", || vec![Action::Open(View::Crate)]));
         all.push(Command::new("Page", "Search", || vec![Action::OpenSearch]).keys(if cfg!(target_os = "macos") {
             "⌘F"
         } else {
@@ -196,10 +176,13 @@ impl App {
             all.push(Command::new("Playlist", playlist.title.clone(), move || vec![Action::OpenCollection(coll.clone())]));
         }
         let now = jiff::Timestamp::now().as_second().max(0) as u64;
-        for (id, name) in self.listened_artists(source, now) {
+        let listened = if self.prefs.history_on { self.listened_artists(source, now) } else { Vec::new() };
+        for (id, name) in listened {
             let artist = ArtistRef { id, name: name.clone() };
             all.push(Command::new("Artist", name, move || vec![Action::OpenArtist(artist.clone())]));
         }
+        // Nothing that reaches a part turned off in Settings.
+        all.retain(|command| command.actions().iter().all(|a| self.allows(a)));
         all
     }
 

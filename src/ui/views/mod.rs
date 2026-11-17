@@ -24,7 +24,7 @@ mod sync_settings;
 
 pub use crate_view::{CrateView, Filter};
 pub use lyrics::LyricsState;
-pub use settings::reveal_log;
+pub use settings::{Section, reveal_log};
 pub use sleep_timer::SleepChoice;
 pub use stats_view::StatsView;
 pub use sync_settings::Export;

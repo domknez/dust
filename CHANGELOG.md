@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Settings is a bigger window with sections on the left: General, Playback,
+  Features, Sidebar, Crate and history, Updates, Troubleshooting; on/off settings
+  are switches
+- Features: turn off the Crate, the play history, lyrics or AirPlay. A part turned
+  off is hidden everywhere (sidebar, panel tabs, menus, shortcuts, the command
+  palette) and what it saved is kept. With the history off no plays are recorded;
+  with AirPlay off dust stops looking for speakers
+- Sidebar: hide any of its pages but Home and Search
+
 - Narrow windows: with the right panel open below 1280 points wide, both side
   panels narrow to leave the page room; album, playlist and artist headers use a
   smaller cover and title and show only icons on buttons that don't fit; the Crate

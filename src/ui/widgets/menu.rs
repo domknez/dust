@@ -21,6 +21,19 @@ pub struct Playlists<'a> {
     pub recent: &'a [PlaylistId],
 }
 
+/// Whether menus offer "Save to Crate" (the Crate is on), for this frame.
+pub fn offer_crate(ctx: &egui::Context, on: bool) {
+    ctx.data_mut(|d| d.insert_temp(crate_key(), on));
+}
+
+fn crate_offered(ui: &Ui) -> bool {
+    ui.ctx().data(|d| d.get_temp(crate_key())).unwrap_or(true)
+}
+
+fn crate_key() -> egui::Id {
+    egui::Id::unique("menus-offer-crate")
+}
+
 /// Frame for our popovers.
 pub fn popover_frame(ctx: &egui::Context) -> egui::Frame {
     egui::Frame::new()
@@ -64,6 +77,39 @@ pub fn menu_row(ui: &mut Ui, icon: Option<Icon>, title: &str, subtitle: Option<&
         );
     }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// A setting that's on or off: title, optional subtitle and a switch at the right.
+/// Greyed out and not clickable unless `enabled`.
+pub fn switch_row(ui: &mut Ui, title: &str, subtitle: Option<&str>, on: bool, enabled: bool) -> Response {
+    let p = colors();
+    let height = if subtitle.is_some() { 50.0 } else { 38.0 };
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), sense);
+    if enabled && resp.hovered() {
+        ui.painter().rect_filled(rect, CornerRadius::same(radius::CONTROL - 1), p.raised);
+    }
+    let x = rect.left() + 10.0;
+    let width = rect.right() - x - 62.0;
+    let (title_color, sub_color) = if enabled { (p.text, p.faint) } else { (p.faint, p.faint) };
+    match subtitle {
+        Some(sub) => {
+            text_left(ui.painter(), pos2(x, rect.center().y - 9.0), title, ty::ITEM, title_color, width);
+            text_left(ui.painter(), pos2(x, rect.center().y + 10.0), sub, ty::CAPTION, sub_color, width);
+        }
+        None => {
+            text_left(ui.painter(), pos2(x, rect.center().y), title, ty::ITEM, title_color, width);
+        }
+    }
+    // The switch: a lime track with the knob right when on.
+    let track = egui::Rect::from_center_size(pos2(rect.right() - 30.0, rect.center().y), vec2(34.0, 20.0));
+    let t = ui.ctx().animate_bool(resp.id.with("switch"), on);
+    let fill = if on { p.accent_fill } else { p.border };
+    let fill = if enabled { fill } else { fill.gamma_multiply(0.5) };
+    ui.painter().rect_filled(track, CornerRadius::same(10), fill);
+    let knob = pos2(egui::lerp(track.left() + 10.0..=track.right() - 10.0, t), track.center().y);
+    ui.painter().circle_filled(knob, 7.0, if on { p.on_accent } else { p.dim });
+    if enabled { resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { resp }
 }
 
 /// Menu entry with its keyboard shortcut right-aligned, as in native menus.
@@ -191,7 +237,7 @@ pub fn track_menu(resp: &Response, playlists: Playlists, removable: bool, mix: b
             if let Some(choice) = add_to_playlist(ui, playlists) {
                 pick = Some(choice);
             }
-            if menu_row(ui, Some(Icon::Crate), "Save to Crate", None, false, colors().text).clicked() {
+            if crate_offered(ui) && menu_row(ui, Some(Icon::Crate), "Save to Crate", None, false, colors().text).clicked() {
                 pick = Some(TrackMenu::Crate);
             }
         }
@@ -345,7 +391,7 @@ pub fn now_playing_menu(ui: &mut Ui, playlists: Playlists, offer: NowPlayingOffe
         if offer.mix && menu_row(ui, Some(Icon::Streaming), "Start track mix", None, false, p.text).clicked() {
             pick = Some(NowPlayingMenu::Track(TrackMenu::Mix));
         }
-        if menu_row(ui, Some(Icon::Crate), "Save to Crate", None, false, p.text).clicked() {
+        if crate_offered(ui) && menu_row(ui, Some(Icon::Crate), "Save to Crate", None, false, p.text).clicked() {
             pick = Some(NowPlayingMenu::Track(TrackMenu::Crate));
         }
     }

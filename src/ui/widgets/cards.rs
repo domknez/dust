@@ -90,7 +90,7 @@ pub enum FlowPick {
     NewOnly(bool),
 }
 
-pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, radio: bool, new_only: bool) -> Option<FlowPick> {
+pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, radio: bool, new_only: Option<bool>) -> Option<FlowPick> {
     let (line, name) = if radio { ("radio · endless, from your library", "Radio") } else { ("flow · endless, just for you", "Flow") };
     let p = colors();
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), FLOW_PANEL), Sense::hover());
@@ -102,7 +102,10 @@ pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, ra
     let left = rect.left() + 20.0;
     let line_end = text_left(&painter, pos2(left, rect.top() + 26.0), line, ty::META, p.dim, rect.width() - 100.0).right();
     let mut pick = None;
-    if new_only_toggle(ui, &painter, pos2(line_end + 22.0, rect.top() + 26.0), new_only) {
+    // Without the play history there's nothing to tell new from heard.
+    if let Some(new_only) = new_only
+        && new_only_toggle(ui, &painter, pos2(line_end + 22.0, rect.top() + 26.0), new_only)
+    {
         pick = Some(FlowPick::NewOnly(!new_only));
     }
     let title_end = text_left(&painter, pos2(left, rect.top() + 74.0), name, ty::HERO, p.text, 200.0).right();

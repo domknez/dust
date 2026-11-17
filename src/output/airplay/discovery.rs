@@ -102,7 +102,8 @@ fn parse_features(v: &str) -> u64 {
     (hi << 32) | (lo & 0xffff_ffff)
 }
 
-/// Keeps an up-to-date, name-sorted list of speakers in the background.
+/// Keeps an up-to-date, name-sorted list of speakers in the background, until
+/// dropped.
 pub struct Discovery {
     devices: Arc<Mutex<Vec<Device>>>,
     refresh: Sender<()>,
@@ -175,7 +176,16 @@ impl Discovery {
                     if changed {
                         on_change();
                     }
-                    let asked = refresh_rx.try_recv().is_ok();
+                    let asked = match refresh_rx.try_recv() {
+                        Ok(()) => true,
+                        Err(mpsc::TryRecvError::Empty) => false,
+                        // The Discovery was dropped (AirPlay turned off): stop.
+                        Err(mpsc::TryRecvError::Disconnected) => {
+                            let _ = browser.shutdown();
+                            log_debug!("airplay discovery: stopped");
+                            return;
+                        }
+                    };
                     let empty = list.lock().unwrap().is_empty() || !incomplete.is_empty();
                     if let Some(reason) = watch.check(asked, empty).or(lost.then_some("browse ended")) {
                         log_debug!("airplay discovery: searching again ({reason})");

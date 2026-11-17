@@ -166,7 +166,7 @@ impl App {
         );
         ui.scope_builder(UiBuilder::new().max_rect(rows), |ui| {
             for (i, section) in self.browse.search_sections.iter().enumerate() {
-                card_row(ui, &mut self.covers, ("search-row", i), section, st, self.prefs.flow_new_only, acts);
+                card_row(ui, &mut self.covers, ("search-row", i), section, st, self.prefs.new_only(), acts);
             }
         });
         if !self.browse.tracks.is_empty() {
@@ -290,6 +290,7 @@ impl App {
                     // An album can be saved to check out later.
                     if let View::Collection(coll) = &self.browse.view
                         && let CollSource::Album(id) = &coll.source
+                        && self.prefs.crate_on
                         && widgets::menu_row(ui, Some(Icon::Crate), "Save to Crate", None, false, colors().text).clicked()
                     {
                         let album = Thing::Album {

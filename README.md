@@ -157,7 +157,7 @@ and *Connect a Navidrome server*.
   (*New releases for you*), then by genre
 - **New releases in your Crate:** twice a day dust looks through the artists you follow
   and the ones you've played most lately; a new album, single or EP goes in the Crate
-  as new, with a toast. Settings → *New releases to the Crate* turns it off
+  as new, with a toast. Settings → Features → *New releases to the Crate* turns it off
 - **Track mixes from any track:** right-click a track → *Start track mix* plays songs
   like it, starting with it
 - **Plays more of the catalogue:** when a track isn't licensed in your region, dust uses
@@ -255,13 +255,23 @@ OS keychain; **Disconnect from Navidrome** in the account menu removes them.
 
 ## Settings
 
-Click your name at the bottom of the sidebar:
+Click your name at the bottom of the sidebar (or `⌘,`). Settings has a list of
+sections on the left:
 
-- **Appearance:** System, Dark or Light
-- **Streaming quality** (Deezer): MP3 128, MP3 320 or FLAC
-- **Listening reports:** *Share listening with Deezer* (history, Flow and Last.fm
-  scrobbling) or *Report plays to the server*, for the source in use (on by default)
-- **Updates**: check automatically (on by default), or check now
+- **General:** appearance: System, Dark or Light
+- **Playback:** streaming quality (Deezer: MP3 128, MP3 320 or FLAC) and listening
+  reports: *Share listening with Deezer* (history, Flow and Last.fm scrobbling) or
+  *Report plays to the server*, for the source in use (on by default)
+- **Features:** turn off the parts of dust you don't use: the **Crate** (with new
+  releases going in it), the **play history** (no plays recorded; the history tab,
+  Listening, the lists made from it and the new-to-you marks go too), **lyrics** and
+  **AirPlay** (no looking for speakers on the network). Turned off, a part is hidden
+  everywhere: sidebar, panel tabs, menus, shortcuts and the command palette. What it
+  saved is kept and comes back when it's turned on again
+- **Sidebar:** which pages the sidebar lists (Home and Search always)
+- **Crate and history:** keep them on this computer or sync them through a folder
+- **Updates:** check automatically (on by default), or check now
+- **Troubleshooting:** show the log file
 
 dust also remembers your **volume** and your **speaker**: the last AirPlay speaker you
 picked is selected again automatically once it appears on the network (it only connects

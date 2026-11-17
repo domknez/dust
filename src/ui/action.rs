@@ -11,6 +11,8 @@ use super::load::Load;
 use super::playlist_edit::{Dialog, Edit};
 use super::state::{ArtistView, Coll, CollSource, PlayMode, View, playable};
 use super::style::Appearance;
+use super::switches::Switch;
+use super::views::Section;
 use super::views::{Export, Filter, SleepChoice, reveal_log};
 use super::widgets::TrackMenu;
 use crate::model::{ArtistRef, Likeable, Quality, Track};
@@ -95,6 +97,8 @@ pub enum Action {
     ShowPanel(Option<SidePanel>),
     ToggleMiniPlayer,
     ShowSettings(bool),
+    /// Show this part of Settings.
+    SettingsSection(Section),
     /// The command palette.
     OpenPalette,
     /// Fold the sidebar's playlist list away, or bring it back.
@@ -106,6 +110,8 @@ pub enum Action {
     ToggleReportListens,
     /// New releases go in the Crate, or not.
     ReleaseAlerts(bool),
+    /// Turn a part of dust on or off.
+    Switch(Switch, bool),
     /// Flow leaves out the tracks heard before, or not.
     FlowNewOnly(bool),
     AutoUpdate(bool),
@@ -176,6 +182,10 @@ impl App {
     /// Apply one thing the listener did.
     pub(super) fn update(&mut self, ctx: &egui::Context, action: Action) {
         // Opening something from the mini player shows it in the full window.
+        // Something turned off in Settings (a shortcut, a menu drawn before).
+        if !self.allows(&action) {
+            return;
+        }
         if self.mini_player.is_some() && action.opens_page() {
             self.toggle_mini_player(ctx);
         }
@@ -225,6 +235,8 @@ impl App {
             Action::ShowPanel(panel) => self.show_side_panel(panel),
             Action::ToggleMiniPlayer => self.toggle_mini_player(ctx),
             Action::ShowSettings(show) => self.show_settings = show,
+            Action::SettingsSection(section) => self.settings_section = section,
+            Action::Switch(switch, on) => self.set_switch(ctx, switch, on),
             Action::OpenPalette => self.palette = Some(Default::default()),
             Action::ToggleSidebarPlaylists => self.prefs.update(|p| p.sidebar_playlists = !p.sidebar_playlists),
             Action::Quality(quality) => self.set_quality(quality),

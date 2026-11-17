@@ -1,11 +1,11 @@
 //! Sidebar: wordmark, navigation, the playlist list and the account card.
 
-use crate::source::Features;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
-use crate::ui::state::{ChannelView, Coll, CollSource, View};
+use crate::ui::state::{Coll, CollSource, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
+use crate::ui::switches::Page;
 use crate::ui::widgets::{self, text_left};
 use eframe::egui::{self, Align2, CornerRadius, Key, KeyboardShortcut, Modifiers, Rect, Sense, Ui, Vec2, pos2, vec2};
 
@@ -36,27 +36,33 @@ impl App {
 
     fn navigation(&self, ui: &mut Ui, acts: &mut Actions) {
         ui.spacing_mut().item_spacing.y = 1.0;
-        let pages = nav_pages(self.features());
-        let (key, label, home) = &pages[0];
-        if widgets::sidebar_item(ui, label, Some(&shortcut(*key)), self.browse.view == *home).clicked() {
+        if widgets::sidebar_item(ui, "Home", Some(&shortcut(Key::Num1)), self.browse.view == View::Home).clicked() {
             acts.push(Action::Open(View::Home));
         }
         if widgets::sidebar_item(ui, "Search", Some(SEARCH_KEYS), self.browse.view == View::Search).clicked() {
             acts.push(Action::OpenSearch);
         }
-        for (key, label, view) in &pages[1..] {
-            if widgets::sidebar_item(ui, label, Some(&shortcut(*key)), self.browse.view == *view).clicked() {
-                acts.push(Action::Open(view.clone()));
+        let pages = self.pages_on();
+        let item = |ui: &mut Ui, page: Page, acts: &mut Actions| {
+            let view = page.view();
+            let keys = page.key_code().map(shortcut);
+            if widgets::sidebar_item(ui, page.label(), keys.as_deref(), self.browse.view == view).clicked() {
+                acts.push(Action::Open(view));
             }
+        };
+        for page in pages.iter().copied().filter(|p| *p != Page::Listening) {
+            item(ui, page, acts);
         }
         // The Crate, with how many in it are new.
-        let new = self.crate_box.new_count();
-        let count = (new > 0).then(|| new.to_string());
-        if widgets::sidebar_item(ui, "Crate", count.as_deref(), self.browse.view == View::Crate).clicked() {
-            acts.push(Action::OpenCrate(None, None));
+        if self.prefs.crate_on {
+            let new = self.crate_box.new_count();
+            let count = (new > 0).then(|| new.to_string());
+            if widgets::sidebar_item(ui, "Crate", count.as_deref(), self.browse.view == View::Crate).clicked() {
+                acts.push(Action::OpenCrate(None, None));
+            }
         }
-        if widgets::sidebar_item(ui, "Listening", None, self.browse.view == View::Stats).clicked() {
-            acts.push(Action::Open(View::Stats));
+        if pages.contains(&Page::Listening) {
+            item(ui, Page::Listening, acts);
         }
         ui.spacing_mut().item_spacing.y = 6.0;
         // "PLAYLISTS / n ›" folds the list away or brings it back; + makes a new,
@@ -168,33 +174,14 @@ impl App {
 
     /// ⌘1 … ⌘8 (Ctrl elsewhere) open the pages listed in the sidebar.
     pub(in crate::ui) fn nav_shortcuts(&self, ctx: &egui::Context, acts: &mut Actions) {
-        let pressed = nav_pages(self.features())
-            .into_iter()
-            .find(|(key, ..)| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, *key))));
-        if let Some((_, _, view)) = pressed {
+        let pages =
+            std::iter::once((Key::Num1, View::Home)).chain(self.pages_on().into_iter().filter_map(|p| Some((p.key_code()?, p.view()))));
+        let pressed =
+            pages.into_iter().find(|(key, _)| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, *key))));
+        if let Some((_, view)) = pressed {
             acts.push(Action::Open(view));
         }
     }
-}
-
-/// Sidebar pages with their number shortcuts, those the source has; Home first
-/// (above Search).
-fn nav_pages(features: Features) -> Vec<(Key, &'static str, View)> {
-    let mut pages = vec![
-        (Key::Num1, "Home", View::Home),
-        (Key::Num2, "Loved tracks", View::Loved),
-        (Key::Num3, "Playlists", View::Playlists),
-        (Key::Num4, "Albums", View::Albums),
-        (Key::Num5, "Artists", View::Artists),
-    ];
-    if features.podcasts {
-        pages.push((Key::Num6, "Podcasts", View::Podcasts));
-    }
-    if features.explore {
-        pages.push((Key::Num7, "Explore", View::Channel(Box::new(ChannelView::explore()))));
-        pages.push((Key::Num8, "New releases", View::Channel(Box::new(ChannelView::new_releases()))));
-    }
-    pages
 }
 
 /// "⌘1" on macOS, "Ctrl+1" elsewhere.

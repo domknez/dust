@@ -29,7 +29,7 @@ impl App {
             };
             for i in flow_first(sections) {
                 let section = &sections[i];
-                card_row(ui, &mut self.covers, ("home-row", i), section, st, self.prefs.flow_new_only, acts);
+                card_row(ui, &mut self.covers, ("home-row", i), section, st, self.prefs.new_only(), acts);
             }
             ui.add_space(24.0);
         });
@@ -65,7 +65,7 @@ pub(in crate::ui) fn card_row(
     id: impl std::hash::Hash + std::fmt::Debug,
     section: &Section,
     st: &Status,
-    new_only: bool,
+    new_only: Option<bool>,
     acts: &mut Actions,
 ) {
     let items = &section.items;

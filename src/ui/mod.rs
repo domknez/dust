@@ -40,6 +40,7 @@ mod sources;
 mod state;
 mod stats;
 mod style;
+pub(crate) mod switches;
 mod sync;
 mod toasts;
 mod updates;
