@@ -204,6 +204,7 @@ You need Deezer Premium, a Navidrome / Subsonic server, or both.
   **More info → Run anyway**.
 - **Linux:** unpack and run `./dust` (needs WebKitGTK 4.1, ALSA and D-Bus; the archive
   includes a `.desktop` entry and icon).
+- **Nix / NixOS:** a flake; see [docs/nix.md](docs/nix.md).
 
 Later versions install themselves from inside dust. On Windows and
 Linux that needs dust's folder to be writable by you (e.g. `~/.local/bin`); otherwise
