@@ -200,8 +200,11 @@ pub fn album_info(page: &Value) -> AlbumInfo {
             picture: art("cover", &text(&v["ALB_PICTURE"])),
         })
         .collect();
-    // An album page without a type says nothing of what it is.
-    let kind = if text(&data["TYPE"]).is_empty() { String::new() } else { release_kind(data).1.to_string() };
+    // The page's own data rarely has the type; its entry among the artist's
+    // releases does. Neither: unknown.
+    let releases = page["ALBUMS"]["data"].as_array().into_iter().flatten();
+    let typed = std::iter::once(data).chain(releases.filter(|v| text(&v["ALB_ID"]) == id)).find(|v| !text(&v["TYPE"]).is_empty());
+    let kind = typed.map(|v| release_kind(v).1.to_string()).unwrap_or_default();
     AlbumInfo { year: year(data), label: text(&data["LABEL_NAME"]), kind, more }
 }
 
@@ -233,8 +236,10 @@ fn release_kind(v: &Value) -> (usize, &'static str) {
     } else if subtypes["isCompilation"].as_bool() == Some(true) {
         (2, "Compilation")
     } else {
+        // Deezer's types: 0 single, 1 album, 2 compilation, 3 EP, 4 bundle.
         match text(&v["TYPE"]).as_str() {
-            "1" => (0, "Album"),
+            "1" | "4" => (0, "Album"),
+            "2" => (2, "Compilation"),
             "3" => (1, "EP"),
             _ => (1, "Single"),
         }
@@ -411,9 +416,9 @@ mod tests {
     #[test]
     fn album_info_has_year_label_and_other_releases() {
         let page = serde_json::json!({
-            "DATA": {"ALB_ID": "1", "ORIGINAL_RELEASE_DATE": "2021-04-30", "LABEL_NAME": "Roadrunner Records", "TYPE": "3"},
+            "DATA": {"ALB_ID": "1", "ORIGINAL_RELEASE_DATE": "2021-04-30", "LABEL_NAME": "Roadrunner Records"},
             "ALBUMS": {"data": [
-                {"ALB_ID": "1", "ALB_TITLE": "Fortitude", "PHYSICAL_RELEASE_DATE": "2021-04-30"},
+                {"ALB_ID": "1", "ALB_TITLE": "Fortitude", "PHYSICAL_RELEASE_DATE": "2021-04-30", "TYPE": "3", "SUBTYPES": {}},
                 {"ALB_ID": "2", "ALB_TITLE": "Magma", "PHYSICAL_RELEASE_DATE": "2016-06-17", "ALB_PICTURE": "abc"}
             ]}
         });
@@ -423,6 +428,8 @@ mod tests {
         assert_eq!((info.more[0].title.as_str(), info.more[0].subtitle.as_str()), ("Magma", "2016"));
         assert_eq!(info.more[0].picture, art("cover", "abc"));
         assert_eq!(album_info(&serde_json::json!({})), AlbumInfo::default());
+        let compilation = serde_json::json!({"DATA": {"ALB_ID": "9", "TYPE": "2"}});
+        assert_eq!(album_info(&compilation).kind, "Compilation", "type 2 is a compilation, not a single");
     }
     use serde_json::json;
 
