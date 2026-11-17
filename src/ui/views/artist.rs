@@ -168,24 +168,35 @@ impl App {
         let top = self.browse.artist_page.ready().map_or(&[][..], |pg| &pg.top[..]);
         let has_top = !top.is_empty();
         let buttons = Rect::from_min_size(pos2(row.left(), row.center().y - 22.0), vec2(row.width(), 44.0));
+        let what = Likeable::Artist(artist.id.clone());
+        let following = self.library.likes.likes.contains(&what);
+        let (follow, follow_icon) = if following { ("Following", Icon::Heart) } else { ("Follow", Icon::HeartOutline) };
+        // No room for every label: the buttons after Play show only their icon.
+        let full = widgets::pill_width(ui, "Play", true, true)
+            + widgets::pill_width(ui, "Shuffle", false, false)
+            + widgets::pill_width(ui, "Mix", true, false)
+            + widgets::pill_width(ui, follow, true, false)
+            + widgets::pill_width(ui, "Save", true, false)
+            + 4.0 * ui.spacing().item_spacing.x;
+        let narrow = full > buttons.width();
         ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
             if has_top && widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {
                 acts.push(Action::PlayFrom { tracks: top.to_vec(), index: 0, shuffle: false });
             }
-            if has_top && widgets::pill(ui, "Shuffle", None, false).clicked() {
+            if has_top
+                && (if narrow { widgets::icon_pill(ui, Icon::Shuffle, "Shuffle") } else { widgets::pill(ui, "Shuffle", None, false) })
+                    .clicked()
+            {
                 acts.push(Action::PlayFrom { tracks: top.to_vec(), index: 0, shuffle: true });
             }
-            let mix = widgets::pill(ui, "Mix", Some(Icon::Streaming), false).on_hover_text("Songs by them and artists like them");
+            let mix = widgets::pill_fit(ui, "Mix", Icon::Streaming, narrow).on_hover_text("Songs by them and artists like them");
             if mix.clicked() {
                 acts.push(Action::PlaySource(CollSource::ArtistMix(artist.id.clone()), PlayMode::Now));
             }
-            let what = Likeable::Artist(artist.id.clone());
-            let following = self.library.likes.likes.contains(&what);
-            let (label, icon) = if following { ("Following", Icon::Heart) } else { ("Follow", Icon::HeartOutline) };
-            if widgets::pill(ui, label, Some(icon), false).clicked() {
+            if widgets::pill_fit(ui, follow, follow_icon, narrow).clicked() {
                 acts.push(Action::ToggleLike(what));
             }
-            let save = widgets::pill(ui, "Save", Some(Icon::Crate), false).on_hover_text("Save to your Crate, to check out later");
+            let save = widgets::pill_fit(ui, "Save", Icon::Crate, narrow).on_hover_text("Save to your Crate, to check out later");
             if save.clicked() {
                 let thing = Thing::Artist { id: artist.id.clone(), name: artist.name.clone(), picture: artist.picture.clone() };
                 acts.push(Action::SaveToCrate(thing, String::new()));

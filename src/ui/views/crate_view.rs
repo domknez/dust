@@ -26,6 +26,8 @@ const ROW: f32 = 56.0;
 const EACH: usize = 3;
 /// The page's entry details, right of the list.
 const DETAIL_WIDTH: f32 = 340.0;
+/// Below this width the page shows the list or one entry, not both.
+const NARROW_PAGE: f32 = 620.0;
 
 /// Which entries the Crate page lists.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -60,6 +62,8 @@ pub struct CrateView {
     tab_jot: String,
     /// The selected entry's note being edited: (entry id, text).
     note: Option<(String, String)>,
+    /// On a narrow page, the selected entry is shown in place of the list.
+    pub open: bool,
 }
 
 impl App {
@@ -165,6 +169,7 @@ impl App {
         if entry.is_some() {
             self.crate_view.filter = Filter::All;
             self.crate_view.selected = entry;
+            self.crate_view.open = true;
         }
         self.open_view(View::Crate);
     }
@@ -296,16 +301,30 @@ impl App {
         text_left(ui.painter(), head.min + vec2(0.0, 50.0), line, ty::LEAD, p.dim, head.width());
         ui.add_space(14.0);
         ui.horizontal(|ui| {
-            ui.set_max_width(560.0);
+            ui.set_max_width(680.0);
+            let typed = !self.crate_view.jot.trim().is_empty();
+            let playable = self.crate_playable();
+            // Room for the button beside the field (Save while typing, else Play), a
+            // shorter Play when the field would get too narrow.
+            let mut play = format!("Play the new ones · {playable}");
+            if ui.available_width() - widgets::pill_width(ui, &play, true, true) < 280.0 {
+                play = format!("Play new · {playable}");
+            }
+            let button = if typed {
+                widgets::pill_width(ui, "Save", false, true)
+            } else if playable > 0 {
+                widgets::pill_width(ui, &play, true, true)
+            } else {
+                0.0
+            };
             let jot = &mut self.crate_view.jot;
-            let typed = !jot.trim().is_empty();
-            let mut save = jot_field_sized(ui, "crate-page-jot", jot, ui.available_width() - 90.0);
+            let field = ui.available_width() - button - ui.spacing().item_spacing.x;
+            let mut save = jot_field_sized(ui, "crate-page-jot", jot, field);
             if typed && widgets::pill(ui, "Save", None, true).clicked() {
                 save = Some(std::mem::take(jot));
             }
-            let playable = self.crate_playable();
             if !typed && playable > 0 {
-                let pill = widgets::pill(ui, &format!("Play the new ones · {playable}"), Some(Icon::Play), true);
+                let pill = widgets::pill(ui, &play, Some(Icon::Play), true);
                 if pill.on_hover_text("The new tracks; 3 from each new album and artist").clicked() {
                     acts.push(Action::PlayCrate);
                 }
@@ -336,32 +355,31 @@ impl App {
             return;
         }
         let area = ui.available_rect_before_wrap();
+        let current = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
+        // Too narrow for both: the list, or the entry picked with a way back.
+        if area.width() < NARROW_PAGE {
+            let entry = self.crate_view.selected.as_ref().and_then(|id| self.crate_box.get(id)).cloned();
+            match entry.filter(|_| self.crate_view.open) {
+                Some(entry) => {
+                    egui::ScrollArea::vertical().id_salt("crate-detail").auto_shrink([false, false]).show(ui, |ui| {
+                        if ui.link(RichText::new("‹ Back to the list").font(ty::SMALL.font())).clicked() {
+                            self.crate_view.open = false;
+                        }
+                        ui.add_space(12.0);
+                        self.entry_detail(ui, &entry, current, acts);
+                    });
+                }
+                None => {
+                    ui.scope_builder(UiBuilder::new().max_rect(area), |ui| self.crate_list(ui, &shown, current, acts));
+                }
+            }
+            ui.allocate_rect(area, Sense::hover());
+            return;
+        }
         let detail_width = DETAIL_WIDTH.min(area.width() * 0.45);
         let list = Rect::from_min_max(area.min, pos2(area.right() - detail_width - 24.0, area.bottom()));
         let detail = Rect::from_min_max(pos2(list.right() + 24.0, area.top()), area.max);
-        let current = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
-        ui.scope_builder(UiBuilder::new().max_rect(list), |ui| {
-            egui::ScrollArea::vertical().id_salt("crate-list").auto_shrink([false, false]).show(ui, |ui| {
-                for entry in &shown {
-                    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW + 6.0), Sense::click());
-                    if !ui.is_rect_visible(rect) {
-                        continue;
-                    }
-                    let selected = self.crate_view.selected.as_ref() == Some(&entry.id);
-                    if selected || resp.hovered() {
-                        let fill = if selected { p.raised } else { p.hover };
-                        ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), fill);
-                    }
-                    let status = Rect::from_min_max(pos2(rect.right() - 90.0, rect.top()), rect.max);
-                    entry_row(ui, &mut self.covers, rect.with_max_x(status.left()), entry, current);
-                    status_line(ui, status, entry);
-                    acts.extend(entry_menu(&resp, entry));
-                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                        self.crate_view.selected = Some(entry.id.clone());
-                    }
-                }
-            });
-        });
+        ui.scope_builder(UiBuilder::new().max_rect(list), |ui| self.crate_list(ui, &shown, current, acts));
         let entry = self.crate_view.selected.as_ref().and_then(|id| self.crate_box.get(id)).cloned();
         if let Some(entry) = entry {
             ui.scope_builder(UiBuilder::new().max_rect(detail), |ui| {
@@ -371,6 +389,32 @@ impl App {
             });
         }
         ui.allocate_rect(area, Sense::hover());
+    }
+
+    /// The page's list of entries; a click picks one to show in full.
+    fn crate_list(&mut self, ui: &mut Ui, shown: &[Entry], current: &str, acts: &mut Actions) {
+        let p = colors();
+        egui::ScrollArea::vertical().id_salt("crate-list").auto_shrink([false, false]).show(ui, |ui| {
+            for entry in shown {
+                let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW + 6.0), Sense::click());
+                if !ui.is_rect_visible(rect) {
+                    continue;
+                }
+                let selected = self.crate_view.selected.as_ref() == Some(&entry.id);
+                if selected || resp.hovered() {
+                    let fill = if selected { p.raised } else { p.hover };
+                    ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), fill);
+                }
+                let status = Rect::from_min_max(pos2(rect.right() - 90.0, rect.top()), rect.max);
+                entry_row(ui, &mut self.covers, rect.with_max_x(status.left()), entry, current);
+                status_line(ui, status, entry);
+                acts.extend(entry_menu(&resp, entry));
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                    self.crate_view.selected = Some(entry.id.clone());
+                    self.crate_view.open = true;
+                }
+            }
+        });
     }
 
     /// All · New · Heard, then the kinds there are, each with its count.
@@ -403,6 +447,7 @@ impl App {
                 ui.painter().text(rect.center(), Align2::CENTER_CENTER, text, ty::SMALL.font(), if on { p.bg } else { p.text });
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                     self.crate_view.filter = filter;
+                    self.crate_view.open = false;
                 }
             }
         });

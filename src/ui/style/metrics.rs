@@ -22,6 +22,12 @@ pub const QUEUE_WIDTH: f32 = 340.0;
 pub const PLAYER_BAR_HEIGHT: f32 = 84.0;
 /// Horizontal padding of the main content area.
 pub const CONTENT_MARGIN: i8 = 36;
+/// Below this window width the panels narrow (with the right one open), to leave
+/// the page room.
+pub const COMPACT_WINDOW: f32 = 1280.0;
+pub const SIDEBAR_COMPACT: f32 = 212.0;
+pub const QUEUE_COMPACT: f32 = 300.0;
+pub const CONTENT_MARGIN_COMPACT: i8 = 24;
 pub const SEARCH_FIELD: [f32; 2] = [360.0, 38.0];
 
 // Rows
@@ -41,6 +47,8 @@ pub const LIST_ART: f32 = 36.0;
 pub const SIDEBAR_ART: f32 = 18.0;
 pub const NOW_PLAYING_ART: f32 = 56.0;
 pub const HEADER_ART: f32 = 200.0;
+/// A list's artwork when the page is narrow.
+pub const HEADER_ART_SMALL: f32 = 140.0;
 pub const HOME_CARD: f32 = 168.0;
 /// Title and subtitle under a card's artwork.
 pub const CARD_TEXT: f32 = 50.0;

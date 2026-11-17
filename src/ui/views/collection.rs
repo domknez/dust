@@ -24,6 +24,8 @@ const SEARCH_TRACKS_TITLE: f32 = 50.0;
 const CAPTIONS: f32 = 32.0;
 /// The tinted band behind a collection's artwork and title.
 const HEADER_BAND: f32 = 236.0;
+/// Below this page width the header's artwork is smaller.
+const NARROW_HEADER: f32 = 640.0;
 const COLLECTION_HEADER: f32 = HEADER_BAND + 12.0 + CAPTIONS;
 /// "More by" column next to an album's tracks, and the width it needs.
 const MORE_WIDTH: f32 = 260.0;
@@ -185,8 +187,11 @@ impl App {
         let p = colors();
         let Header { kind, title, subtitle, art, tile, round } = self.header();
         header_band(ui.painter(), Rect::from_min_size(head.min, vec2(head.width(), HEADER_BAND)));
-        let art_rect = Rect::from_min_size(head.min + vec2(0.0, 18.0), Vec2::splat(metrics::HEADER_ART));
-        let corner = if round { (metrics::HEADER_ART / 2.0) as u8 } else { radius::CONTROL };
+        // A narrow page: smaller artwork, a smaller title when it doesn't fit, and
+        // icons for the buttons that have one.
+        let art_size = if head.width() < NARROW_HEADER { metrics::HEADER_ART_SMALL } else { metrics::HEADER_ART };
+        let art_rect = Rect::from_min_size(head.min + vec2(0.0, 18.0 + (metrics::HEADER_ART - art_size) / 2.0), Vec2::splat(art_size));
+        let corner = if round { (art_size / 2.0) as u8 } else { radius::CONTROL };
         match (art, tile) {
             (Some(art), _) => widgets::cover(ui, &mut self.covers, Some(&art), metrics::HEADER_PX, art_rect, corner),
             (None, Some((icon, color))) => widgets::tile(ui, art_rect, icon, color, radius::CONTROL),
@@ -204,7 +209,8 @@ impl App {
             (count > 0).then(|| format!("{count} {} · {}", if podcast { "EPISODES" } else { "TRACKS" }, total_clock(&self.browse.tracks)));
         let meta = [year, stats].into_iter().flatten().collect::<Vec<_>>().join(" · ");
         text_left(ui.painter(), pos2(tag.right() + 10.0, tag.center().y), &meta, ty::META, p.dim, x + width - tag.right() - 10.0);
-        text_left(ui.painter(), pos2(x, head.top() + 102.0), &title, ty::HERO, p.text, width);
+        let fits = ui.painter().layout_no_wrap(title.clone(), ty::HERO.font(), p.text).size().x <= width;
+        text_left(ui.painter(), pos2(x, head.top() + 102.0), &title, if fits { ty::HERO } else { ty::HERO_SMALL }, p.text, width);
 
         // The album's artist (linked) and label, or the list's subtitle.
         let line = pos2(x, head.top() + 150.0);
@@ -224,12 +230,25 @@ impl App {
         }
 
         let buttons = Rect::from_min_size(pos2(x, head.top() + 174.0), vec2(width, 44.0));
+        // Play, Shuffle, Add to queue, the heart and ⋯, with the spaces between.
+        let spacing = ui.spacing().item_spacing.x;
+        let full = widgets::pill_width(ui, "Play", true, true)
+            + widgets::pill_width(ui, "Shuffle", false, false)
+            + widgets::pill_width(ui, "Add to queue", false, false)
+            + 40.0
+            + 18.0
+            + 4.0 * spacing;
+        let narrow = full > width;
         ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
             let play_from = |shuffle| Action::PlayFrom { tracks: self.browse.tracks.clone(), index: 0, shuffle };
             if count > 0 && widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {
                 acts.push(play_from(false));
             }
-            if count > 1 && !podcast && widgets::pill(ui, "Shuffle", None, false).clicked() {
+            if count > 1
+                && !podcast
+                && (if narrow { widgets::icon_pill(ui, Icon::Shuffle, "Shuffle") } else { widgets::pill(ui, "Shuffle", None, false) })
+                    .clicked()
+            {
                 acts.push(play_from(true));
             }
             if count > 0 {
@@ -237,7 +256,12 @@ impl App {
                 let just_added = self.queued_flash.is_some_and(|t| t.elapsed() < QUEUED_FLASH);
                 let (label, icon) = if just_added { ("Added", Some(Icon::Check)) } else { ("Add to queue", None) };
                 let hint = format!("Add every {} to the end of the queue", if podcast { "episode" } else { "track" });
-                if widgets::pill(ui, label, icon, false).on_hover_text(hint).clicked() {
+                let button = if narrow {
+                    widgets::icon_pill(ui, icon.unwrap_or(Icon::Queue), label)
+                } else {
+                    widgets::pill(ui, label, icon, false).on_hover_text(hint)
+                };
+                if button.clicked() {
                     acts.push(Action::QueueAll(self.browse.tracks.clone()));
                 }
                 if just_added {

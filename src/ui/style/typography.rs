@@ -55,6 +55,8 @@ impl Text {
 pub const DISPLAY: Text = Text::mono(48.0).strong();
 /// Collection (playlist, album, ...) and artist names in page headers.
 pub const HERO: Text = Text::display(60.0);
+/// [`HERO`] for a name too long for the page.
+pub const HERO_SMALL: Text = Text::display(40.0);
 /// Artist names in their page header.
 pub const ARTIST_NAME: Text = Text::display(80.0);
 /// Page titles: Home, Playlists, Search.

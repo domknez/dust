@@ -77,6 +77,32 @@ pub fn pill(ui: &mut Ui, label: &str, icon: Option<Icon>, primary: bool) -> Resp
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// A square, outlined button with only `icon`, for a [`pill`] when there's no room
+/// for its label (shown on hover).
+pub fn icon_pill(ui: &mut Ui, icon: Icon, label: &str) -> Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(PILL_HEIGHT), Sense::click());
+    let p = colors();
+    let corner = CornerRadius::same(radius::CONTROL);
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, corner, p.raised);
+    }
+    ui.painter().rect_stroke(rect, corner, egui::Stroke::new(1.0, p.border), egui::StrokeKind::Inside);
+    icons::paint(ui.painter(), Rect::from_center_size(rect.center(), Vec2::splat(16.0)), icon, p.text);
+    resp.on_hover_text(label).on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// A [`pill`], or with `narrow` an [`icon_pill`].
+pub fn pill_fit(ui: &mut Ui, label: &str, icon: Icon, narrow: bool) -> Response {
+    if narrow { icon_pill(ui, icon, label) } else { pill(ui, label, Some(icon), false) }
+}
+
+/// How wide a [`pill`] is.
+pub fn pill_width(ui: &Ui, label: &str, icon: bool, primary: bool) -> f32 {
+    let style = if primary { ty::TITLE.strong() } else { ty::TITLE };
+    let galley = ui.painter().layout_no_wrap(label.to_string(), style.font(), Color32::PLACEHOLDER);
+    galley.size().x + if icon { 22.0 } else { 0.0 } + 32.0
+}
+
 /// Single-line text field: a box inset into the popover, with a lime ring while
 /// typing. `action` puts a small text button at its right end (e.g. "Show");
 /// returns the field's response and whether that button was clicked.

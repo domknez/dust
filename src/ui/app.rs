@@ -652,15 +652,22 @@ impl eframe::App for App {
             .show_separator_line(false)
             .frame(panel_frame(p.bar, Margin::symmetric(20, 0)))
             .show(ui, |ui| self.player_bar(ui, &st, &mut acts));
+        // A narrow window with the right panel open: both panels give the page room.
+        let compact = self.side_panel.is_some() && ctx.content_rect().width() < metrics::COMPACT_WINDOW;
+        let (sidebar, side, margin) = if compact {
+            (metrics::SIDEBAR_COMPACT, metrics::QUEUE_COMPACT, metrics::CONTENT_MARGIN_COMPACT)
+        } else {
+            (metrics::SIDEBAR_WIDTH, metrics::QUEUE_WIDTH, metrics::CONTENT_MARGIN)
+        };
         egui::Panel::left("nav")
-            .exact_size(metrics::SIDEBAR_WIDTH)
+            .exact_size(sidebar)
             .resizable(false)
             .show_separator_line(false)
             .frame(panel_frame(p.sidebar, Margin { left: 12, right: 12, top: 0, bottom: 10 }))
             .show(ui, |ui| self.sidebar(ui, &mut acts));
         if let Some(panel) = self.side_panel {
             egui::Panel::right("side-panel")
-                .exact_size(metrics::QUEUE_WIDTH)
+                .exact_size(side)
                 .resizable(false)
                 .show_separator_line(false)
                 .frame(panel_frame(p.sidebar, Margin { left: 14, right: 14, top: 0, bottom: 10 }))
@@ -670,7 +677,6 @@ impl eframe::App for App {
                     SidePanel::Crate => self.crate_panel(ui, &st, &mut acts),
                 });
         }
-        let margin = metrics::CONTENT_MARGIN;
         let page = egui::CentralPanel::default()
             .frame(panel_frame(p.bg, Margin { left: margin, right: margin, top: 0, bottom: 0 }))
             .show(ui, |ui| self.content(ui, &st, &mut acts))

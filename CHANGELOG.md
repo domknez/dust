@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Narrow windows: with the right panel open below 1280 points wide, both side
+  panels narrow to leave the page room; album, playlist and artist headers use a
+  smaller cover and title and show only icons on buttons that don't fit; the Crate
+  page lists entries or shows one (with *Back to the list*) instead of squeezing
+  both, and its *Play the new ones* button no longer runs off the page
+
 ## 0.28.1 (2026-11-17)
 
 - Right-click an entry in the Crate (the panel tab or the page) to mark it heard
