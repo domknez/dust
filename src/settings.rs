@@ -242,7 +242,9 @@ mod tests {
         assert_eq!(p.source, crate::deezer::ID);
         assert_eq!(p.quality, Quality::Mp3_320);
         assert_eq!(p.theme, Appearance::System);
-        assert!(p.report_listens && !p.shuffle && p.auto_update == AUTO_UPDATE && p.sidebar_playlists && !p.flow_new_only && p.release_alerts);
+        assert!(
+            p.report_listens && !p.shuffle && p.auto_update == AUTO_UPDATE && p.sidebar_playlists && !p.flow_new_only && p.release_alerts
+        );
         assert_eq!(p.repeat, Repeat::Off);
         assert_eq!(p.output, None);
         assert_eq!(p.volume, 1.0);
