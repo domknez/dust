@@ -189,7 +189,7 @@ impl App {
         header_band(ui.painter(), Rect::from_min_size(head.min, vec2(head.width(), HEADER_BAND)));
         // A narrow page: smaller artwork, a smaller title when it doesn't fit, and
         // icons for the buttons that have one.
-        let art_size = if head.width() < NARROW_HEADER { metrics::HEADER_ART_SMALL } else { metrics::HEADER_ART };
+        let art_size = header_art(head.width());
         let art_rect = Rect::from_min_size(head.min + vec2(0.0, 18.0 + (metrics::HEADER_ART - art_size) / 2.0), Vec2::splat(art_size));
         let corner = if round { (art_size / 2.0) as u8 } else { radius::CONTROL };
         match (art, tile) {
@@ -230,15 +230,7 @@ impl App {
         }
 
         let buttons = Rect::from_min_size(pos2(x, head.top() + 174.0), vec2(width, 44.0));
-        // Play, Shuffle, Add to queue, the heart and ⋯, with the spaces between.
-        let spacing = ui.spacing().item_spacing.x;
-        let full = widgets::pill_width(ui, "Play", true, true)
-            + widgets::pill_width(ui, "Shuffle", false, false)
-            + widgets::pill_width(ui, "Add to queue", false, false)
-            + 40.0
-            + 18.0
-            + 4.0 * spacing;
-        let narrow = full > width;
+        let narrow = header_buttons_narrow(ui, width);
         ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
             let play_from = |shuffle| Action::PlayFrom { tracks: self.browse.tracks.clone(), index: 0, shuffle };
             if count > 0 && widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {
@@ -319,6 +311,23 @@ impl App {
             }
         });
     }
+}
+
+/// The header artwork's size on a page `width` wide.
+fn header_art(width: f32) -> f32 {
+    if width < NARROW_HEADER { metrics::HEADER_ART_SMALL } else { metrics::HEADER_ART }
+}
+
+/// Whether the header's buttons need to be icons in `width`: Play, Shuffle, Add to
+/// queue, the heart and ⋯, with the spaces between, don't fit with their labels.
+fn header_buttons_narrow(ui: &Ui, width: f32) -> bool {
+    let full = widgets::pill_width(ui, "Play", true, true)
+        + widgets::pill_width(ui, "Shuffle", false, false)
+        + widgets::pill_width(ui, "Add to queue", false, false)
+        + 40.0
+        + 18.0
+        + 4.0 * ui.spacing().item_spacing.x;
+    full > width
 }
 
 /// The surface-to-background band behind a page header, with a hairline under it.
@@ -402,5 +411,36 @@ impl App {
     /// Whether a podcast's episodes are on screen.
     fn showing_podcast(&self) -> bool {
         matches!(&self.browse.view, View::Collection(coll) if matches!(coll.source, CollSource::Show(_)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Whether the header's buttons are icons at these widths, with dust's fonts.
+    fn narrow_at(widths: &[f32]) -> Vec<bool> {
+        let ctx = egui::Context::default();
+        crate::ui::style::install_fonts(&ctx);
+        let mut narrow = Vec::new();
+        // The fonts are in from the second frame.
+        for frame in 0..2 {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                if frame == 1 {
+                    narrow = widths.iter().map(|w| header_buttons_narrow(ui, *w)).collect();
+                }
+            });
+            output.textures_delta.clear();
+        }
+        narrow
+    }
+
+    #[test]
+    fn a_narrow_header_has_a_smaller_cover_and_icon_buttons() {
+        assert_eq!(header_art(500.0), metrics::HEADER_ART_SMALL);
+        assert_eq!(header_art(900.0), metrics::HEADER_ART);
+        // The page beside a 140 cover in the default window with the panel open
+        // (about 290 wide, from the screenshot that asked for this) and a wide one.
+        assert_eq!(narrow_at(&[290.0, 700.0]), [true, false]);
     }
 }

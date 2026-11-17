@@ -159,6 +159,12 @@ impl Actions {
     pub fn push(&mut self, action: Action) {
         self.0.push(action);
     }
+
+    /// What was pushed, for tests to look at.
+    #[cfg(test)]
+    pub fn into_vec(self) -> Vec<Action> {
+        self.0
+    }
 }
 
 impl Extend<Action> for Actions {

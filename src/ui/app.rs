@@ -76,7 +76,7 @@ impl App {
 
     /// Keep the tracks the player heard since the last frame (none, with the
     /// history turned off).
-    fn record_plays(&mut self) {
+    pub(super) fn record_plays(&mut self) {
         let played = self.player.take_played();
         let Some(client) = self.client.as_ref().filter(|_| self.prefs.history_on) else { return };
         let source = client.id().key;
@@ -663,13 +663,7 @@ impl eframe::App for App {
             .show_separator_line(false)
             .frame(panel_frame(p.bar, Margin::symmetric(20, 0)))
             .show(ui, |ui| self.player_bar(ui, &st, &mut acts));
-        // A narrow window with the right panel open: both panels give the page room.
-        let compact = self.side_panel.is_some() && ctx.content_rect().width() < metrics::COMPACT_WINDOW;
-        let (sidebar, side, margin) = if compact {
-            (metrics::SIDEBAR_COMPACT, metrics::QUEUE_COMPACT, metrics::CONTENT_MARGIN_COMPACT)
-        } else {
-            (metrics::SIDEBAR_WIDTH, metrics::QUEUE_WIDTH, metrics::CONTENT_MARGIN)
-        };
+        let (sidebar, side, margin) = panel_widths(ctx.content_rect().width(), self.side_panel.is_some());
         egui::Panel::left("nav")
             .exact_size(sidebar)
             .resizable(false)
@@ -699,6 +693,17 @@ impl eframe::App for App {
         self.server_dialog(&ctx, &mut acts);
         self.palette_window(&ctx, &st, &mut acts);
         self.apply(&ctx, acts);
+    }
+}
+
+/// The sidebar's and right panel's widths and the page's side margin in a window
+/// `window` wide. A narrow window with the right panel open narrows both panels,
+/// to give the page room.
+pub(super) fn panel_widths(window: f32, side_open: bool) -> (f32, f32, i8) {
+    if side_open && window < metrics::COMPACT_WINDOW {
+        (metrics::SIDEBAR_COMPACT, metrics::QUEUE_COMPACT, metrics::CONTENT_MARGIN_COMPACT)
+    } else {
+        (metrics::SIDEBAR_WIDTH, metrics::QUEUE_WIDTH, metrics::CONTENT_MARGIN)
     }
 }
 
@@ -937,6 +942,18 @@ mod tests {
         assert!(browse.tracks.is_empty() && browse.searched.is_empty() && !browse.loading_tracks());
         t.update(Action::Back);
         assert_eq!(t.app.browse.searched, "daft", "the search before is a page of its own");
+    }
+
+    #[test]
+    fn a_narrow_window_with_the_panel_open_leaves_the_page_room() {
+        let page = |window: f32, open: bool| {
+            let (sidebar, side, margin) = panel_widths(window, open);
+            window - sidebar - if open { side } else { 0.0 } - 2.0 * margin as f32
+        };
+        assert!(page(1180.0, true) >= 600.0, "the default window, the panel open: {}", page(1180.0, true));
+        assert_eq!(panel_widths(1180.0, false), panel_widths(1600.0, true), "full size panels otherwise");
+        assert_eq!(panel_widths(1600.0, true).1, metrics::QUEUE_WIDTH);
+        assert!(page(metrics::MIN_WINDOW_SIZE[0], true) > 150.0, "something left at the smallest window");
     }
 
     #[test]

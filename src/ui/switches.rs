@@ -212,6 +212,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::player::Cmd;
     use crate::ui::app::testing::*;
     use crate::ui::crate_store::Thing;
     use crate::ui::state::Coll;
@@ -221,6 +222,39 @@ mod tests {
         let mut t = TestApp::new(settings);
         t.app.client = Some(deezer());
         t
+    }
+
+    /// Logged in to Deezer, with what that sent the player taken.
+    fn logged_in(settings: &str) -> TestApp {
+        let mut t = TestApp::new(settings);
+        t.app.source_ready(deezer());
+        t.sent();
+        t
+    }
+
+    fn heard(id: u64) -> crate::player::Played {
+        crate::player::Played { track: track(id, true), started_unix: 1_000_000, heard_secs: 200, skipped: false, flow: None }
+    }
+
+    /// The palette's labels, with `playing` playing.
+    fn palette(t: &TestApp, playing: Option<u64>) -> Vec<String> {
+        let st = crate::player::Status { track: playing.map(|id| track(id, true)), ..Default::default() };
+        t.app.commands(&st).into_iter().map(|c| c.label).collect()
+    }
+
+    /// The pages ⌘`key` opens.
+    fn shortcut(t: &TestApp, key: Key) -> Vec<View> {
+        let mut acts = crate::ui::action::Actions::default();
+        let press = egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND };
+        let input = egui::RawInput { events: vec![press], ..Default::default() };
+        t.ctx.run_ui(input, |ui| t.app.nav_shortcuts(ui.ctx(), &mut acts)).textures_delta.clear();
+        acts.into_vec()
+            .into_iter()
+            .filter_map(|a| match a {
+                Action::Open(view) => Some(view),
+                _ => None,
+            })
+            .collect()
     }
 
     #[test]
@@ -268,5 +302,88 @@ mod tests {
         assert_eq!(t.app.prefs.hidden_pages, ["albums"]);
         t.app.set_switch(&t.ctx.clone(), Switch::Page(Page::Albums), true);
         assert!(t.app.prefs.hidden_pages.is_empty());
+    }
+
+    #[test]
+    fn with_the_history_off_nothing_is_recorded_and_flow_skips_nothing() {
+        let mut t = logged_in("history=false\nflow_new_only=true");
+        t.app.player.set_status(|s| s.played = vec![heard(1)]);
+        t.app.record_plays();
+        assert_eq!(t.app.plays.len(), 0, "not recorded");
+        assert_eq!(t.app.prefs.new_only(), None, "no *new to me only* to offer");
+        t.app.send_skip_heard();
+        assert!(matches!(t.sent()[..], [Cmd::SkipHeard(None)]), "Flow plays everything");
+
+        t.app.set_switch(&t.ctx.clone(), Switch::History, true);
+        assert!(matches!(t.sent()[..], [Cmd::SkipHeard(Some(_))]), "turned on, Flow skips what's heard again");
+        t.app.player.set_status(|s| s.played = vec![heard(2)]);
+        t.app.record_plays();
+        assert_eq!(t.app.plays.len(), 1);
+        match &t.sent()[..] {
+            [Cmd::SkipHeard(Some(heard))] => assert!(heard.contains(&track(2, true).id)),
+            _ => panic!("expected the heard tracks sent to the player"),
+        }
+    }
+
+    #[test]
+    fn new_releases_are_not_looked_for_with_the_crate_off() {
+        let mut t = logged_in("crate=false");
+        let jobs = t.jobs.waiting();
+        t.app.release_tick(&t.ctx.clone());
+        assert_eq!(t.jobs.waiting(), jobs, "no look started");
+        t.app.set_switch(&t.ctx.clone(), Switch::Crate, true);
+        t.app.release_tick(&t.ctx.clone());
+        assert_eq!(t.jobs.waiting(), jobs + 1, "the Crate on, it looks");
+    }
+
+    #[test]
+    fn the_palette_offers_nothing_turned_off() {
+        let all = palette(&logged_in(""), Some(1));
+        let off = palette(&logged_in("crate=false\nhistory=false\nlyrics=false\nhidden_pages=albums"), Some(1));
+        let on_repeat = Smart::OnRepeat.title().to_string();
+        for label in ["Crate", "Lyrics", "Show the play history", "Albums", "Listening", on_repeat.as_str()] {
+            assert!(all.iter().any(|l| l == label), "{label} offered with everything on");
+            assert!(!off.iter().any(|l| l == label), "{label} not offered when off");
+        }
+        assert!(all.iter().any(|l| l.contains("to the Crate")));
+        assert!(!off.iter().any(|l| l.contains("Crate")), "not even saving what's playing");
+        for label in ["Home", "Artists", "Show the queue", "Settings"] {
+            assert!(off.iter().any(|l| l == label), "{label} stays");
+        }
+    }
+
+    #[test]
+    fn shortcuts_skip_hidden_pages() {
+        let t = logged_in("hidden_pages=albums");
+        assert!(shortcut(&t, Key::Num4).is_empty(), "⌘4 is Albums, hidden");
+        assert_eq!(shortcut(&t, Key::Num5), [View::Artists], "the others keep their number");
+        assert_eq!(shortcut(&t, Key::Num1), [View::Home]);
+        assert_eq!(shortcut(&logged_in(""), Key::Num4), [View::Albums]);
+    }
+
+    #[test]
+    fn panel_tabs_and_marks_follow_the_switches() {
+        let mut t = logged_in("");
+        t.update(Action::ShowPanel(Some(SidePanel::History)));
+        t.app.set_switch(&t.ctx.clone(), Switch::History, false);
+        assert!(t.app.side_panel == Some(SidePanel::Queue), "the history tab gives way to the queue");
+        t.update(Action::TogglePanel);
+        t.update(Action::TogglePanel);
+        assert!(t.app.side_panel == Some(SidePanel::Queue), "and opens there again");
+        assert!(!t.app.allows(&Action::FlowNewOnly(true)));
+        t.app.set_switch(&t.ctx.clone(), Switch::Lyrics, false);
+        t.update(Action::ToggleLyrics);
+        assert_ne!(t.app.browse.view, View::Lyrics);
+    }
+
+    #[test]
+    fn turning_airplay_off_stops_the_search_and_the_speaker() {
+        let mut t = logged_in("");
+        t.app.player.set_status(|s| s.output = "Kitchen".into());
+        t.app.restore_output = Some("Kitchen".into());
+        t.app.set_switch(&t.ctx.clone(), Switch::AirPlay, false);
+        assert!(t.app.discovery.is_none() && t.app.restore_output.is_none());
+        assert!(matches!(t.sent()[..], [Cmd::Output(Output::Local)]), "back to this computer");
+        assert!(!t.app.prefs.airplay);
     }
 }

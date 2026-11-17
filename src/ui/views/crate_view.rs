@@ -357,7 +357,7 @@ impl App {
         let area = ui.available_rect_before_wrap();
         let current = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
         // Too narrow for both: the list, or the entry picked with a way back.
-        if area.width() < NARROW_PAGE {
+        if one_column(area.width()) {
             let entry = self.crate_view.selected.as_ref().and_then(|id| self.crate_box.get(id)).cloned();
             match entry.filter(|_| self.crate_view.open) {
                 Some(entry) => {
@@ -672,11 +672,21 @@ fn status_line(ui: &Ui, rect: Rect, entry: &Entry) {
 
 /// The entry's right-click menu: mark it heard (or new again), or remove it.
 fn entry_menu(resp: &egui::Response, entry: &Entry) -> Option<Action> {
+    widgets::crate_menu(resp, entry.heard).map(|pick| menu_change(pick, entry))
+}
+
+/// What a pick in an entry's menu does to it.
+fn menu_change(pick: widgets::CrateMenu, entry: &Entry) -> Action {
     let id = entry.id.clone();
-    widgets::crate_menu(resp, entry.heard).map(|pick| match pick {
+    match pick {
         widgets::CrateMenu::Heard(heard) => Action::Crate(Change::Heard { id, heard }),
         widgets::CrateMenu::Remove => Action::Crate(Change::Remove { id }),
-    })
+    }
+}
+
+/// Whether a page `width` wide shows the list or one entry, not both side by side.
+fn one_column(width: f32) -> bool {
+    width < NARROW_PAGE
 }
 
 /// A round tick: empty, lit on hover, filled once heard.
@@ -698,4 +708,42 @@ fn tick_box(ui: &Ui, rect: Rect, on: bool, hovered: bool) {
 /// "Deezer", "Navidrome": a source's name from its key.
 fn source_name(key: &str) -> &'static str {
     crate::source::KINDS.iter().find(|k| k.key == key).map_or("another source", |k| k.name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::app::testing::*;
+
+    #[test]
+    fn the_entry_menu_marks_heard_and_removes() {
+        let mut t = TestApp::new("");
+        t.app.source_ready(deezer());
+        let id = t.app.crate_box.add("deezer", Thing::Note, "", "that Turkish psych band");
+        let entry = t.app.crate_box.get(&id).cloned().expect("saved");
+        assert!(!entry.heard);
+
+        t.update(menu_change(widgets::CrateMenu::Heard(true), &entry));
+        assert!(t.app.crate_box.get(&id).is_some_and(|e| e.heard), "marked heard");
+        t.update(menu_change(widgets::CrateMenu::Heard(false), &entry));
+        assert!(t.app.crate_box.get(&id).is_some_and(|e| !e.heard), "new again");
+        t.update(menu_change(widgets::CrateMenu::Remove, &entry));
+        assert!(t.app.crate_box.get(&id).is_none(), "removed");
+    }
+
+    #[test]
+    fn a_narrow_page_shows_the_list_or_one_entry() {
+        assert!(one_column(500.0));
+        assert!(!one_column(800.0));
+    }
+
+    #[test]
+    fn opening_an_entry_from_the_panel_shows_it_on_a_narrow_page() {
+        let mut t = TestApp::new("");
+        t.app.source_ready(deezer());
+        let id = t.app.crate_box.add("deezer", Thing::Note, "", "a note");
+        t.update(Action::OpenCrate(Some(id.clone()), None));
+        assert_eq!(t.app.crate_view.selected.as_deref(), Some(id.as_str()));
+        assert!(t.app.crate_view.open, "the entry, not the list");
+    }
 }
