@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Right-click an entry in the Crate (the panel tab or the page) to mark it heard
+  (or new again) or remove it
+
 ## 0.28.0 (2026-11-16)
 
 - *Listening* page (sidebar): time listened, tracks, artists and new artists over the

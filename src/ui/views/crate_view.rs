@@ -237,6 +237,7 @@ impl App {
                         Action::OpenCrate(Some(entry.id.clone()), None)
                     });
                 }
+                acts.extend(entry_menu(&resp, entry));
                 resp.on_hover_text(if over_tick { "Mark as heard" } else { "Open in your Crate" })
                     .on_hover_cursor(egui::CursorIcon::PointingHand);
             }
@@ -354,6 +355,7 @@ impl App {
                     let status = Rect::from_min_max(pos2(rect.right() - 90.0, rect.top()), rect.max);
                     entry_row(ui, &mut self.covers, rect.with_max_x(status.left()), entry, current);
                     status_line(ui, status, entry);
+                    acts.extend(entry_menu(&resp, entry));
                     if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                         self.crate_view.selected = Some(entry.id.clone());
                     }
@@ -621,6 +623,15 @@ fn status_line(ui: &Ui, rect: Rect, entry: &Entry) {
     let zone = when::zone();
     let day = when::day(entry.saved, &zone).map_or_else(String::new, |d| when::day_name(d, when::today(&zone)));
     ui.painter().text(pos2(right, rect.center().y + 10.0), Align2::RIGHT_CENTER, day, ty::CAPTION.font(), p.faint);
+}
+
+/// The entry's right-click menu: mark it heard (or new again), or remove it.
+fn entry_menu(resp: &egui::Response, entry: &Entry) -> Option<Action> {
+    let id = entry.id.clone();
+    widgets::crate_menu(resp, entry.heard).map(|pick| match pick {
+        widgets::CrateMenu::Heard(heard) => Action::Crate(Change::Heard { id, heard }),
+        widgets::CrateMenu::Remove => Action::Crate(Change::Remove { id }),
+    })
 }
 
 /// A round tick: empty, lit on hover, filled once heard.

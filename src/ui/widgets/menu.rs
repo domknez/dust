@@ -113,6 +113,35 @@ pub fn queue_menu(resp: &Response) -> Option<PlayMode> {
     pick
 }
 
+/// A choice in a Crate entry's right-click menu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrateMenu {
+    /// Mark it heard (true) or new again (false).
+    Heard(bool),
+    Remove,
+}
+
+/// Right-click menu for a Crate entry: Mark as heard (or as new, once `heard`),
+/// then Remove.
+pub fn crate_menu(resp: &Response, heard: bool) -> Option<CrateMenu> {
+    let mut pick = None;
+    resp.context_menu(|ui| {
+        ui.set_min_width(CONTEXT_MENU_WIDTH);
+        ui.set_max_width(CONTEXT_MENU_WIDTH);
+        let label = if heard { "Mark as new" } else { "Mark as heard" };
+        if menu_row(ui, Some(Icon::Check), label, None, false, colors().text).clicked() {
+            pick = Some(CrateMenu::Heard(!heard));
+            ui.close();
+        }
+        divider(ui);
+        if menu_row(ui, Some(Icon::Close), "Remove", None, false, colors().danger).clicked() {
+            pick = Some(CrateMenu::Remove);
+            ui.close();
+        }
+    });
+    pick
+}
+
 /// A choice in a track's right-click menu.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TrackMenu {
