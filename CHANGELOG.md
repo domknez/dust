@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.28.1 (2026-11-17)
+
 - Right-click an entry in the Crate (the panel tab or the page) to mark it heard
   (or new again) or remove it
 
