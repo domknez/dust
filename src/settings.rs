@@ -8,6 +8,10 @@ use crate::ui::Appearance;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+/// Whether dust checks for updates until told otherwise. Builds without the `self-update`
+/// feature (a package manager updates them) don't; it can still be switched on in Settings.
+const AUTO_UPDATE: bool = cfg!(feature = "self-update");
+
 /// dust's folder in the platform config directory.
 pub fn dir() -> Option<PathBuf> {
     path().and_then(|p| p.parent().map(|d| d.to_path_buf()))
@@ -94,7 +98,7 @@ impl Prefs {
             repeat: get("repeat").map_or(Repeat::Off, Repeat::from_key),
             output: get("output").filter(|o| !o.is_empty()).map(str::to_string),
             volume: get("volume").and_then(|v| v.parse::<f32>().ok()).map_or(0.5, |v| v.clamp(0.0, 1.0)),
-            auto_update: get("auto_update") != Some("false"),
+            auto_update: get("auto_update").map_or(AUTO_UPDATE, |v| v != "false"),
             sidebar_playlists: get("sidebar_playlists") != Some("closed"),
             flow_new_only: get("flow_new_only") == Some("true"),
             release_alerts: get("release_alerts") != Some("false"),
@@ -238,7 +242,7 @@ mod tests {
         assert_eq!(p.source, crate::deezer::ID);
         assert_eq!(p.quality, Quality::Mp3_320);
         assert_eq!(p.theme, Appearance::System);
-        assert!(p.report_listens && !p.shuffle && p.auto_update && p.sidebar_playlists && !p.flow_new_only && p.release_alerts);
+        assert!(p.report_listens && !p.shuffle && p.auto_update == AUTO_UPDATE && p.sidebar_playlists && !p.flow_new_only && p.release_alerts);
         assert_eq!(p.repeat, Repeat::Off);
         assert_eq!(p.output, None);
         assert_eq!(p.volume, 1.0);

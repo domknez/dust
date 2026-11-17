@@ -52,9 +52,12 @@ windows-native-keyring-store = { version = "1", default-features = false }
 dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
 
 [features]
-default = ["login-window"]
+default = ["login-window", "self-update"]
 # "Log in with Deezer" webview window. Disable to drop the WebKitGTK dependency on Linux.
 login-window = ["dep:tao", "dep:wry"]
+# Checks for updates by itself by default. Packages updated by a package manager (the Nix
+# flake) build without it: the setting stays, off until switched on.
+self-update = []
 
 [profile.release]
 opt-level = 3

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Nix: `flake.nix` with a dev shell (`nix develop`), an installable package (`nix run`,
+  `nix profile install`, NixOS) with the desktop entry and icons, and `nix flake check`
+  (run by CI); see `docs/nix.md`. New cargo feature `self-update` (on by default): without
+  it dust doesn't check for updates by itself, which the flake uses
+
 ## 0.30.0 (2026-11-17)
 
 - Crate: albums say whether they're an album, EP, single, live album or
