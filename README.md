@@ -62,6 +62,9 @@ and *Connect a Navidrome server*.
   last. *Add to playlist ›* menus list your recent playlists on top
 - **Pick several tracks:** click, `⌘`-click and `Shift`-click rows (or `⌘A`), then
   right-click to queue them, add them to a playlist or remove them from your own
+- **Export any list:** a playlist, album, Loved tracks or a list from your history →
+  ⋯ → *Export as CSV* / *Export as M3U*, saved into Downloads (Deezer tracks with
+  their links), for a spreadsheet, another player or another service
 - **Endless play:** Deezer's Flow and the server's Radio keep going, fetching more as you
   listen. *new to me only* on the Flow panel leaves out tracks already in your play
   history, and a lime dot in *up next* marks each track you've never heard

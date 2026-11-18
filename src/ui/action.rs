@@ -9,6 +9,7 @@ use super::app::{App, SidePanel};
 use super::crate_store::{Change, Thing};
 use super::load::Load;
 use super::playlist_edit::{Dialog, Edit};
+use super::playlist_file::Format;
 use super::state::{ArtistView, Coll, CollSource, PlayMode, View, playable};
 use super::style::Appearance;
 use super::switches::Switch;
@@ -88,6 +89,8 @@ pub enum Action {
     /// Sync the Crate and history through this folder; None keeps them here only.
     SyncFolder(Option<PathBuf>),
     ExportCrate(Export),
+    /// Save the list on screen into Downloads.
+    ExportList(Format),
     /// Bring back the daily backup in this folder.
     RestoreBackup(PathBuf),
 
@@ -246,6 +249,7 @@ impl App {
             Action::SearchFor(query) => self.search_for(query),
             Action::SyncFolder(folder) => self.set_sync_folder(ctx, folder),
             Action::ExportCrate(export) => self.export_crate(ctx, export),
+            Action::ExportList(format) => self.export_list(ctx, format),
             Action::RestoreBackup(dir) => self.restore_backup(ctx, dir),
             Action::EditPlaylist(edit) => self.edit_playlist(edit),
             Action::NewPlaylist(tracks) => self.new_playlist(tracks),

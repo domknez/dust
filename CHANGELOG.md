@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Export any list (a playlist, album, Loved tracks or a list from your history) as
+  CSV or M3U from its ⋯ menu, into Downloads
 - Playing a track from the history, the Crate or Listening with nothing queued
   plays it (before, nothing happened)
 - A login the keychain couldn't keep says so, instead of being forgotten at the

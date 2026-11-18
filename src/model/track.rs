@@ -44,6 +44,12 @@ impl Track {
             _ => None,
         }
     }
+
+    /// The track's public web page, where it has one (Deezer songs; a server's
+    /// songs only exist inside it, an episode belongs to its show).
+    pub fn web_link(&self) -> Option<String> {
+        matches!(self.origin, Origin::Deezer(_)).then(|| format!("https://www.deezer.com/track/{}", self.id))
+    }
 }
 
 #[cfg(test)]
