@@ -245,9 +245,22 @@ impl Library for Shared {
     }
 }
 
+/// What adding `tracks` to a playlist holding `present` adds: those not on it yet,
+/// each once, in order.
+pub fn not_yet_on(present: impl IntoIterator<Item = TrackId>, tracks: &[TrackId]) -> Vec<TrackId> {
+    let mut seen: std::collections::HashSet<TrackId> = present.into_iter().collect();
+    tracks.iter().filter(|&id| seen.insert(id.clone())).cloned().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_track_goes_on_a_playlist_once() {
+        let ids = |n: &[u64]| n.iter().map(|&n| TrackId::from(n)).collect::<Vec<_>>();
+        assert_eq!(not_yet_on(ids(&[1, 2]), &ids(&[3, 2, 3, 4, 1])), ids(&[3, 4]));
+    }
 
     #[test]
     fn kinds_keep_their_spellings() {

@@ -74,9 +74,13 @@ fn agent(timeout: Option<Duration>) -> ureq::Agent {
         .into()
 }
 
-/// `a` is a newer `major.minor.patch` than `b`.
+/// `a` is a newer `major.minor.patch` than `b`. Missing parts are 0 ("0.2" is
+/// "0.2.0"); a part that isn't a number counts as 0.
 pub fn is_newer(a: &str, b: &str) -> bool {
-    let parse = |v: &str| -> Vec<u64> { v.trim_start_matches('v').split('.').map(|p| p.parse().unwrap_or(0)).collect() };
+    let parse = |v: &str| -> [u64; 3] {
+        let mut parts = v.trim_start_matches('v').split('.').map(|p| p.parse().unwrap_or(0));
+        [(); 3].map(|()| parts.next().unwrap_or(0))
+    };
     parse(a) > parse(b)
 }
 
@@ -148,9 +152,7 @@ pub fn stage(release: &Release, progress: &Arc<AtomicU32>) -> Result<Staged, Str
         .map_err(|e| format!("checksums: {e}"))?;
     let expected = expected_sha256(&sums, &name).ok_or_else(|| format!("no checksum for {name}"))?;
 
-    let dir = std::env::temp_dir().join(format!("dust-update-{}", release.version));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dir = private_dir(&format!("dust-update-{}", release.version)).map_err(|e| format!("download folder: {e}"))?;
     let file = dir.join(&name);
     let actual = download(url, &file, progress)?;
     if actual != expected {
@@ -189,6 +191,18 @@ pub fn apply(staged: &Staged) -> Result<Restart, String> {
 /// [`stage`] then [`apply`] in one go (command line).
 pub fn install(release: &Release, progress: &Arc<AtomicU32>) -> Result<Restart, String> {
     apply(&stage(release, progress)?)
+}
+
+/// A new folder in the temporary folder that only this user can open, so nothing
+/// else can swap the download between its check and its install. Made fresh (an
+/// existing folder of that name is never reused), with a random part in its name.
+fn private_dir(prefix: &str) -> std::io::Result<PathBuf> {
+    let dir = std::env::temp_dir().join(format!("{prefix}-{:016x}", fastrand::u64(..)));
+    let mut builder = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(&dir)?;
+    Ok(dir)
 }
 
 /// `sha256sum` output: `<hex>  <name>` per line.
@@ -307,6 +321,21 @@ mod tests {
         assert!(is_newer("0.2.1", "0.2.0"));
         assert!(!is_newer("0.2.0", "0.2.0"));
         assert!(!is_newer("0.1.9", "0.2.0"));
+        assert!(!is_newer("0.2.0", "0.2"), "0.2 is 0.2.0");
+        assert!(is_newer("0.2.1", "0.2"));
+    }
+
+    #[test]
+    fn the_download_folder_is_new_and_private() {
+        let a = private_dir("dust-test-update").unwrap();
+        let b = private_dir("dust-test-update").unwrap();
+        assert_ne!(a, b, "never one already there");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&a).unwrap().permissions().mode() & 0o777, 0o700);
+        }
+        let _ = (std::fs::remove_dir(a), std::fs::remove_dir(b));
     }
 
     #[test]

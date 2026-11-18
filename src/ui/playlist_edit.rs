@@ -6,6 +6,7 @@ use crate::model::{Error, Playlist, PlaylistId, Track, TrackId};
 use crate::source::Source;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
+use crate::ui::format::count;
 use crate::ui::load::Load;
 use crate::ui::state::{CollSource, View, for_playlist};
 use crate::ui::style::{colors, typography as ty};
@@ -65,10 +66,6 @@ impl PlaylistEditing {
     }
 }
 
-fn plural(n: usize) -> String {
-    if n == 1 { "1 track".into() } else { format!("{n} tracks") }
-}
-
 fn run(client: &dyn Source, edit: Edit) -> Result<Done, Error> {
     let ids = |tracks: Vec<Track>| for_playlist(tracks).into_iter().map(|t| t.id).collect::<Vec<_>>();
     Ok(match edit {
@@ -76,7 +73,7 @@ fn run(client: &dyn Source, edit: Edit) -> Result<Done, Error> {
             let added = client.add_to_playlist(&playlist.id, &ids(tracks))?;
             let message = match added {
                 0 => format!("Already in {}", playlist.title),
-                n => format!("Added {} to {}", plural(n), playlist.title),
+                n => format!("Added {} to {}", count(n, "track"), playlist.title),
             };
             Done { message, playlist: Some(playlist.id), deleted: false }
         }
@@ -86,7 +83,7 @@ fn run(client: &dyn Source, edit: Edit) -> Result<Done, Error> {
         }
         Edit::Remove { playlist, tracks } => {
             client.remove_from_playlist(&playlist, &tracks)?;
-            Done { message: format!("Removed {}", plural(tracks.len())), playlist: Some(playlist), deleted: false }
+            Done { message: format!("Removed {}", count(tracks.len(), "track")), playlist: Some(playlist), deleted: false }
         }
         Edit::Rename { playlist, title } => {
             client.rename_playlist(&playlist, &title)?;
@@ -169,7 +166,7 @@ impl App {
                 Dialog::Create { title, private, tracks } => {
                     ui.label(RichText::new("New playlist").font(ty::SECTION_TITLE.font()).color(p.text));
                     if !tracks.is_empty() {
-                        ui.label(RichText::new(format!("With {}", plural(tracks.len()))).color(p.dim));
+                        ui.label(RichText::new(format!("With {}", count(tracks.len(), "track"))).color(p.dim));
                     }
                     let field = ui.add(egui::TextEdit::singleline(title).hint_text("Name").desired_width(f32::INFINITY));
                     field.request_focus();

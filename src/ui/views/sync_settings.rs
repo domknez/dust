@@ -5,7 +5,7 @@
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::crate_store::{Crate, Entry, Thing};
-use crate::ui::format::thousands;
+use crate::ui::format::{self, thousands};
 use crate::ui::plays::{Plays, when};
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, typography as ty};
@@ -296,13 +296,7 @@ fn expand_home(path: &str) -> Option<PathBuf> {
 
 /// "just now", "2 minutes ago".
 fn ago(at: SystemTime) -> String {
-    let secs = at.elapsed().map_or(0, |d| d.as_secs());
-    match secs {
-        0..=59 => "just now".into(),
-        60..=119 => "a minute ago".into(),
-        120..=3599 => format!("{} minutes ago", secs / 60),
-        _ => format!("{} hours ago", secs / 3600),
-    }
+    format::ago(at.elapsed().map_or(0, |d| d.as_secs()))
 }
 
 /// The Crate as a Markdown list: new first, then heard.

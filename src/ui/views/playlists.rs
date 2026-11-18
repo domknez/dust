@@ -36,7 +36,14 @@ fn playlist_card(ui: &mut Ui, covers: &mut Covers, playlist: &Playlist, acts: &m
         widgets::play_knob(ui, pos2(art.right() - 30.0, art.bottom() - 30.0), 20.0);
     }
     text_left(ui.painter(), pos2(rect.left(), art.bottom() + 16.0), &playlist.title, ty::TITLE.strong(), p.text, card);
-    text_left(ui.painter(), pos2(rect.left(), art.bottom() + 36.0), &format!("{} tracks", playlist.count), ty::SECONDARY, p.dim, card);
+    text_left(
+        ui.painter(),
+        pos2(rect.left(), art.bottom() + 36.0),
+        &crate::ui::format::count(playlist.count as usize, "track"),
+        ty::SECONDARY,
+        p.dim,
+        card,
+    );
     if let Some(mode) = widgets::queue_menu(&resp) {
         acts.push(Action::PlaySource(CollSource::Playlist(playlist.id.clone()), mode));
     }

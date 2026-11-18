@@ -287,8 +287,7 @@ impl Subsonic {
 
     /// Add the tracks that aren't on the playlist yet; returns how many were added.
     pub fn add_to_playlist(&self, playlist: &PlaylistId, tracks: &[TrackId]) -> Result<usize> {
-        let current: std::collections::HashSet<TrackId> = self.playlist(playlist)?.into_iter().map(|t| t.id).collect();
-        let new: Vec<&TrackId> = tracks.iter().filter(|t| !current.contains(*t)).collect();
+        let new = crate::source::not_yet_on(self.playlist(playlist)?.into_iter().map(|t| t.id), tracks);
         if new.is_empty() {
             return Ok(0);
         }

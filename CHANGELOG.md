@@ -29,6 +29,12 @@
 - While dust is minimized or hidden: the system's now playing info follows the
   track, the queue is saved, plays are kept, and sync, backups and update checks
   carry on (before, all of that waited for the window to be shown again)
+- Log in with Deezer: only deezer.com's own session cookie is taken, and a login
+  window that crashes says so instead of "Login window closed"
+- Updates: the download goes to a new folder only you can open
+- Navidrome / Subsonic: adding the same track twice in one go adds it once
+- "1 track" and "an hour ago" instead of "1 tracks" and "1 hours ago"; sync times
+  older than a day say "yesterday" or how many days
 
 ## 0.31.1 (2026-11-18)
 

@@ -15,12 +15,23 @@ pub fn obtain_arl() -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let out =
         Command::new(exe).arg(ARG).stdin(Stdio::null()).stderr(Stdio::inherit()).output().map_err(|e| format!("login window: {e}"))?;
-    String::from_utf8_lossy(&out.stdout)
+    let arl = String::from_utf8_lossy(&out.stdout)
         .lines()
         .find_map(|l| l.strip_prefix(PREFIX))
         .map(|arl| arl.trim().to_string())
-        .filter(|arl| !arl.is_empty())
-        .ok_or_else(|| "Login window closed".into())
+        .filter(|arl| !arl.is_empty());
+    match arl {
+        Some(arl) => Ok(arl),
+        None if out.status.success() => Err("Login window closed".into()),
+        None => Err(format!("The login window stopped unexpectedly ({})", out.status)),
+    }
+}
+
+/// Whether a cookie of `domain` is deezer.com's own (".deezer.com" or a part of
+/// it), not merely a name ending the same way ("notdeezer.com").
+fn is_deezer_domain(domain: &str) -> bool {
+    let domain = domain.trim_start_matches('.');
+    domain == "deezer.com" || domain.ends_with(".deezer.com")
 }
 
 /// Entry point of the helper process.
@@ -67,7 +78,7 @@ pub fn run_window() {
                 // Not cookies_for_url(): it wants an exact domain match, but arl lives on
                 // ".deezer.com" while the page is www.deezer.com.
                 let cookies = webview.cookies().unwrap_or_default();
-                let is_deezer = |c: &wry::cookie::Cookie| c.domain().is_some_and(|d| d.trim_start_matches('.').ends_with("deezer.com"));
+                let is_deezer = |c: &wry::cookie::Cookie| c.domain().is_some_and(is_deezer_domain);
                 if let Some(arl) = cookies.iter().find(|c| c.name() == "arl" && !c.value().is_empty() && is_deezer(c)) {
                     let mut out = std::io::stdout().lock();
                     let _ = writeln!(out, "{PREFIX}{}", arl.value());
@@ -78,4 +89,17 @@ pub fn run_window() {
             _ => {}
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_deezer_s_own_cookies() {
+        assert!(is_deezer_domain(".deezer.com"));
+        assert!(is_deezer_domain("www.deezer.com"));
+        assert!(!is_deezer_domain("notdeezer.com"));
+        assert!(!is_deezer_domain("deezer.com.evil.example"));
+    }
 }

@@ -60,10 +60,8 @@ impl About {
         if !self.kind.is_empty() {
             parts.push(self.kind.clone());
         }
-        match self.tracks {
-            0 => {}
-            1 => parts.push("1 track".into()),
-            n => parts.push(format!("{n} tracks")),
+        if self.tracks > 0 {
+            parts.push(crate::ui::format::count(self.tracks as usize, "track"));
         }
         parts.join(" · ")
     }

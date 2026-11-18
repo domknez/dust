@@ -285,11 +285,7 @@ fn lists(ui: &mut Ui, lists: &[(Smart, usize)], acts: &mut Actions) {
                 inner,
             );
             ui.painter().galley(pos2(x, rect.top() + ABOUT_TOP), galley, p.dim);
-            let tracks = match n {
-                0 => "nothing yet".to_string(),
-                1 => "1 track".to_string(),
-                n => format!("{n} tracks"),
-            };
+            let tracks = if n == 0 { "nothing yet".to_string() } else { crate::ui::format::count(n, "track") };
             ui.painter().text(pos2(x, rect.bottom() - 14.0), Align2::LEFT_CENTER, tracks, ty::META.font(), p.faint);
             if n == 0 {
                 continue;

@@ -29,9 +29,7 @@ impl Deezer {
     /// Append the tracks that aren't in the playlist yet (Deezer rejects a batch
     /// with any duplicate). Returns how many were added.
     pub fn add_to_playlist(&self, playlist: &PlaylistId, tracks: &[TrackId]) -> Result<usize> {
-        let present: std::collections::HashSet<TrackId> = self.playlist(playlist)?.into_iter().map(|t| t.id).collect();
-        let mut seen = std::collections::HashSet::new();
-        let new: Vec<TrackId> = tracks.iter().filter(|&id| !present.contains(id) && seen.insert(id)).cloned().collect();
+        let new = crate::source::not_yet_on(self.playlist(playlist)?.into_iter().map(|t| t.id), tracks);
         if !new.is_empty() {
             self.call("playlist.addSongs", json!({"playlist_id": id(playlist), "songs": songs(&new), "offset": -1}))?;
         }
