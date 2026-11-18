@@ -442,6 +442,8 @@ mod tests {
         assert_eq!(display_name("Domagoj-s-MacBook-Pro-3f2a"), "Domagoj s MacBook Pro");
     }
 
+    // Unix paths (the folder separators differ on Windows).
+    #[cfg(unix)]
     #[test]
     fn folders_read_short() {
         let home = Path::new("/Users/me");
