@@ -231,26 +231,46 @@ impl App {
             let mut fraction = if duration > 0.0 { (position / duration) as f32 } else { 0.0 };
             let seed = st.track.as_ref().map_or(0, |t| wave_seed(&t.id));
             let resp = widgets::wave_slider(ui, &mut fraction, slider.width(), seed, duration > 0.0);
-            if resp.dragged() {
-                self.seek_drag = Some(fraction);
-            }
-            if resp.drag_stopped() || (resp.clicked() && !resp.dragged()) {
-                acts.push(Action::Player(Cmd::Seek(fraction as f64 * duration)));
-                self.seek_drag = None;
-            }
+            self.seek_with(&resp, Some(fraction), duration, acts);
         });
     }
 
-    fn volume(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
+    /// A seek bar's response: dragging shows where (`fraction` of `duration`)
+    /// without seeking yet; letting go, or a click, seeks there.
+    pub(in crate::ui) fn seek_with(&mut self, resp: &egui::Response, fraction: Option<f32>, duration: f64, acts: &mut Actions) {
+        if duration <= 0.0 {
+            return;
+        }
+        if resp.dragged()
+            && let Some(f) = fraction
+        {
+            self.seek_drag = Some(f);
+        }
+        if (resp.drag_stopped() || resp.clicked())
+            && let Some(f) = fraction.or(self.seek_drag)
+        {
+            acts.push(Action::Player(Cmd::Seek(f as f64 * duration)));
+            self.seek_drag = None;
+        }
+    }
+
+    /// The volume slider, `width` wide: the volume follows it while dragged, and
+    /// the player's own shows again once it's let go.
+    pub(in crate::ui) fn volume_slider(&mut self, ui: &mut Ui, st: &Status, width: f32, acts: &mut Actions) -> f32 {
         let mut volume = self.volume_drag.unwrap_or(st.volume);
-        let resp = widgets::thin_slider(ui, &mut volume, VOLUME_WIDTH, true, false);
+        let resp = widgets::thin_slider(ui, &mut volume, width, true, false);
         if resp.changed() {
             self.volume_drag = Some(volume);
             acts.push(Action::Player(Cmd::Volume(volume)));
         }
-        if resp.drag_stopped() || (!resp.dragged() && self.volume_drag.is_some() && !resp.hovered()) {
+        if resp.drag_stopped() || (!resp.dragged() && !resp.hovered() && self.volume_drag.is_some()) {
             self.volume_drag = None;
         }
+        volume
+    }
+
+    fn volume(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
+        let volume = self.volume_slider(ui, st, VOLUME_WIDTH, acts);
         let muted = volume <= 0.001;
         if widgets::icon_button(ui, if muted { Icon::Mute } else { Icon::Volume }, 16.0, colors().dim).on_hover_text("Mute").clicked() {
             if muted {

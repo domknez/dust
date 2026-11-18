@@ -1,7 +1,7 @@
 //! The AirPlay button and its "Play on" menu.
 
 use crate::output::airplay::Device;
-use crate::player::{Cmd, Output, Status};
+use crate::player::{Output, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::style::icons::{self, Icon};
@@ -143,15 +143,7 @@ impl App {
                     p.dim,
                 );
                 ui.add_space(24.0);
-                let mut volume = self.volume_drag.unwrap_or(st.volume);
-                let slider = widgets::thin_slider(ui, &mut volume, ui.available_width(), true, false);
-                if slider.changed() {
-                    self.volume_drag = Some(volume);
-                    acts.push(Action::Player(Cmd::Volume(volume)));
-                }
-                if slider.drag_stopped() || (!slider.dragged() && !slider.hovered() && self.volume_drag.is_some()) {
-                    self.volume_drag = None;
-                }
+                self.volume_slider(ui, st, ui.available_width(), acts);
             });
         }
         !current && resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()

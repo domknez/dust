@@ -157,19 +157,7 @@ impl App {
         let strip = Rect::from_min_max(pos2(full.left(), full.bottom() - 8.0), full.max);
         let resp = ui.interact(strip, ui.scope_id().with("mini-seek"), Sense::click_and_drag());
         let pointer = resp.interact_pointer_pos().map(|pt| ((pt.x - full.left()) / full.width()).clamp(0.0, 1.0));
-        if duration > 0.0
-            && resp.dragged()
-            && let Some(f) = pointer
-        {
-            self.seek_drag = Some(f);
-        }
-        if duration > 0.0
-            && (resp.drag_stopped() || resp.clicked())
-            && let Some(f) = pointer.or(self.seek_drag)
-        {
-            acts.push(Action::Player(Cmd::Seek(f as f64 * duration)));
-            self.seek_drag = None;
-        }
+        self.seek_with(&resp, pointer, duration, acts);
         let shown = match self.seek_drag {
             Some(f) => f,
             None if duration > 0.0 => (st.position / duration).clamp(0.0, 1.0) as f32,

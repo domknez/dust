@@ -6,6 +6,9 @@ use crate::ui::style::{colors, radius, typography as ty};
 use eframe::egui::{self, Color32, CornerRadius, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
 
 const PILL_HEIGHT: f32 = 40.0;
+/// Room either side of a pill's content, and what its icon (with its gap) takes.
+const PILL_PADDING: f32 = 16.0;
+const PILL_ICON: f32 = 22.0;
 const FIELD_HEIGHT: f32 = 38.0;
 /// A filter chip: its height, and the room either side of its label.
 const CHIP_HEIGHT: f32 = 30.0;
@@ -73,10 +76,8 @@ pub fn play_button(ui: &mut Ui, playing: bool, size: f32) -> Response {
 /// Button with an optional leading icon: `primary` is lime-filled, the others are
 /// outlined.
 pub fn pill(ui: &mut Ui, label: &str, icon: Option<Icon>, primary: bool) -> Response {
-    let style = if primary { ty::TITLE.strong() } else { ty::TITLE };
-    let galley = ui.painter().layout_no_wrap(label.to_string(), style.font(), Color32::PLACEHOLDER);
-    let icon_width = if icon.is_some() { 22.0 } else { 0.0 };
-    let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + icon_width + 32.0, PILL_HEIGHT), Sense::click());
+    let galley = pill_label(ui, label, primary);
+    let (rect, resp) = ui.allocate_exact_size(vec2(pill_size(&galley, icon.is_some()), PILL_HEIGHT), Sense::click());
     let p = colors();
     let corner = CornerRadius::same(radius::CONTROL);
     let fg = if primary {
@@ -90,10 +91,10 @@ pub fn pill(ui: &mut Ui, label: &str, icon: Option<Icon>, primary: bool) -> Resp
         ui.painter().rect_stroke(rect, corner, egui::Stroke::new(1.0, p.border), egui::StrokeKind::Inside);
         p.text
     };
-    let mut x = rect.left() + 16.0;
+    let mut x = rect.left() + PILL_PADDING;
     if let Some(i) = icon {
         icons::paint(ui.painter(), Rect::from_center_size(pos2(x + 8.0, rect.center().y), Vec2::splat(16.0)), i, fg);
-        x += icon_width;
+        x += PILL_ICON;
     }
     ui.painter().galley(pos2(x, rect.center().y - galley.size().y / 2.0), galley, fg);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -120,9 +121,18 @@ pub fn pill_fit(ui: &mut Ui, label: &str, icon: Icon, narrow: bool) -> Response 
 
 /// How wide a [`pill`] is.
 pub fn pill_width(ui: &Ui, label: &str, icon: bool, primary: bool) -> f32 {
+    pill_size(&pill_label(ui, label, primary), icon)
+}
+
+/// A pill's label, laid out.
+fn pill_label(ui: &Ui, label: &str, primary: bool) -> std::sync::Arc<egui::Galley> {
     let style = if primary { ty::TITLE.strong() } else { ty::TITLE };
-    let galley = ui.painter().layout_no_wrap(label.to_string(), style.font(), Color32::PLACEHOLDER);
-    galley.size().x + if icon { 22.0 } else { 0.0 } + 32.0
+    ui.painter().layout_no_wrap(label.to_string(), style.font(), Color32::PLACEHOLDER)
+}
+
+/// A pill's width around its laid-out label, with or without an icon.
+fn pill_size(label: &egui::Galley, icon: bool) -> f32 {
+    label.size().x + if icon { PILL_ICON } else { 0.0 } + 2.0 * PILL_PADDING
 }
 
 /// Single-line text field: a box inset into the popover, with a lime ring while
