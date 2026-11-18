@@ -87,7 +87,10 @@ impl Watch {
     pub fn poll(&mut self, now: u64) -> Option<Vec<Found>> {
         let result = self.running.poll_take()?;
         self.checked = now;
-        let found = result.unwrap_or_default();
+        let found = result.unwrap_or_else(|e| {
+            log_warn!("looking for new releases: {e}");
+            Vec::new()
+        });
         self.seen.extend(found.iter().map(|f| f.release.album.id.clone()));
         if self.seen.len() > SEEN {
             self.seen.drain(..self.seen.len() - SEEN);
