@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.31.1 (2026-11-18)
+
 - Listening: the cards of lists made from your history grow to fit their
   description, so it no longer runs into the track count on narrow windows
 
