@@ -12,7 +12,8 @@ use super::library::SharedLibrary;
 use super::listens::ListenTracker;
 use super::preload::{self, Preload, Spawner};
 use super::queue::{Flow, Queue, Removed};
-use super::{Cmd, Output, Repeat, SLEEP_FADE, Sleep, State, Status};
+use super::sleep::{SleepTimer, Tick};
+use super::{Cmd, Output, Repeat, State, Status};
 use crate::media::{Decoded, OpenError, Playback};
 use crate::model::{Quality, Track, TrackId};
 use crate::output::{self, RATE, Sink};
@@ -29,8 +30,6 @@ const PUBLISH_EVERY: Duration = Duration::from_millis(250);
 const RECOVER_EVERY: Duration = Duration::from_secs(3);
 /// "Previous" restarts the track instead when past this point (seconds).
 const RESTART_THRESHOLD: f64 = 3.0;
-/// Volume changes per second while a timed sleep fades out.
-const FADE_STEPS_PER_SEC: f32 = 2.0;
 /// Consecutive unplayable tracks skipped before giving up.
 const MAX_OPEN_FAILURES: usize = 3;
 /// Start opening the next track when the current one has this long (s) left to
@@ -82,9 +81,7 @@ pub struct Engine {
     make_sink: SinkFactory,
     volume: f32,
     repeat: Repeat,
-    sleep: Option<Sleep>,
-    /// Share of the volume the sink plays at while a timed sleep fades out.
-    sleep_fade: Option<f32>,
+    sleep: SleepTimer,
     stream: Option<Box<dyn Playback>>,
     /// The next track, being opened ahead (see [`Engine::update_preload`]).
     preload: Option<Preload>,
@@ -131,8 +128,7 @@ impl Engine {
             make_sink,
             volume,
             repeat: Repeat::Off,
-            sleep: None,
-            sleep_fade: None,
+            sleep: SleepTimer::default(),
             stream: None,
             preload: None,
             spawn: Box::new(preload::spawn_thread),
@@ -222,8 +218,9 @@ impl Engine {
             Cmd::Shuffle(on) => self.queue.set_shuffle(on),
             Cmd::Repeat(r) => self.repeat = r,
             Cmd::Sleep(s) => {
-                self.sleep = s;
-                self.end_fade();
+                if self.sleep.set(s) {
+                    self.restore_volume();
+                }
             }
 
             Cmd::Enqueue(tracks) => self.queue.enqueue(tracks),
@@ -573,80 +570,47 @@ impl Engine {
     }
 
     /// The sleep timer ran out: pause. Returns whether it did (also when nothing was
-    /// playing; the timer is cleared either way).
+    /// playing; the timer is cleared either way). Before that, fade out.
     fn sleep_due(&mut self) -> bool {
-        let Some(Sleep::At(at)) = self.sleep else { return false };
-        let now = Instant::now();
-        if now < at {
-            self.fade_towards(at - now);
-            return false;
-        }
-        self.sleep = None;
-        if self.playing && self.stream.is_some() {
-            log_info!("sleep timer: pausing");
-            self.toggle();
-        }
-        // Back to the listener's volume, so the next play isn't silent.
-        self.end_fade();
-        true
-    }
-
-    /// In the last [`SLEEP_FADE`] before a timed sleep, lower the sink's volume in
-    /// steps (a speaker gets a change about twice a second, not every loop).
-    fn fade_towards(&mut self, left: Duration) {
-        if left >= SLEEP_FADE || !self.playing {
-            return;
-        }
-        let steps = (SLEEP_FADE.as_secs_f32() * FADE_STEPS_PER_SEC).max(1.0);
-        let level = (left.as_secs_f32() / SLEEP_FADE.as_secs_f32() * steps).ceil() / steps;
-        if self.sleep_fade != Some(level) {
-            self.sleep_fade = Some(level);
-            if let Some(s) = self.sink.as_mut() {
-                s.set_volume(self.volume * level);
+        match self.sleep.tick(Instant::now(), self.playing) {
+            Tick::Waiting => false,
+            Tick::Fade(level) => {
+                if let Some(s) = self.sink.as_mut() {
+                    s.set_volume(self.volume * level);
+                }
+                false
+            }
+            Tick::Due { restore } => {
+                if self.playing && self.stream.is_some() {
+                    log_info!("sleep timer: pausing");
+                    self.toggle();
+                }
+                // Back to the listener's volume, so the next play isn't silent.
+                if restore {
+                    self.restore_volume();
+                }
+                true
             }
         }
     }
 
-    /// Undo a fade: the sink plays at the listener's volume again.
-    fn end_fade(&mut self) {
-        if self.sleep_fade.take().is_some()
-            && let Some(s) = self.sink.as_mut()
-        {
+    /// The sink plays at the listener's volume again (after a fade).
+    fn restore_volume(&mut self) {
+        if let Some(s) = self.sink.as_mut() {
             s.set_volume(self.volume);
         }
     }
 
-    /// Whether the sleep timer stops the music when the current track ends: set to
-    /// the end of the track, of the album with the next track from another (or none,
-    /// or the queue starting over), or of the queue with nothing after this one.
+    /// Whether the sleep timer stops the music when the current track ends.
     fn stops_here(&self) -> bool {
-        let last = !self.queue.has_next();
-        match self.sleep {
-            Some(Sleep::EndOfTrack) => true,
-            Some(Sleep::EndOfAlbum) => {
-                let album = |t: &Track| if t.album_id.is_empty() { t.album.clone() } else { t.album_id.clone() };
-                last || match (self.queue.current(), self.upcoming()) {
-                    (Some(now), Some(next)) => album(now).is_empty() || album(now) != album(next),
-                    _ => true,
-                }
-            }
-            Some(Sleep::EndOfQueue) => last,
-            _ => false,
-        }
+        self.sleep.stops_after(self.queue.current(), self.upcoming(), !self.queue.has_next())
     }
 
     /// The track ended with the sleep timer set to its end: stop, with the next track
     /// waiting at its start for play.
     fn sleep_now(&mut self) {
-        log_info!(
-            "sleep timer: stopping at the end of the {}",
-            match self.sleep {
-                Some(Sleep::EndOfAlbum) => "album",
-                Some(Sleep::EndOfQueue) => "queue",
-                _ => "track",
-            }
-        );
-        self.sleep = None;
+        log_info!("sleep timer: stopping at the end of the {}", self.sleep.end_of());
+        self.sleep.clear();
         self.end_handoff();
         self.stop();
         if let Some(s) = self.sink.as_mut() {
@@ -885,7 +849,7 @@ impl Engine {
         st.volume = self.volume;
         st.shuffle = self.queue.shuffled();
         st.repeat = self.repeat;
-        st.sleep = self.sleep;
+        st.sleep = self.sleep.get();
         st.index = self.handoff.as_ref().map_or(self.queue.index(), |h| h.index);
         if let Some(snapshot) = self.queue.take_snapshot() {
             st.queue = Arc::new(snapshot);
@@ -919,6 +883,7 @@ mod tests {
     use super::*;
     use crate::model::{Format, Listen, Origin, TrackId};
     use crate::player::library::Library;
+    use crate::player::{SLEEP_FADE, Sleep};
     use std::sync::mpsc::{Sender, channel};
 
     /// The number a test track was made with.
@@ -1303,13 +1268,13 @@ mod tests {
         let last = || *volumes.lock().unwrap().last().unwrap();
 
         // Long before the deadline nothing changes.
-        e.sleep = Some(Sleep::At(Instant::now() + Duration::from_secs(120)));
+        e.sleep.set(Some(Sleep::At(Instant::now() + Duration::from_secs(120))));
         let before = volumes.lock().unwrap().len();
         assert!(!e.sleep_due());
         assert_eq!(volumes.lock().unwrap().len(), before);
 
         // Halfway through the fade: about half the volume.
-        e.sleep = Some(Sleep::At(Instant::now() + SLEEP_FADE / 2));
+        e.sleep.reset_deadline(Sleep::At(Instant::now() + SLEEP_FADE / 2));
         e.sleep_due();
         assert!((last() - 0.4).abs() < 0.05, "half volume, got {}", last());
         // Repeated checks within the same step send nothing new.
@@ -1318,12 +1283,12 @@ mod tests {
         assert_eq!(volumes.lock().unwrap().len(), sent);
 
         // Just before the deadline: nearly silent.
-        e.sleep = Some(Sleep::At(Instant::now() + Duration::from_millis(400)));
+        e.sleep.reset_deadline(Sleep::At(Instant::now() + Duration::from_millis(400)));
         e.sleep_due();
         assert!(last() < 0.05, "nearly silent, got {}", last());
 
         // At the deadline: paused, and the volume is back for the next play.
-        e.sleep = Some(Sleep::At(Instant::now()));
+        e.sleep.reset_deadline(Sleep::At(Instant::now()));
         assert!(e.sleep_due());
         assert!(!e.playing);
         assert_eq!(last(), 0.8);
@@ -1340,7 +1305,7 @@ mod tests {
         let mut e = with_outputs(rx, status, 0.6, factory);
         e.library = Some(Arc::new(FakeLibrary::default()));
         e.handle(Cmd::Play(vec![track(1, 600)], 0));
-        e.sleep = Some(Sleep::At(Instant::now() + Duration::from_secs(5)));
+        e.sleep.set(Some(Sleep::At(Instant::now() + Duration::from_secs(5))));
         e.sleep_due();
         assert!(*volumes.lock().unwrap().last().unwrap() < 0.2);
         e.handle(Cmd::Sleep(None));
@@ -1354,10 +1319,10 @@ mod tests {
         e.handle(Cmd::Play(vec![track(1, 60)], 0));
         e.handle(Cmd::Sleep(Some(Sleep::At(Instant::now() + Duration::from_secs(60)))));
         assert!(!e.sleep_due() && e.playing, "not yet");
-        e.sleep = Some(Sleep::At(Instant::now()));
+        e.sleep.set(Some(Sleep::At(Instant::now())));
         assert!(e.sleep_due());
         assert!(!e.playing && e.stream.is_some(), "paused, not stopped");
-        assert_eq!(e.sleep, None);
+        assert_eq!(e.sleep.get(), None);
     }
 
     #[test]

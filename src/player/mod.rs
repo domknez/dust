@@ -15,6 +15,7 @@ mod listens;
 mod preload;
 mod queue;
 pub mod saved;
+mod sleep;
 
 pub use crate::output::Output;
 pub use queue::Flow;
