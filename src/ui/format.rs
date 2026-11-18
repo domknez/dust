@@ -10,7 +10,11 @@ pub fn mmss(secs: f64) -> String {
 
 /// Total length of a track list as a clock: "51:52", or "1:02:03" past an hour.
 pub fn total_clock(tracks: &[Track]) -> String {
-    let secs: u64 = tracks.iter().map(|t| t.duration as u64).sum();
+    clock(tracks.iter().map(|t| u64::from(t.duration)).sum())
+}
+
+/// A length as a clock: "3:07", or "1:02:03" past an hour.
+pub fn clock(secs: u64) -> String {
     match secs / 3600 {
         0 => format!("{}:{:02}", secs / 60, secs % 60),
         h => format!("{h}:{:02}:{:02}", (secs % 3600) / 60, secs % 60),

@@ -5,6 +5,7 @@
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::crate_store::{Crate, Entry, Thing};
+use crate::ui::files::{self, expand_home};
 use crate::ui::format::{self, thousands};
 use crate::ui::plays::{Plays, when};
 use crate::ui::style::icons::Icon;
@@ -113,16 +114,10 @@ impl App {
                 self.toasts.info(ctx, "Copied your Crate as Markdown");
             }
             Export::Json => {
-                let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from);
-                let Some(downloads) = home.map(|h| h.join("Downloads")) else { return };
                 let name = format!("dust-crate-{}.json", sync::backup_name(when::today(&when::zone())));
-                let file = downloads.join(name);
                 let text = serde_json::to_string_pretty(&json!({ "crate": entries.iter().map(entry_json).collect::<Vec<_>>() }));
-                match text
-                    .map_err(std::io::Error::other)
-                    .and_then(|t| std::fs::create_dir_all(&downloads).and_then(|()| std::fs::write(&file, t)))
-                {
-                    Ok(()) => self.toasts.info(ctx, format!("Saved {} in Downloads", file.file_name().unwrap_or_default().display())),
+                match text.map_err(std::io::Error::other).and_then(|t| files::save_to_downloads(&name, &t)) {
+                    Ok(file) => self.toasts.info(ctx, format!("Saved {} in Downloads", file.file_name().unwrap_or_default().display())),
                     Err(e) => self.toasts.error(ctx, format!("Couldn't save the Crate: {e}")),
                 }
             }
@@ -286,17 +281,6 @@ impl App {
     }
 }
 
-/// "~/Music" → the home folder's Music.
-fn expand_home(path: &str) -> Option<PathBuf> {
-    if path.is_empty() {
-        return None;
-    }
-    match path.strip_prefix("~/") {
-        Some(rest) => Some(PathBuf::from(std::env::var_os("HOME")?).join(rest)),
-        None => Some(PathBuf::from(path)),
-    }
-}
-
 /// "just now", "2 minutes ago".
 fn ago(at: SystemTime) -> String {
     format::ago(at.elapsed().map_or(0, |d| d.as_secs()))
@@ -360,8 +344,6 @@ mod tests {
         c.add("", Thing::Note, "", "that Turkish psych band");
         let text = markdown(c.entries());
         assert_eq!(text, "# Crate\n\n## New\n\n- that Turkish psych band\n- **Wild God** by Nick Cave (album): start with Joy\n");
-        assert_eq!(expand_home("/tmp"), Some(PathBuf::from("/tmp")));
-        assert_eq!(expand_home(""), None);
     }
 
     #[test]

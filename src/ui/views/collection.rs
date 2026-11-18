@@ -7,8 +7,11 @@ use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
 use crate::ui::crate_store::{About, Thing};
+use crate::ui::files;
 use crate::ui::format::total_clock;
 use crate::ui::playlist_edit::{Dialog, Edit};
+use crate::ui::playlist_file::Format;
+use crate::ui::plays::when;
 use crate::ui::state::{Coll, CollSource, View, playable};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
@@ -109,6 +112,21 @@ impl App {
             let top = origin + vec2(0.0, header_height);
             widgets::track_rows(ui, &mut self.covers, &table, Some(&mut self.browse.selection), first..last, top, table_width, acts);
         });
+    }
+
+    /// Save the list on screen into Downloads as `format`.
+    pub(in crate::ui) fn export_list(&mut self, ctx: &egui::Context, format: Format) {
+        let title = self.header().title;
+        let tracks: Vec<_> = self.browse.tracks.iter().filter(|t| !t.is_episode()).cloned().collect();
+        if tracks.is_empty() {
+            self.toasts.info(ctx, "Nothing to export: the list has no songs");
+            return;
+        }
+        let name = format.file_name(&title, &when::today(&when::zone()).to_string());
+        match files::save_to_downloads(&name, &format.write(&title, &tracks)) {
+            Ok(file) => self.toasts.info(ctx, format!("Saved {} in Downloads", file.file_name().unwrap_or_default().display())),
+            Err(e) => self.toasts.error(ctx, format!("Couldn't save the list: {e}")),
+        }
     }
 
     fn header(&self) -> Header {
@@ -272,6 +290,12 @@ impl App {
             // Episodes can't go into playlists.
             if count > 0 && !podcast {
                 let editable = self.showing_own_playlist().cloned();
+                // An M3U lists web pages: a list with none (a server's songs) only as CSV.
+                let formats: &[(Format, &str)] = if self.browse.tracks.iter().any(|t| t.web_link().is_some()) {
+                    &[(Format::Csv, "Export as CSV"), (Format::M3u, "Export as M3U")]
+                } else {
+                    &[(Format::Csv, "Export as CSV")]
+                };
                 let more = widgets::icon_button(ui, Icon::More, MORE_ICON, colors().dim).on_hover_text("More");
                 egui::Popup::menu(&more).width(220.0).show(|ui| {
                     // Every playable track of the list, to a playlist or a new one.
@@ -299,6 +323,13 @@ impl App {
                             about,
                         };
                         pick = Some(Action::SaveToCrate(album, String::new()));
+                    }
+                    // The list as a file, for other players and services.
+                    widgets::divider(ui);
+                    for &(format, label) in formats {
+                        if widgets::menu_row(ui, None, label, Some("Into your Downloads folder"), false, colors().text).clicked() {
+                            pick = Some(Action::ExportList(format));
+                        }
                     }
                     if let Some(playlist) = editable {
                         widgets::divider(ui);
