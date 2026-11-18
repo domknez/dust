@@ -278,8 +278,8 @@ mod tests {
         let song = c.add("deezer", Thing::Track(crate::model::Track::test(1)), "", "");
         c.change(Change::Heard { id: song.clone(), heard: true });
         let kept = |f: Filter| c.entries().iter().filter(|e| f.keeps(e)).map(|e| e.id.clone()).collect::<Vec<_>>();
-        assert_eq!(kept(Filter::New), [note.clone()]);
-        assert_eq!(kept(Filter::Heard), [song.clone()]);
+        assert_eq!(kept(Filter::New), std::slice::from_ref(&note));
+        assert_eq!(kept(Filter::Heard), std::slice::from_ref(&song));
         assert_eq!(kept(Filter::Kind("track")), [song]);
         assert_eq!(kept(Filter::All).len(), 2);
     }
