@@ -17,7 +17,8 @@ use std::sync::atomic::Ordering;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+/// Waiting for a receiver to accept a connection (control, events).
+pub(super) const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
 /// Once streaming, replies should be quick; a dead connection must not hold up the
 /// control worker (and the reconnect) for long.
@@ -83,19 +84,18 @@ impl AirPlaySink {
             rtptime: fastrand::u32(..),
         };
         let shared = Arc::new(Shared::new(local.seq, local.rtptime));
+        // Every early return from here on stops the threads already started.
+        let stop_threads = StopUnlessConnected(Some(shared.clone()));
         // Receivers sync clocks with us during SETUP, so answer timing requests first.
         let sh = shared.clone();
-        let mut threads = vec![transport::spawn("airplay-timing", move || transport::timing_loop(timing, &sh))];
+        let mut threads = vec![transport::spawn("airplay-timing", move || transport::timing_loop(timing, &sh))?];
 
         let negotiated = if device.ap2 {
             negotiate::airplay2(&mut rtsp, device, &local, remote_ip)
         } else {
             negotiate::airplay1(&mut rtsp, device, &local, remote_ip)
         };
-        let Negotiated { data_port, control_port, audio_key, events, ptp } = negotiated.map_err(|e| {
-            shared.running.store(false, Ordering::Release);
-            format!("{}: {e}", device.name)
-        })?;
+        let Negotiated { data_port, control_port, audio_key, events, ptp } = negotiated.map_err(|e| format!("{}: {e}", device.name))?;
 
         audio.connect(SocketAddr::new(remote_ip, data_port)).map_err(|e| e.to_string())?;
         let control_dst = SocketAddr::new(remote_ip, control_port);
@@ -103,7 +103,7 @@ impl AirPlaySink {
         let (producer, consumer) = rtrb::RingBuffer::new(RATE as usize * 2);
         let sh = shared.clone();
         let retransmits = control.try_clone().map_err(|e| e.to_string())?;
-        threads.push(transport::spawn("airplay-control", move || transport::control_loop(retransmits, control_dst, &sh)));
+        threads.push(transport::spawn("airplay-control", move || transport::control_loop(retransmits, control_dst, &sh))?);
         let out = AudioOut {
             socket: audio,
             control,
@@ -112,7 +112,7 @@ impl AirPlaySink {
             timing: ptp.as_ref().map_or(Timing::Ntp, |p| Timing::Ptp { clock_id: p.clock_id() }),
         };
         let sh = shared.clone();
-        threads.push(transport::spawn("airplay-audio", move || transport::audio_loop(out, consumer, &sh)));
+        threads.push(transport::spawn("airplay-audio", move || transport::audio_loop(out, consumer, &sh))?);
 
         rtsp.set_reply_timeout(RUNTIME_REPLY_TIMEOUT);
         log_info!(
@@ -127,8 +127,29 @@ impl AirPlaySink {
         let session = Session { rtsp, shared: shared.clone(), volume_sent: None, name: device.name.clone(), local_ip, remote_ip };
         let (control, worker, rtsp_socket) = start_control(session)?;
         let mut sink = Self { _events: events, _ptp: ptp, shared, producer, control, worker: Some(worker), rtsp_socket, threads };
+        stop_threads.connected();
         sink.set_volume(volume);
         Ok(sink)
+    }
+}
+
+/// Stops a session's threads when dropped, unless the session got [connected]:
+/// a setup that fails halfway leaves none of them running.
+///
+/// [connected]: StopUnlessConnected::connected
+struct StopUnlessConnected(Option<Arc<Shared>>);
+
+impl StopUnlessConnected {
+    fn connected(mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for StopUnlessConnected {
+    fn drop(&mut self) {
+        if let Some(shared) = self.0.take() {
+            shared.running.store(false, Ordering::Release);
+        }
     }
 }
 
@@ -142,7 +163,7 @@ fn start_control(session: Session) -> Result<(Arc<Queue>, JoinHandle<()>, TcpStr
     let worker = transport::spawn("airplay-rtsp", move || {
         control::run(&queue, |op| session.apply(op));
         session.teardown();
-    });
+    })?;
     Ok((requests, worker, socket))
 }
 
@@ -425,7 +446,8 @@ mod tests {
         let audio_thread = transport::spawn("airplay-audio", move || {
             let _receiver = receiver;
             transport::audio_loop(out, consumer, &sh)
-        });
+        })
+        .unwrap();
         let rtsp = Rtsp::new(rtsp, "rtsp://127.0.0.1/1".into(), "test", "0".into()).unwrap();
         rtsp.set_reply_timeout(RUNTIME_REPLY_TIMEOUT);
         let session = Session { rtsp, shared: shared.clone(), volume_sent: None, name: "test".into(), local_ip, remote_ip: local_ip };

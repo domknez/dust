@@ -36,20 +36,25 @@ impl Deezer {
         };
         let with_id = |(url, format): (String, Format), song_id| StreamSource { url, format, song_id, duration: track.duration };
         // The play history keeps tracks without their token: straight to a fresh one.
-        let first_error = if song.token.is_empty() {
-            Error::Other("no stream token".into())
-        } else {
+        let mut first_error = None;
+        if !song.token.is_empty() {
             match self.media_url(&song.token, quality) {
                 Ok(found) => return Ok(with_id(found, track.id.clone())),
-                Err(e) => e,
+                Err(e) if stops_every_track(&e) => return Err(e),
+                Err(e) => first_error = Some(e),
             }
-        };
-        if let Ok(found) = self.refresh_token(&track.id).and_then(|t| self.media_url(&t, quality)) {
-            return Ok(with_id(found, track.id.clone()));
         }
-        match &song.fallback {
-            Some((id, token)) => self.media_url(token, quality).map(|found| with_id(found, TrackId::from(*id))).map_err(|_| first_error),
-            None => Err(first_error),
+        let first_error = match self.refresh_token(&track.id).and_then(|t| self.media_url(&t, quality)) {
+            Ok(found) => return Ok(with_id(found, track.id.clone())),
+            Err(e) if stops_every_track(&e) => return Err(e),
+            Err(e) => first_error.unwrap_or(e),
+        };
+        let Some((id, token)) = &song.fallback else { return Err(first_error) };
+        match self.media_url(token, quality) {
+            Ok(found) => Ok(with_id(found, TrackId::from(*id))),
+            Err(e) if stops_every_track(&e) => Err(e),
+            // Why the track itself can't play says more than why its stand-in can't.
+            Err(_) => Err(first_error),
         }
     }
 
@@ -83,7 +88,7 @@ impl Deezer {
     /// chunk. Returns the reader and the offset actually used.
     pub fn open_stream(&self, source: &StreamSource, offset: u64) -> Result<(Box<dyn Read + Send + Sync>, u64)> {
         // The song's number is its decryption key.
-        let song: u64 = source.song_id.as_str().parse().map_err(|_| Error::NotAvailable)?;
+        let song: u64 = source.song_id.as_str().parse().map_err(|_| Error::Other(format!("not a Deezer song id: {}", source.song_id)))?;
         let offset = offset - offset % CHUNK as u64;
         // No overall deadline: a track streams for minutes and may sit paused.
         // Prefetch bounds each wait for data instead.
@@ -91,7 +96,11 @@ impl Deezer {
         if offset > 0 {
             req = req.header("Range", &format!("bytes={offset}-"));
         }
-        let body = Prefetch::new(req.call().map_err(http)?.into_body().into_reader(), CALL_TIMEOUT);
+        let resp = req.call().map_err(http)?;
+        // A CDN that ignores the range sends the file from its start; decrypting it
+        // as if from `offset` would play noise.
+        let offset = if resp.status() == 206 { offset } else { 0 };
+        let body = Prefetch::new(resp.into_body().into_reader(), CALL_TIMEOUT);
         let reader = StripeReader::new(body, song, offset / CHUNK as u64);
         Ok((Box::new(reader), offset))
     }
@@ -122,6 +131,12 @@ impl Deezer {
         let url = media["sources"][0]["url"].as_str().ok_or(Error::NotAvailable)?;
         Ok((url.to_string(), format_from_api(media["format"].as_str())))
     }
+}
+
+/// Whether `e` would stop any track the same way (the session, the network, the
+/// account), so trying another token or version of this one is no use.
+fn stops_every_track(e: &Error) -> bool {
+    matches!(e, Error::SessionExpired | Error::NoStreamingLicense | Error::Network { .. })
 }
 
 /// The media service's names for `quality` and every lower one, best first.

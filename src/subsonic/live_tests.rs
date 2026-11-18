@@ -31,6 +31,7 @@ fn play_a_second(stream: &mut dyn Playback) -> f64 {
             Decoded::Audio { ends_at } => reached = ends_at,
             Decoded::Nothing => {}
             Decoded::End => break,
+            Decoded::Broken(e) => panic!("{e}"),
         }
         if out.len() >= 2 * 44_100 {
             break;

@@ -38,8 +38,11 @@ pub enum Decoded {
     Audio { ends_at: f64 },
     /// Nothing usable in this packet (other track, skipped, decode glitch).
     Nothing,
-    /// End of stream (or an unrecoverable error).
+    /// End of stream (or an error in the file itself).
     End,
+    /// The bytes stopped coming mid-track (the network dropped, a read timed out):
+    /// not the end, so the stream can be opened again where it broke off.
+    Broken(OpenError),
 }
 
 /// One track being decoded. `Send`: the player opens the next track on a worker

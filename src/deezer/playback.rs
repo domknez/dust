@@ -24,16 +24,18 @@ impl Opener for DeezerBytes {
             return Ok(Opened { bytes, base: start, skip_until: if start > 0.0 { 0.0 } else { at } });
         }
         // CBR MP3 maps time to bytes, so jump with an HTTP range; FLAC must start at 0.
-        let (offset, skip_until) = match source.format {
-            Format::Mp3(kbps) if at > 0.0 => ((at * kbps as f64 * BYTES_PER_KBPS) as u64, 0.0),
-            _ => (0, at),
+        let offset = match source.format {
+            Format::Mp3(kbps) if at > 0.0 => (at * kbps as f64 * BYTES_PER_KBPS) as u64,
+            _ => 0,
         };
         let (bytes, offset) = self.client.open_stream(source, offset)?;
         let base = match source.format {
             Format::Mp3(kbps) => offset as f64 / (kbps as f64 * BYTES_PER_KBPS),
             Format::Flac | Format::Podcast | Format::File => 0.0,
         };
-        Ok(Opened { bytes, base, skip_until })
+        // The bytes start at or before `at` (a chunk boundary, or the file's start
+        // when the range wasn't honoured): what comes before it is skipped.
+        Ok(Opened { bytes, base, skip_until: at })
     }
 }
 

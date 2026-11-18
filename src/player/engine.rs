@@ -36,6 +36,15 @@ const MAX_OPEN_FAILURES: usize = 3;
 /// Start opening the next track when the current one has this long (s) left to
 /// decode.
 const PRELOAD_BEFORE: f64 = 10.0;
+/// Most samples handed to the sink at once (about 46 ms of stereo): sinks take a
+/// write whole or not at all, so a packet bigger than their buffer (a FLAC block
+/// of 16384 frames) goes in parts.
+const WRITE_CHUNK: usize = 4096;
+/// How long to wait for the sink to make room, and for a preload to finish.
+const ROOM_WAIT: Duration = Duration::from_millis(10);
+const PRELOAD_WAIT: Duration = Duration::from_millis(5);
+/// How long to wait for the sink to play out the end of a track.
+const DRAIN_WAIT: Duration = Duration::from_millis(20);
 
 /// Builds the audio output for an [`Output`] at a volume: [`output::open`] in the
 /// app, fakes in tests.
@@ -92,6 +101,9 @@ pub struct Engine {
     /// The current track waiting for play (a restored queue, or one stopped by a
     /// network error): the position to start it at.
     restored_at: Option<f64>,
+    /// Where the stream last broke off mid-track and was opened again: breaking off
+    /// there once more stops playback instead of retrying forever.
+    broken_at: Option<f64>,
     /// Last automatic reconnect of a lost output (rate limit).
     last_recover: Option<Instant>,
     /// Held while playing so the OS doesn't throttle dust.
@@ -131,6 +143,7 @@ impl Engine {
             last_publish: Instant::now(),
             alive: true,
             restored_at: None,
+            broken_at: None,
             last_recover: None,
             awake: None,
         }
@@ -443,6 +456,7 @@ impl Engine {
 
     fn begin(&mut self, stream: Box<dyn Playback>, track: &Track) {
         self.stream = Some(stream);
+        self.broken_at = None;
         self.start_listen(track);
     }
 
@@ -537,6 +551,7 @@ impl Engine {
         // The new track's listen starts when it's heard (see `settle_handoff`).
         self.end_handoff();
         self.stream = Some(playback);
+        self.broken_at = None;
         self.handoff = Some(Handoff { track: previous, index, ended_at, starts_at, next });
         true
     }
@@ -697,8 +712,7 @@ impl Engine {
             match stream.reopen(t) {
                 Ok(reopened) => self.stream = Some(reopened),
                 Err(OpenError::Transient(e)) => {
-                    let track = self.queue.current().map_or_else(String::new, |t| format!("{} – {}: ", t.artist, t.title));
-                    self.error(format!("{track}{e}"));
+                    self.track_error(e);
                     self.halt(t);
                     return;
                 }
@@ -754,17 +768,45 @@ impl Engine {
         match stream.decode_next(&mut self.pending) {
             Decoded::Audio { ends_at } => self.pending_end = ends_at,
             Decoded::Nothing | Decoded::End => {}
+            Decoded::Broken(why) => self.resume_broken(why),
+        }
+    }
+
+    /// The stream broke off mid-track: open it again where the audio handed to the
+    /// sink ends, so it plays on without a gap. Breaking off at the same place again
+    /// (or not opening) stops there, with play trying again from it.
+    fn resume_broken(&mut self, why: OpenError) {
+        let Some(stream) = self.stream.as_ref() else { return };
+        let at = stream.written();
+        if self.broken_at == Some(at) {
+            self.track_error(why);
+            self.halt(at);
+            return;
+        }
+        log_warn!("stream broke off at {at:.1} s ({why}); opening it again");
+        self.broken_at = Some(at);
+        match stream.reopen(at) {
+            Ok(reopened) => self.stream = Some(reopened),
+            Err(OpenError::Transient(e)) => {
+                self.track_error(e);
+                self.halt(at);
+            }
+            // The stream's URL may have expired; resolve it again.
+            Err(OpenError::Unavailable(_)) => self.start_track(at),
         }
     }
 
     /// Hand the decoded samples to the sink, or wait a moment for room.
     fn feed(&mut self) {
         let (Some(sink), Some(stream)) = (self.sink.as_mut(), self.stream.as_mut()) else { return };
-        if sink.write(&self.pending) > 0 {
+        let part = self.pending.len().min(WRITE_CHUNK);
+        if sink.write(&self.pending[..part]) == 0 {
+            self.wait(ROOM_WAIT);
+            return;
+        }
+        self.pending.drain(..part);
+        if self.pending.is_empty() {
             stream.set_written(self.pending_end);
-            self.pending.clear();
-        } else {
-            self.wait(Duration::from_millis(10));
         }
     }
 
@@ -778,7 +820,7 @@ impl Engine {
                 return;
             }
             if self.preload.as_ref().is_some_and(Preload::is_pending) {
-                self.wait(Duration::from_millis(5));
+                self.wait(PRELOAD_WAIT);
                 return;
             }
         }
@@ -786,7 +828,7 @@ impl Engine {
             self.continue_after_end();
             self.publish(true);
         } else {
-            self.wait(Duration::from_millis(20));
+            self.wait(DRAIN_WAIT);
         }
     }
 
@@ -859,6 +901,12 @@ impl Engine {
         }
     }
 
+    /// `e`, about the current track.
+    fn track_error(&mut self, e: impl std::fmt::Display) {
+        let track = self.queue.current().map_or_else(String::new, |t| format!("{} – {}: ", t.artist, t.title));
+        self.error(format!("{track}{e}"));
+    }
+
     fn error(&mut self, e: String) {
         log_error!("{e}");
         self.status.lock().unwrap().error = Some(e);
@@ -903,6 +951,8 @@ mod tests {
         next_flow_id: Mutex<u64>,
         /// Every track opened (in the order asked), on the player thread or a preload.
         opened: Mutex<Vec<u64>>,
+        /// A track whose stream breaks off at a second: once, or every time.
+        breaks: Option<(u64, f64, Breaks)>,
         started: Mutex<Vec<u64>>,
         listens: Mutex<Vec<Listen>>,
     }
@@ -916,7 +966,8 @@ mod tests {
             if self.unplayable.contains(&n(&track.id)) {
                 return Err(OpenError::Unavailable("not available".into()));
             }
-            Ok(Box::new(FakePlayback { id: track.id.clone(), secs: track.duration as f64, written: at, done: false }))
+            let breaks = self.breaks.filter(|(id, ..)| *id == n(&track.id)).map(|(_, at, how)| (at, how));
+            Ok(Box::new(FakePlayback { id: track.id.clone(), secs: track.duration as f64, written: at, done: false, breaks }))
         }
 
         fn flow(&self, _: Option<&str>) -> Result<Vec<Track>, String> {
@@ -935,11 +986,19 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy, PartialEq)]
+    enum Breaks {
+        Once,
+        Always,
+    }
+
     struct FakePlayback {
         id: TrackId,
         secs: f64,
         written: f64,
         done: bool,
+        /// Where the bytes stop coming, and whether opened again they do again.
+        breaks: Option<(f64, Breaks)>,
     }
 
     impl Playback for FakePlayback {
@@ -959,6 +1018,9 @@ mod tests {
             self.done
         }
         fn decode_next(&mut self, out: &mut Vec<i16>) -> Decoded {
+            if self.breaks.is_some_and(|(at, _)| self.written >= at) {
+                return Decoded::Broken(OpenError::Transient("connection reset".into()));
+            }
             if self.written >= self.secs {
                 self.done = true;
                 return Decoded::End;
@@ -973,7 +1035,8 @@ mod tests {
             self.written = t;
         }
         fn reopen(&self, at: f64) -> Result<Box<dyn Playback>, OpenError> {
-            Ok(Box::new(FakePlayback { id: self.id.clone(), secs: self.secs, written: at, done: false }))
+            let breaks = self.breaks.filter(|(_, how)| *how == Breaks::Always);
+            Ok(Box::new(FakePlayback { id: self.id.clone(), secs: self.secs, written: at, done: false, breaks }))
         }
     }
 
@@ -1510,6 +1573,70 @@ mod tests {
         let played = std::mem::take(&mut e.status.lock().unwrap().played);
         let shape: Vec<_> = played.iter().map(|p| (n(&p.track.id), p.heard_secs, p.skipped, p.flow.is_some())).collect();
         assert_eq!(shape, [(1, 10, true, false), (3, 40, false, false)], "2 wasn't heard; 3 was heard past half");
+    }
+
+    #[test]
+    fn a_stream_that_breaks_off_plays_on_from_there() {
+        let (mut e, library, _tx) = engine(FakeLibrary { breaks: Some((1, 2.0, Breaks::Once)), ..Default::default() });
+        e.handle(Cmd::Play(vec![track(1, 5), track(2, 3)], 0));
+        e.listens.heard(Duration::from_secs(5));
+        play_out(&mut e);
+        let played = std::mem::take(&mut e.status.lock().unwrap().played);
+        assert_eq!(played.iter().map(|p| (n(&p.track.id), p.skipped)).collect::<Vec<_>>(), [(1, false)], "heard to the end");
+        assert_eq!(*library.opened.lock().unwrap(), [1, 2], "then the next one, as usual");
+        assert_eq!(e.status.lock().unwrap().error, None);
+    }
+
+    #[test]
+    fn a_stream_that_keeps_breaking_off_stops_there() {
+        let (mut e, _library, _tx) = engine(FakeLibrary { breaks: Some((1, 2.0, Breaks::Always)), ..Default::default() });
+        e.handle(Cmd::Play(vec![track(1, 5), track(2, 3)], 0));
+        play_out(&mut e);
+        assert_eq!(e.restored_at, Some(2.0), "waiting where it broke off, not on the next track");
+        assert_eq!(e.queue.index(), 0);
+        assert!(e.status.lock().unwrap().error.as_deref().is_some_and(|m| m.contains("connection reset")));
+    }
+
+    /// Takes writes of up to `WRITE_CHUNK` samples: a small buffer.
+    struct SmallSink(Arc<Mutex<usize>>);
+
+    impl Sink for SmallSink {
+        fn write(&mut self, samples: &[i16]) -> usize {
+            if samples.len() > WRITE_CHUNK {
+                return 0;
+            }
+            *self.0.lock().unwrap() += samples.len();
+            samples.len()
+        }
+        fn pending_frames(&self) -> usize {
+            0
+        }
+        fn latency_frames(&self) -> usize {
+            0
+        }
+        fn pause(&mut self) {}
+        fn resume(&mut self) {}
+        fn flush(&mut self) {}
+        fn set_volume(&mut self, _: f32) {}
+    }
+
+    #[test]
+    fn a_packet_bigger_than_the_sink_goes_in_parts() {
+        let taken = Arc::new(Mutex::new(0));
+        let sink = taken.clone();
+        let (_tx, rx) = channel();
+        let factory: SinkFactory = Box::new(move |_, _| Ok(Box::new(SmallSink(sink.clone())) as _));
+        let mut e = with_outputs(rx, Arc::new(Mutex::new(Status::default())), 0.5, factory);
+        e.library = Some(Arc::new(FakeLibrary::default()));
+        e.handle(Cmd::Play(vec![track(1, 60)], 0));
+        *taken.lock().unwrap() = 0;
+        e.pending = vec![0; 3 * WRITE_CHUNK + 2];
+        e.pending_end = 1.0;
+        for _ in 0..4 {
+            e.feed();
+        }
+        assert_eq!(*taken.lock().unwrap(), 3 * WRITE_CHUNK + 2, "all of it, in four writes");
+        assert_eq!(e.stream.as_ref().map(|s| s.written()), Some(1.0), "and only then counted as written");
     }
 
     #[test]

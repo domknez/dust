@@ -1,10 +1,12 @@
 //! DACP remote-control server. AirPlay receivers send their hardware button presses
 //! (volume, play/pause, skip) back to the sender: they look up
 //! `iTunes_Ctrl_<DACP-ID>._dacp._tcp` via mDNS and issue plain HTTP requests such as
-//! `GET /ctrl-int/1/setproperty?dmcp.device-volume=-12.5`.
+//! `GET /ctrl-int/1/setproperty?dmcp.device-volume=-12.5`. Each request carries
+//! the `Active-Remote` id we gave that receiver's session; others are refused, so
+//! another computer on the network can't drive the player.
 
 use mdns_sd::{IfKind, ServiceDaemon, ServiceInfo};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
@@ -14,6 +16,42 @@ pub fn id() -> &'static str {
     static ID: OnceLock<String> = OnceLock::new();
     ID.get_or_init(|| format!("{:016X}", fastrand::u64(..)))
 }
+
+/// The `Active-Remote` id of a live AirPlay session: requests with it are taken
+/// while it's kept, none after it's dropped.
+pub struct ActiveRemote(String);
+
+static ACTIVE_REMOTES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+impl ActiveRemote {
+    pub fn new() -> Self {
+        let id = fastrand::u32(..).to_string();
+        ACTIVE_REMOTES.lock().unwrap_or_else(|e| e.into_inner()).push(id.clone());
+        ActiveRemote(id)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Drop for ActiveRemote {
+    fn drop(&mut self) {
+        ACTIVE_REMOTES.lock().unwrap_or_else(|e| e.into_inner()).retain(|id| *id != self.0);
+    }
+}
+
+fn is_active(id: &str) -> bool {
+    ACTIVE_REMOTES.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|a| a == id)
+}
+
+/// How long a receiver's connection may sit idle, and the most taken of one line
+/// and of a request's headers.
+const IDLE: Duration = Duration::from_secs(600);
+const MAX_LINE: u64 = 8 * 1024;
+const MAX_HEADERS: usize = 64;
+/// Volume change of one press of a receiver's volume button.
+const VOLUME_STEP: f32 = 1.0 / 16.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Remote {
@@ -35,8 +73,8 @@ fn parse(path: &str) -> Option<Remote> {
             let db = query.split('&').find_map(|kv| kv.strip_prefix("dmcp.device-volume="))?.parse::<f32>().ok()?;
             Remote::Volume(super::volume::from_db(db))
         }
-        "volumeup" => Remote::VolumeStep(1.0 / 16.0),
-        "volumedown" => Remote::VolumeStep(-1.0 / 16.0),
+        "volumeup" => Remote::VolumeStep(VOLUME_STEP),
+        "volumedown" => Remote::VolumeStep(-VOLUME_STEP),
         "playpause" => Remote::PlayPause,
         "play" | "playresume" => Remote::Play,
         "pause" | "stop" => Remote::Pause,
@@ -142,32 +180,54 @@ pub fn start(on_command: impl Fn(Remote) + Send + 'static) -> Result<Server, Str
 }
 
 fn handle(stream: TcpStream) {
-    stream.set_read_timeout(Some(Duration::from_secs(600))).ok();
+    stream.set_read_timeout(Some(IDLE)).ok();
     let Ok(read) = stream.try_clone() else { return };
     let mut reader = BufReader::new(read);
     let mut writer = stream;
     // Keep-alive: receivers may send several requests on one connection.
-    loop {
-        let mut request = String::new();
-        if reader.read_line(&mut request).unwrap_or(0) == 0 {
-            return;
-        }
-        let mut line = String::new();
-        while reader.read_line(&mut line).unwrap_or(0) > 0 && !line.trim_end().is_empty() {
-            line.clear();
-        }
-        let path = request.split_whitespace().nth(1).unwrap_or("");
-        let command = parse(path);
-        log_debug!("dacp: {path} -> {command:?}");
-        if let Some(c) = command {
-            deliver(c);
-        }
-        let status = if command.is_some() { "204 No Content" } else { "404 Not Found" };
+    while let Some((path, remote)) = read_request(&mut reader) {
+        let command = parse(&path);
+        let allowed = remote.as_deref().is_some_and(is_active);
+        log_debug!("dacp: {path} -> {command:?}{}", if allowed { "" } else { " (no live session: refused)" });
+        let status = match command {
+            Some(c) if allowed => {
+                deliver(c);
+                "204 No Content"
+            }
+            Some(_) => "403 Forbidden",
+            None => "404 Not Found",
+        };
         let resp = format!("HTTP/1.1 {status}\r\nDAAP-Server: dust\r\nContent-Length: 0\r\n\r\n");
         if writer.write_all(resp.as_bytes()).is_err() {
             return;
         }
     }
+}
+
+/// The next request's path and `Active-Remote` header; None once the connection
+/// closes or sends more than a request may hold.
+fn read_request(reader: &mut impl BufRead) -> Option<(String, Option<String>)> {
+    let mut line = String::new();
+    let mut read_line = |line: &mut String| {
+        line.clear();
+        reader.take(MAX_LINE).read_line(line).ok().filter(|&n| n > 0 && line.ends_with('\n')).map(|_| ())
+    };
+    read_line(&mut line)?;
+    let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
+    let mut remote = None;
+    for _ in 0..=MAX_HEADERS {
+        read_line(&mut line)?;
+        let header = line.trim_end();
+        if header.is_empty() {
+            return Some((path, remote));
+        }
+        if let Some((k, v)) = header.split_once(':')
+            && k.trim().eq_ignore_ascii_case("Active-Remote")
+        {
+            remote = Some(v.trim().to_string());
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -182,5 +242,20 @@ mod tests {
         assert_eq!(parse("/ctrl-int/1/nextitem"), Some(Remote::Next));
         assert_eq!(parse("/ctrl-int/1/playpause"), Some(Remote::PlayPause));
         assert_eq!(parse("/login"), None);
+    }
+
+    #[test]
+    fn only_live_sessions_are_heard() {
+        let request = |remote: &str| format!("GET /ctrl-int/1/nextitem HTTP/1.1\r\nHost: x\r\nActive-Remote: {remote}\r\n\r\n");
+        let session = ActiveRemote::new();
+        let read = |text: String| read_request(&mut std::io::Cursor::new(text.into_bytes()));
+        let (path, remote) = read(request(session.as_str())).unwrap();
+        assert_eq!(path, "/ctrl-int/1/nextitem");
+        assert!(remote.as_deref().is_some_and(is_active));
+        let id = session.as_str().to_string();
+        drop(session);
+        assert!(!is_active(&id), "gone with its session");
+        let headers = "X: y\r\n".repeat(MAX_HEADERS + 1);
+        assert_eq!(read(format!("GET / HTTP/1.1\r\n{headers}\r\n")), None, "too many headers");
     }
 }

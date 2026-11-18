@@ -12,6 +12,20 @@
 - Back and Forward skip pages turned off in Settings since
 - Playlists: edits made one after another each report back; an expired session
   while editing a playlist or a like goes to the login screen
+- Playback: a network drop mid-track picks the track up where it broke off
+  instead of skipping to the next; unplugged headphones or a USB DAC switch to
+  the output that's there now instead of stalling; files with very large audio
+  blocks no longer stall; a restored queue with an unreadable track in it starts
+  on the right track
+- Deezer: seeking on a CDN that ignores the requested range no longer plays
+  noise; an expired session or a dropped network while starting a track says
+  so instead of "isn't available in your region"
+- Navidrome / Subsonic: synced lyrics with an offset are timed the right way;
+  plain lyrics are still found when the server's synced lyrics lookup fails
+- AirPlay: speaker remote commands are taken only from a speaker dust is
+  playing to; replies from a speaker are size-checked; a volume of exactly 0
+  reported by a speaker is no longer taken as full volume; a setup that fails
+  halfway leaves no threads behind
 
 ## 0.31.1 (2026-11-18)
 

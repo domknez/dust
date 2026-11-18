@@ -4,6 +4,12 @@ use super::ap2::pairing::{DecryptReader, Encryptor, hkdf32};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 
+/// Longest reply line, and most headers and body bytes, taken from a receiver: far
+/// above what one sends (small plists), well below what could exhaust memory.
+const MAX_LINE: u64 = 8 * 1024;
+const MAX_HEADERS: usize = 64;
+const MAX_BODY: usize = 1024 * 1024;
+
 pub struct Rtsp {
     writer: TcpStream,
     /// Set once AirPlay 2 pairing completes; everything after is encrypted.
@@ -16,7 +22,7 @@ pub struct Rtsp {
     session: Option<String>,
     /// DACP id (shared with the remote-control server) and per-session remote id.
     dacp_id: String,
-    active_remote: String,
+    active_remote: super::dacp::ActiveRemote,
 }
 
 pub struct Response {
@@ -41,7 +47,7 @@ impl Rtsp {
             url,
             session: None,
             dacp_id,
-            active_remote: fastrand::u32(..).to_string(),
+            active_remote: super::dacp::ActiveRemote::new(),
         })
     }
 
@@ -83,7 +89,7 @@ impl Rtsp {
             self.user_agent,
             self.dacp_id,
             self.dacp_id,
-            self.active_remote
+            self.active_remote.as_str()
         );
         if let Some(s) = &self.session {
             req += &format!("Session: {s}\r\n");
@@ -113,28 +119,46 @@ impl Rtsp {
     }
 
     fn read_response(&mut self) -> Result<(u16, Response), String> {
-        let mut line = String::new();
-        self.reader.read_line(&mut line).map_err(|e| e.to_string())?;
-        let status = line.split_whitespace().nth(1).and_then(|s| s.parse().ok()).ok_or_else(|| format!("bad response {line:?}"))?;
-        let mut headers = Vec::new();
-        loop {
-            line.clear();
-            self.reader.read_line(&mut line).map_err(|e| e.to_string())?;
-            let l = line.trim_end();
-            if l.is_empty() {
-                break;
-            }
-            if let Some((k, v)) = l.split_once(':') {
-                headers.push((k.trim().to_string(), v.trim().to_string()));
-            }
-        }
-        let mut resp = Response { headers, body: Vec::new() };
-        if let Some(len) = resp.header("Content-Length").and_then(|l| l.parse::<usize>().ok()) {
-            resp.body = vec![0; len];
-            self.reader.read_exact(&mut resp.body).map_err(|e| e.to_string())?;
-        }
-        Ok((status, resp))
+        read_response(&mut self.reader)
     }
+}
+
+/// One reply from `reader`: its status, headers and body, within the limits above.
+fn read_response(reader: &mut impl BufRead) -> Result<(u16, Response), String> {
+    let mut read_line = |line: &mut String| {
+        line.clear();
+        reader.take(MAX_LINE).read_line(line).map_err(|e| e.to_string())?;
+        if !line.ends_with('\n') {
+            return Err(format!("reply line cut off or over {MAX_LINE} bytes"));
+        }
+        Ok(())
+    };
+    let mut line = String::new();
+    read_line(&mut line)?;
+    let status = line.split_whitespace().nth(1).and_then(|s| s.parse().ok()).ok_or_else(|| format!("bad response {line:?}"))?;
+    let mut headers = Vec::new();
+    loop {
+        read_line(&mut line)?;
+        let l = line.trim_end();
+        if l.is_empty() {
+            break;
+        }
+        if headers.len() == MAX_HEADERS {
+            return Err(format!("reply has over {MAX_HEADERS} headers"));
+        }
+        if let Some((k, v)) = l.split_once(':') {
+            headers.push((k.trim().to_string(), v.trim().to_string()));
+        }
+    }
+    let mut resp = Response { headers, body: Vec::new() };
+    if let Some(len) = resp.header("Content-Length").and_then(|l| l.parse::<usize>().ok()) {
+        if len > MAX_BODY {
+            return Err(format!("reply body of {len} bytes is over {MAX_BODY}"));
+        }
+        resp.body = vec![0; len];
+        reader.read_exact(&mut resp.body).map_err(|e| e.to_string())?;
+    }
+    Ok((status, resp))
 }
 
 /// A numeric parameter of an RTSP `Transport` header, e.g. `server_port`.
@@ -145,6 +169,22 @@ pub fn transport_param(t: &str, key: &str) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn reply(text: &[u8]) -> Result<(u16, Response), String> {
+        read_response(&mut std::io::Cursor::new(text.to_vec()))
+    }
+
+    #[test]
+    fn replies_are_read_within_bounds() {
+        let (status, resp) = reply(b"RTSP/1.0 200 OK\r\nCSeq: 2\r\nContent-Length: 2\r\n\r\nhi").unwrap();
+        assert_eq!((status, resp.header("cseq"), resp.body.as_slice()), (200, Some("2"), &b"hi"[..]));
+        assert!(reply(b"RTSP/1.0 200 OK\r\nContent-Length: 999999999999\r\n\r\n").is_err(), "no giant buffer");
+        let long = [b"RTSP/1.0 200 OK\r\nX: ".as_slice(), &vec![b'a'; MAX_LINE as usize], b"\r\n\r\n"].concat();
+        assert!(reply(&long).is_err(), "no endless line");
+        let many = [b"RTSP/1.0 200 OK\r\n".as_slice(), &b"X: y\r\n".repeat(MAX_HEADERS + 1), b"\r\n"].concat();
+        assert!(reply(&many).is_err());
+        assert!(reply(b"RTSP/1.0 200 OK\r\nCSeq: 2").is_err(), "cut off");
+    }
 
     #[test]
     fn transport_parse() {

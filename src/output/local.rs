@@ -13,6 +13,9 @@ struct Shared {
     paused: AtomicBool,
     /// Set by the sink to drop what is queued; cleared by the callback once it has.
     flush: AtomicBool,
+    /// Set when the device reported an error (unplugged, gone): the callback no
+    /// longer runs, so the player sets the output up again.
+    failed: AtomicBool,
 }
 
 /// The sink's end of the ring buffer.
@@ -30,8 +33,12 @@ struct Drain {
 /// A ring buffer of `samples` interleaved stereo samples, both ends.
 fn ring(samples: usize, volume: f32) -> (Feed, Drain) {
     let (producer, consumer) = rtrb::RingBuffer::new(samples);
-    let shared =
-        Arc::new(Shared { volume: AtomicU32::new(volume.to_bits()), paused: AtomicBool::new(false), flush: AtomicBool::new(false) });
+    let shared = Arc::new(Shared {
+        volume: AtomicU32::new(volume.to_bits()),
+        paused: AtomicBool::new(false),
+        flush: AtomicBool::new(false),
+        failed: AtomicBool::new(false),
+    });
     (Feed { producer, shared: shared.clone() }, Drain { consumer, shared })
 }
 
@@ -138,9 +145,20 @@ fn build<T: SizedSample + FromSample<f32>>(
     channels: usize,
     mut drain: Drain,
 ) -> Result<cpal::Stream, String> {
-    device
-        .build_output_stream(config, move |out: &mut [T], _| drain.fill(out, channels), |e| log_error!("audio stream: {e}"), None)
-        .map_err(|e| e.to_string())
+    let shared = drain.shared.clone();
+    let failed = move |e: cpal::Error| {
+        log_error!("audio stream: {e}");
+        if stops_the_stream(e.kind()) {
+            shared.failed.store(true, Ordering::Relaxed);
+        }
+    };
+    device.build_output_stream(config, move |out: &mut [T], _| drain.fill(out, channels), failed, None).map_err(|e| e.to_string())
+}
+
+/// Whether the device stopped playing for good after reporting `kind`; the stream
+/// plays on after a glitch, a refused priority or a reroute to the new default.
+fn stops_the_stream(kind: cpal::ErrorKind) -> bool {
+    !matches!(kind, cpal::ErrorKind::Xrun | cpal::ErrorKind::RealtimeDenied | cpal::ErrorKind::DeviceChanged)
 }
 
 impl Sink for LocalSink {
@@ -192,6 +210,10 @@ impl Sink for LocalSink {
     fn set_volume(&mut self, volume: f32) {
         self.feed.shared.volume.store(volume.to_bits(), Ordering::Relaxed);
     }
+
+    fn healthy(&self) -> bool {
+        !self.feed.shared.failed.load(Ordering::Relaxed)
+    }
 }
 
 #[cfg(test)]
@@ -203,6 +225,14 @@ mod tests {
         let mut out = vec![9.0; frames * 2];
         drain.fill(&mut out, 2);
         out
+    }
+
+    #[test]
+    fn an_unplugged_device_stops_the_stream_and_a_glitch_does_not() {
+        assert!(stops_the_stream(cpal::ErrorKind::DeviceNotAvailable));
+        assert!(stops_the_stream(cpal::ErrorKind::StreamInvalidated));
+        assert!(!stops_the_stream(cpal::ErrorKind::Xrun));
+        assert!(!stops_the_stream(cpal::ErrorKind::DeviceChanged));
     }
 
     #[test]

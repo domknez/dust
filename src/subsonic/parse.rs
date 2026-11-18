@@ -197,9 +197,11 @@ pub fn discography(artist: &Value) -> Vec<Section> {
 pub fn structured_lyrics(r: &Value) -> Option<Lyrics> {
     let all = list(&r["lyricsList"], "structuredLyrics");
     let best = all.iter().find(|l| l["synced"] == true).or_else(|| all.first())?;
+    // OpenSubsonic: a positive offset shows the lines sooner.
     let offset = best["offset"].as_i64().unwrap_or(0);
+    let at = |ms: i64| u32::try_from(ms.saturating_sub(offset).max(0)).unwrap_or(u32::MAX);
     let lines: Vec<(Option<u32>, String)> =
-        list(best, "line").into_iter().map(|l| (l["start"].as_i64().map(|ms| (ms + offset).max(0) as u32), text(&l["value"]))).collect();
+        list(best, "line").into_iter().map(|l| (l["start"].as_i64().map(at), text(&l["value"]))).collect();
     let synced = if best["synced"] == true {
         lines.iter().filter_map(|(at, line)| Some(LyricLine { at_ms: (*at)?, text: line.clone() })).collect()
     } else {
@@ -351,7 +353,11 @@ mod tests {
             {"lang": "eng", "synced": true, "offset": -100, "line": [{"start": 1000, "value": "First"}, {"start": 3500, "value": "Second"}]}
         ]}});
         let l = structured_lyrics(&r).unwrap();
-        assert_eq!(l.synced.iter().map(|x| (x.at_ms, x.text.as_str())).collect::<Vec<_>>(), [(900, "First"), (3400, "Second")]);
+        assert_eq!(
+            l.synced.iter().map(|x| (x.at_ms, x.text.as_str())).collect::<Vec<_>>(),
+            [(1100, "First"), (3600, "Second")],
+            "a negative offset shows them later"
+        );
         assert_eq!(l.plain, ["First", "Second"]);
         assert_eq!(structured_lyrics(&json!({"lyricsList": {}})), None);
         let plain = plain_lyrics(&json!({"lyrics": {"artist": "A", "title": "T", "value": "La la\nLa"}})).unwrap();

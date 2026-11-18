@@ -61,7 +61,7 @@ impl QueueFiles {
 
     pub fn load(&self, source: SourceId) -> Option<Saved> {
         let text = std::fs::read_to_string(self.path(source)?).ok()?;
-        let saved = decode(&serde_json::from_str(&text).ok()?);
+        let saved = serde_json::from_str(&text).ok().and_then(|v| decode(&v));
         if saved.is_none() {
             log_warn!("ignoring an unreadable saved queue");
         }
@@ -83,13 +83,23 @@ fn decode(v: &Value) -> Option<Saved> {
     if v["version"].as_u64()? != VERSION {
         return None;
     }
-    let tracks: Vec<Track> = v["tracks"].as_array()?.iter().filter_map(decode_track).collect();
-    let index = v["index"].as_u64()? as usize;
-    if index >= tracks.len() {
-        return None;
+    let saved_index = usize::try_from(v["index"].as_u64()?).ok()?;
+    // Tracks that can't be read are left out; the current one stays current, or
+    // the next one that can be read (else the last) starts from its beginning.
+    let saved_tracks = v["tracks"].as_array().filter(|t| saved_index < t.len())?;
+    let (mut tracks, mut index, mut current_kept) = (Vec::new(), None, false);
+    for (i, track) in saved_tracks.iter().enumerate() {
+        let Some(track) = decode_track(track) else { continue };
+        if i >= saved_index && index.is_none() {
+            index = Some(tracks.len());
+            current_kept = i == saved_index;
+        }
+        tracks.push(track);
     }
+    let position = if current_kept { v["position"].as_f64().unwrap_or(0.0).max(0.0) } else { 0.0 };
     let flow = v["flow"].as_object().map(|f| Flow { mood: f.get("mood").and_then(Value::as_str).map(str::to_string) });
-    Some(Saved { tracks, index, position: v["position"].as_f64().unwrap_or(0.0).max(0.0), flow })
+    let index = index.or(tracks.len().checked_sub(1))?;
+    Some(Saved { tracks, index, position, flow })
 }
 
 /// A track as saved: every source's fields side by side, empty or null for the
@@ -217,6 +227,20 @@ mod tests {
         assert_eq!(decode(&encode(&status(Some(plain.clone())))).unwrap().flow, Some(plain));
         let chill = Flow { mood: Some("chill".into()) };
         assert_eq!(decode(&encode(&status(Some(chill.clone())))).unwrap().flow, Some(chill));
+    }
+
+    #[test]
+    fn an_unreadable_track_before_the_current_one_keeps_it_current() {
+        let mut saved =
+            encode(&Status { queue: Arc::new(vec![track(1), track(2), track(3)]), index: 2, position: 42.5, ..Default::default() });
+        saved["tracks"][0] = json!("not a track");
+        let back = decode(&saved).unwrap();
+        assert_eq!((back.tracks, back.index, back.position), (vec![track(2), track(3)], 1, 42.5), "still track 3, where it was");
+        saved["tracks"][2] = json!("not a track");
+        let back = decode(&saved).unwrap();
+        assert_eq!((back.tracks, back.index, back.position), (vec![track(2)], 0, 0.0), "the last one left, from its start");
+        saved["tracks"][1] = json!("not a track");
+        assert_eq!(decode(&saved), None, "nothing left to play");
     }
 
     #[test]

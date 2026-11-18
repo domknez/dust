@@ -90,8 +90,9 @@ impl Shared {
     }
 }
 
-pub fn spawn(name: &str, f: impl FnOnce() + Send + 'static) -> JoinHandle<()> {
-    std::thread::Builder::new().name(name.into()).spawn(f).expect("spawn thread")
+/// Start a session thread named `name`; the OS may refuse one (out of threads).
+pub fn spawn(name: &str, f: impl FnOnce() + Send + 'static) -> Result<JoinHandle<()>, String> {
+    std::thread::Builder::new().name(name.into()).spawn(f).map_err(|e| format!("{name} thread: {e}"))
 }
 
 /// Answer the receiver's NTP timing requests.

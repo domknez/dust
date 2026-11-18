@@ -247,9 +247,15 @@ impl Subsonic {
     pub fn lyrics(&self, song: &TrackId) -> Result<Option<Lyrics>> {
         let id = song.as_str();
         if self.0.song_lyrics.load(std::sync::atomic::Ordering::Relaxed) {
-            let r = self.call("getLyricsBySongId", &[("id", id)])?;
-            if let Some(lyrics) = parse::structured_lyrics(&r) {
-                return Ok(Some(lyrics));
+            match self.call("getLyricsBySongId", &[("id", id)]) {
+                Ok(r) => {
+                    if let Some(lyrics) = parse::structured_lyrics(&r) {
+                        return Ok(Some(lyrics));
+                    }
+                }
+                Err(e) if e.is_session_expired() => return Err(e),
+                // The classic lookup may still find them.
+                Err(e) => log_warn!("getLyricsBySongId: {e}"),
             }
         }
         let r = self.call("getSong", &[("id", id)])?;

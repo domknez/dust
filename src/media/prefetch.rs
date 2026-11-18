@@ -19,6 +19,9 @@ pub struct Prefetch {
     pos: usize,
     stall: Duration,
     done: bool,
+    /// The reading thread couldn't start: the first read fails with this, rather
+    /// than the track seeming to end at once.
+    failed: Option<io::Error>,
 }
 
 impl Prefetch {
@@ -44,15 +47,16 @@ impl Prefetch {
                 }
             }
         });
-        if let Err(e) = spawned {
-            log_warn!("stream prefetch thread: {e}");
-        }
-        Self { blocks: Mutex::new(blocks), current: Vec::new(), pos: 0, stall, done: false }
+        let failed = spawned.err().map(|e| io::Error::other(format!("stream prefetch thread: {e}")));
+        Self { blocks: Mutex::new(blocks), current: Vec::new(), pos: 0, stall, done: false, failed }
     }
 }
 
 impl Read for Prefetch {
     fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        if let Some(e) = self.failed.take() {
+            return Err(e);
+        }
         while self.pos == self.current.len() {
             if self.done {
                 return Ok(0);

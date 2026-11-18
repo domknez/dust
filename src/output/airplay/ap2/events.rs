@@ -128,8 +128,13 @@ fn handle(request: &[u8]) -> String {
 /// A volume or transport change the receiver reports, if this message is one.
 fn remote_command(plist: &Value) -> Option<Remote> {
     if let Some(volume) = find(plist, "volume").and_then(number) {
-        // dB (-144 / -30..0) like DACP, or already a 0..1 fraction.
-        return Some(if volume <= 0.0 { Remote::Volume(volume::from_db(volume as f32)) } else { Remote::Volume((volume as f32).min(1.0)) });
+        // dB (-144 mute, -30..0) like DACP, or already a 0..1 fraction. Exactly 0 is
+        // either full (dB) or silent (a fraction): left alone rather than guessed.
+        return match volume {
+            v if v < 0.0 => Some(Remote::Volume(volume::from_db(v as f32))),
+            v if v > 0.0 => Some(Remote::Volume((v as f32).min(1.0))),
+            _ => None,
+        };
     }
     let command = find(plist, "command").or_else(|| find(plist, "mediaRemoteCommand")).and_then(number)?;
     // MediaRemote command ids: 0 play, 1 pause, 2 toggle, 4 next, 5 previous.
@@ -177,6 +182,8 @@ mod tests {
         let v = dict([("type", Value::String("x".into())), ("params", dict([("volume", Value::Real(-15.0))]))]);
         assert_eq!(remote_command(&v), Some(Remote::Volume(0.5)));
         assert_eq!(remote_command(&dict([("volume", Value::Real(0.25))])), Some(Remote::Volume(0.25)));
+        assert_eq!(remote_command(&dict([("volume", Value::Real(-144.0))])), Some(Remote::Volume(0.0)), "muted");
+        assert_eq!(remote_command(&dict([("volume", Value::Real(0.0))])), None, "full or silent: can't tell");
         assert_eq!(remote_command(&dict([("command", Value::Int(4))])), Some(Remote::Next));
         assert_eq!(remote_command(&dict([("type", Value::String("updateMRSupportedCommands".into()))])), None);
     }

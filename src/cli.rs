@@ -339,6 +339,10 @@ fn debug_decode(client: &Deezer, playlist: u64, quality: Quality, start: f64) {
                 }
                 Decoded::Nothing => {}
                 Decoded::End => break,
+                Decoded::Broken(e) => {
+                    println!("{} – {}: {e}", track.artist, track.title);
+                    break;
+                }
             }
         }
         let peak = samples.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);

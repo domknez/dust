@@ -6,9 +6,9 @@ use super::ap2::pairing::{self, SrpClient, tlv};
 use super::ap2::ptp::{self, PtpPeer};
 use super::discovery::Device;
 use super::rtsp::{Rtsp, transport_param};
+use super::sink::CONNECT_TIMEOUT;
 use super::{FRAMES_PER_PACKET, LATENCY, MIN_LATENCY, RATE};
 use std::net::{IpAddr, SocketAddr, TcpStream};
-use std::time::Duration;
 
 const PLIST: &str = "application/x-apple-binary-plist";
 const OCTETS: &str = "application/octet-stream";
@@ -59,7 +59,7 @@ pub fn airplay1(rtsp: &mut Rtsp, device: &Device, local: &Local, remote_ip: IpAd
     rtsp.adopt_session(&resp);
     let t = resp.header("Transport").ok_or("SETUP: no Transport")?;
     let data_port = transport_param(t, "server_port").ok_or("SETUP: no server_port")?;
-    let control_port = transport_param(t, "control_port").unwrap_or(data_port + 1);
+    let control_port = transport_param(t, "control_port").or(data_port.checked_add(1)).ok_or("SETUP: no control_port")?;
     let rtp_info = format!("seq={};rtptime={}", local.seq, local.rtptime);
     rtsp.request("RECORD", None, &[("Range", "npt=0-".into()), ("RTP-Info", rtp_info)], None)?;
     Ok(Negotiated { data_port, control_port, audio_key: None, events: None, ptp: None })
@@ -82,7 +82,8 @@ pub fn airplay2(rtsp: &mut Rtsp, device: &Device, local: &Local, remote_ip: IpAd
         .get("eventPort")
         .and_then(Value::as_u64)
         .filter(|&p| p > 0)
-        .and_then(|p| TcpStream::connect_timeout(&SocketAddr::new(remote_ip, p as u16), Duration::from_secs(2)).ok());
+        .and_then(|p| u16::try_from(p).ok())
+        .and_then(|p| TcpStream::connect_timeout(&SocketAddr::new(remote_ip, p), CONNECT_TIMEOUT).ok());
     if let Some(reader) = events.as_ref().and_then(|s| s.try_clone().ok()) {
         super::ap2::events::spawn(reader, &key);
     }
@@ -97,9 +98,9 @@ pub fn airplay2(rtsp: &mut Rtsp, device: &Device, local: &Local, remote_ip: IpAd
     let resp = rtsp.request("SETUP", None, &[], Some((PLIST, &bplist::encode(&stream_setup(local, &audio_key)))))?;
     let reply = bplist::decode(&resp.body)?;
     let stream = reply.get("streams").and_then(|s| s.index(0)).ok_or("SETUP stream: no streams in reply")?;
-    let data_port = stream.get("dataPort").and_then(Value::as_u64).ok_or("SETUP stream: no dataPort")?;
-    let control_port = stream.get("controlPort").and_then(Value::as_u64).ok_or("SETUP stream: no controlPort")?;
-    Ok(Negotiated { data_port: data_port as u16, control_port: control_port as u16, audio_key: Some(audio_key), events, ptp })
+    let port =
+        |key: &str| stream.get(key).and_then(Value::as_u64).and_then(|p| u16::try_from(p).ok()).ok_or(format!("SETUP stream: no {key}"));
+    Ok(Negotiated { data_port: port("dataPort")?, control_port: port("controlPort")?, audio_key: Some(audio_key), events, ptp })
 }
 
 /// Transient HomeKit pair-setup (M1..M4). Returns the 64-byte SRP session key.

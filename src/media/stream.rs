@@ -120,6 +120,7 @@ impl Stream {
                 return Decoded::Nothing;
             }
             Err(DecodeError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Decoded::End,
+            Err(DecodeError::IoError(e)) => return Decoded::Broken(OpenError::Transient(format!("stream: {e}"))),
             Err(e) => {
                 log_warn!("stream: {e}");
                 return Decoded::End;
@@ -145,6 +146,14 @@ impl Stream {
             return Decoded::Nothing;
         }
         let (channels, rate) = (decoded.spec().channels().count(), decoded.spec().rate());
+        // The container may not have said its rate: the audio does.
+        if rate != RATE && self.resampler.is_none() {
+            if !self.info.any_rate {
+                log_warn!("stream: unsupported sample rate {rate}");
+                return Decoded::End;
+            }
+            self.resampler = Some(Resampler::new(rate, RATE));
+        }
         decoded.copy_to_vec_interleaved(&mut self.samples);
         let samples = &self.samples[..];
         let stereo = if self.resampler.is_some() {
@@ -283,6 +292,7 @@ mod tests {
                 Decoded::Audio { ends_at } => return Some((ends_at, out[0])),
                 Decoded::Nothing => {}
                 Decoded::End => return None,
+                Decoded::Broken(e) => panic!("{e}"),
             }
         }
     }
@@ -362,10 +372,49 @@ mod tests {
                 Decoded::Audio { ends_at } => last = ends_at,
                 Decoded::Nothing => {}
                 Decoded::End => break,
+                Decoded::Broken(e) => panic!("{e}"),
             }
         }
         assert!((last - 2.0).abs() < 1e-6, "{last}");
         let frames = out.len() / 2;
         assert!((frames as i64 - 2 * RATE as i64).abs() <= 2, "converted to the output's rate: {frames} frames");
+    }
+
+    /// The first `n` bytes of a file, then the connection drops.
+    struct DropsAfter(Cursor<Vec<u8>>, usize);
+
+    impl Read for DropsAfter {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let left = self.1.saturating_sub(self.0.position() as usize);
+            if left == 0 {
+                return Err(std::io::ErrorKind::ConnectionReset.into());
+            }
+            let n = buf.len().min(left);
+            self.0.read(&mut buf[..n])
+        }
+    }
+
+    struct Dropping(Vec<u8>);
+
+    impl Opener for Dropping {
+        fn open(&self, _: f64) -> Result<Opened, OpenError> {
+            Ok(Opened { bytes: Box::new(DropsAfter(Cursor::new(self.0.clone()), self.0.len() / 2)), base: 0.0, skip_until: 0.0 })
+        }
+    }
+
+    #[test]
+    fn a_dropped_connection_is_not_the_end() {
+        let info = StreamInfo { song_id: TrackId::from(1), format: Format::File, extension: "wav".into(), any_rate: true, jumps: false };
+        let mut s = Stream::open(Arc::new(Dropping(wav(4.0, RATE))), info, 0.0).expect("opens");
+        let mut out = Vec::new();
+        let broken = loop {
+            match s.decode_next(&mut out) {
+                Decoded::Audio { .. } | Decoded::Nothing => {}
+                Decoded::End => break false,
+                Decoded::Broken(_) => break true,
+            }
+        };
+        assert!(broken, "it broke off, so it can be opened again there");
+        assert!(!s.finished());
     }
 }

@@ -1,5 +1,8 @@
 //! Minimal binary property list (bplist00) codec: the subset AirPlay 2 uses
-//! (dict, array, string, unsigned int, bool, data).
+//! (dict, array, string, unsigned int, real, bool, data). Decoding takes what a
+//! receiver on the network sends, so every length and offset in it is checked.
+
+use std::cell::Cell;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -168,18 +171,23 @@ fn fix_refs(o: Vec<u8>, ref_size: usize) -> Vec<u8> {
 
 // ---------------------------------------------------------------- decode
 
+/// Deepest nesting, and most objects read (a list may refer to the same object
+/// many times over): far above what a receiver sends.
+const MAX_DEPTH: usize = 32;
+const MAX_READS: usize = 10_000;
+
 pub fn decode(data: &[u8]) -> Result<Value, String> {
     if data.len() < 40 || &data[..8] != b"bplist00" {
         return Err("not a binary plist".into());
     }
     let t = &data[data.len() - 32..];
-    let offset_size = t[6] as usize;
-    let ref_size = t[7] as usize;
-    let num = u64::from_be_bytes(t[8..16].try_into().unwrap()) as usize;
-    let top = u64::from_be_bytes(t[16..24].try_into().unwrap()) as usize;
-    let table = u64::from_be_bytes(t[24..32].try_into().unwrap()) as usize;
-    let p = Parser { data, offset_size, ref_size, num, table };
-    p.object(top, 0)
+    let size = |b: &[u8]| usize::try_from(u64::from_be_bytes(b.try_into().expect("8 bytes"))).map_err(|_| "plist: too big");
+    let (offset_size, ref_size) = (t[6] as usize, t[7] as usize);
+    if !(1..=8).contains(&offset_size) || !(1..=8).contains(&ref_size) {
+        return Err("plist: bad trailer".into());
+    }
+    let p = Parser { data, offset_size, ref_size, num: size(&t[8..16])?, table: size(&t[24..32])?, reads: Cell::new(0) };
+    p.object(size(&t[16..24])?, 0)
 }
 
 struct Parser<'a> {
@@ -188,19 +196,39 @@ struct Parser<'a> {
     ref_size: usize,
     num: usize,
     table: usize,
+    /// Objects read so far, against [`MAX_READS`].
+    reads: Cell<usize>,
 }
 
+const TRUNCATED: &str = "plist: truncated";
+
 impl Parser<'_> {
+    /// The big-endian number of `size` (1 to 8) bytes at `at`.
     fn uint(&self, at: usize, size: usize) -> Result<u64, String> {
-        let b = self.data.get(at..at + size).ok_or("plist: truncated")?;
+        if !(1..=8).contains(&size) {
+            return Err(format!("plist: {size}-byte number"));
+        }
+        let b = self.data.get(at..at.checked_add(size).ok_or(TRUNCATED)?).ok_or(TRUNCATED)?;
         Ok(b.iter().fold(0u64, |acc, &x| (acc << 8) | x as u64))
+    }
+
+    /// The `i`th of `size`-byte entries starting at `base`, as a number.
+    fn entry(&self, base: usize, i: usize, size: usize) -> Result<usize, String> {
+        let at = i.checked_mul(size).and_then(|o| o.checked_add(base)).ok_or(TRUNCATED)?;
+        usize::try_from(self.uint(at, size)?).map_err(|_| "plist: bad number".into())
     }
 
     fn offset(&self, index: usize) -> Result<usize, String> {
         if index >= self.num {
             return Err("plist: bad ref".into());
         }
-        Ok(self.uint(self.table + index * self.offset_size, self.offset_size)? as usize)
+        self.entry(self.table, index, self.offset_size)
+    }
+
+    /// `len` items of `width` bytes at `p`.
+    fn bytes(&self, p: usize, len: usize, width: usize) -> Result<&[u8], String> {
+        let end = len.checked_mul(width).and_then(|n| n.checked_add(p)).ok_or(TRUNCATED)?;
+        self.data.get(p..end).ok_or_else(|| TRUNCATED.into())
     }
 
     /// Returns (length, position of payload).
@@ -209,16 +237,26 @@ impl Parser<'_> {
         if low != 0x0f {
             return Ok((low, at + 1));
         }
-        let size = 1usize << (self.data.get(at + 1).ok_or("plist: truncated")? & 0x0f);
-        Ok((self.uint(at + 2, size)? as usize, at + 2 + size))
+        let size = 1usize << (self.data.get(at + 1).ok_or(TRUNCATED)? & 0x0f);
+        let len = usize::try_from(self.uint(at + 2, size)?).map_err(|_| "plist: bad length")?;
+        Ok((len, at + 2 + size))
+    }
+
+    /// The object `ref_size` bytes at `p` refer to, entry `i`.
+    fn child(&self, p: usize, i: usize, depth: usize) -> Result<Value, String> {
+        self.object(self.entry(p, i, self.ref_size)?, depth + 1)
     }
 
     fn object(&self, index: usize, depth: usize) -> Result<Value, String> {
-        if depth > 32 {
+        if depth > MAX_DEPTH {
             return Err("plist: too deep".into());
         }
+        self.reads.set(self.reads.get() + 1);
+        if self.reads.get() > MAX_READS {
+            return Err("plist: too many objects".into());
+        }
         let at = self.offset(index)?;
-        let marker = *self.data.get(at).ok_or("plist: truncated")?;
+        let marker = *self.data.get(at).ok_or(TRUNCATED)?;
         Ok(match marker & 0xf0 {
             0x00 => Value::Bool(marker == 0x09),
             0x10 => Value::Int(self.uint(at + 1, 1 << (marker & 0x0f))?),
@@ -229,36 +267,30 @@ impl Parser<'_> {
             }
             0x40 => {
                 let (len, p) = self.length(at)?;
-                Value::Data(self.data.get(p..p + len).ok_or("plist: truncated")?.to_vec())
+                Value::Data(self.bytes(p, len, 1)?.to_vec())
             }
             0x50 => {
                 let (len, p) = self.length(at)?;
-                Value::String(String::from_utf8_lossy(self.data.get(p..p + len).ok_or("plist: truncated")?).into_owned())
+                Value::String(String::from_utf8_lossy(self.bytes(p, len, 1)?).into_owned())
             }
             0x60 => {
                 let (len, p) = self.length(at)?;
-                let b = self.data.get(p..p + len * 2).ok_or("plist: truncated")?;
-                let units: Vec<u16> = b.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
+                let units: Vec<u16> = self.bytes(p, len, 2)?.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
                 Value::String(String::from_utf16_lossy(&units))
             }
             0xa0 => {
                 let (len, p) = self.length(at)?;
-                let mut items = Vec::with_capacity(len);
-                for i in 0..len {
-                    items.push(self.object(self.uint(p + i * self.ref_size, self.ref_size)? as usize, depth + 1)?);
-                }
-                Value::Array(items)
+                self.bytes(p, len, self.ref_size)?;
+                (0..len).map(|i| self.child(p, i, depth)).collect::<Result<_, _>>().map(Value::Array)?
             }
             0xd0 => {
                 let (len, p) = self.length(at)?;
-                let mut items = Vec::with_capacity(len);
-                for i in 0..len {
-                    let k = self.object(self.uint(p + i * self.ref_size, self.ref_size)? as usize, depth + 1)?;
-                    let v = self.object(self.uint(p + (len + i) * self.ref_size, self.ref_size)? as usize, depth + 1)?;
-                    let Value::String(k) = k else { return Err("plist: non-string key".into()) };
-                    items.push((k, v));
-                }
-                Value::Dict(items)
+                self.bytes(p, len, 2 * self.ref_size)?;
+                let pair = |i| {
+                    let Value::String(k) = self.child(p, i, depth)? else { return Err("plist: non-string key".to_string()) };
+                    Ok((k, self.child(p, len + i, depth)?))
+                };
+                (0..len).map(pair).collect::<Result<_, _>>().map(Value::Dict)?
             }
             _ => return Err(format!("plist: unsupported marker {marker:#x}")),
         })
@@ -287,6 +319,40 @@ mod tests {
             decode(&bytes).unwrap().get("streams").and_then(|s| s.index(0)).and_then(|s| s.get("type")).and_then(Value::as_u64),
             Some(96)
         );
+    }
+
+    #[test]
+    fn hostile_input_is_an_error_not_a_crash() {
+        let good = encode(&dict([("volume", Value::Real(-15.0)), ("list", Value::Array(vec![Value::Int(1); 3]))]));
+        // Every byte set to every value, in turn: never a panic.
+        for at in 8..good.len() {
+            for byte in [0x00, 0x0f, 0x7f, 0xff] {
+                let mut bad = good.clone();
+                bad[at] = byte;
+                let _ = decode(&bad);
+            }
+        }
+        // Lists of 1000 refs to the next list, three deep: a billion reads if each
+        // ref were followed every time; refused instead.
+        const REFS: u16 = 1000;
+        let mut wide = b"bplist00".to_vec();
+        let mut offsets = Vec::new();
+        for next in 1u8..=3 {
+            offsets.push(wide.len() as u16);
+            wide.extend([0xaf, 0x11]);
+            wide.extend(REFS.to_be_bytes());
+            wide.extend(std::iter::repeat_n(next, REFS as usize));
+        }
+        offsets.push(wide.len() as u16);
+        wide.extend([0x10, 0x01]);
+        let table = wide.len() as u64;
+        offsets.iter().for_each(|o| wide.extend(o.to_be_bytes()));
+        // Trailer: 2-byte offsets, 1-byte refs, 4 objects, the first on top.
+        wide.extend([0, 0, 0, 0, 0, 0, 2, 1]);
+        wide.extend(4u64.to_be_bytes());
+        wide.extend(0u64.to_be_bytes());
+        wide.extend(table.to_be_bytes());
+        assert_eq!(decode(&wide), Err("plist: too many objects".into()));
     }
 
     #[test]

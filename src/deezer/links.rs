@@ -57,10 +57,10 @@ impl Deezer {
             Kind::Album => self.album_link(&id),
             Kind::Track => {
                 let song = self.call("song.getData", json!({"sng_id": id}))?;
-                self.album_link(&text_or_missing(&song["ALB_ID"])?)
+                self.album_link(&text_or_missing(&song["ALB_ID"]).ok_or(Error::NotAvailable)?)
             }
             Kind::Playlist => {
-                let id: u64 = id.parse().map_err(|_| Error::NotAvailable)?;
+                let id: u64 = id.parse().map_err(|_| Error::Other("That playlist link has no playlist number".into()))?;
                 let page = self
                     .call("deezer.pagePlaylist", json!({"playlist_id": id, "lang": "en", "nb": 0, "start": 0, "tab": 0, "header": true}))?;
                 let data = &page["DATA"];
@@ -82,8 +82,9 @@ impl Deezer {
     }
 }
 
-fn text_or_missing(v: &Value) -> Result<String> {
-    Some(text(v)).filter(|s| !s.is_empty() && s != "0").ok_or(Error::NotAvailable)
+/// The text of `v`, unless it's empty or Deezer's "0" for none.
+fn text_or_missing(v: &Value) -> Option<String> {
+    Some(text(v)).filter(|s| !s.is_empty() && s != "0")
 }
 
 /// Where a short share link ends up after its redirects.
