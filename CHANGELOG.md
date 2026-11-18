@@ -40,6 +40,7 @@
   whole history on every frame; restoring a backup is quick; iCloud downloads
   are asked for off the window's thread
 - Shortcuts read the way macOS writes them (⇧⌘S rather than ⌘⇧S)
+- A list's header switches its buttons to icons before they run out of room
 
 ## 0.31.1 (2026-11-18)
 

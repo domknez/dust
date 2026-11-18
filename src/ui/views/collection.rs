@@ -272,7 +272,7 @@ impl App {
             // Episodes can't go into playlists.
             if count > 0 && !podcast {
                 let editable = self.showing_own_playlist().cloned();
-                let more = widgets::icon_button(ui, Icon::More, 18.0, colors().dim).on_hover_text("More");
+                let more = widgets::icon_button(ui, Icon::More, MORE_ICON, colors().dim).on_hover_text("More");
                 egui::Popup::menu(&more).width(220.0).show(|ui| {
                     // Every playable track of the list, to a playlist or a new one.
                     let mut pick = widgets::add_to_playlist(ui, self.playlist_choices()).map(|choice| match choice {
@@ -325,14 +325,17 @@ fn header_art(width: f32) -> f32 {
     if width < NARROW_HEADER { metrics::HEADER_ART_SMALL } else { metrics::HEADER_ART }
 }
 
+/// The header's ⋯ icon.
+const MORE_ICON: f32 = 18.0;
+
 /// Whether the header's buttons need to be icons in `width`: Play, Shuffle, Add to
 /// queue, the heart and ⋯, with the spaces between, don't fit with their labels.
 fn header_buttons_narrow(ui: &Ui, width: f32) -> bool {
     let full = widgets::pill_width(ui, "Play", true, true)
         + widgets::pill_width(ui, "Shuffle", false, false)
         + widgets::pill_width(ui, "Add to queue", false, false)
-        + 40.0
-        + 18.0
+        + widgets::PILL_HEIGHT
+        + widgets::icon_button_width(MORE_ICON)
         + 4.0 * ui.spacing().item_spacing.x;
     full > width
 }
@@ -348,7 +351,7 @@ pub(super) fn header_band(painter: &egui::Painter, band: Rect) {
 /// Square outlined heart button (album headers).
 fn heart_square(ui: &mut Ui, liked: bool) -> egui::Response {
     let p = colors();
-    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(40.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(widgets::PILL_HEIGHT), Sense::click());
     let corner = CornerRadius::same(radius::CONTROL);
     if resp.hovered() {
         ui.painter().rect_filled(rect, corner, p.raised);

@@ -5,7 +5,9 @@ use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, radius, typography as ty};
 use eframe::egui::{self, Color32, CornerRadius, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
 
-const PILL_HEIGHT: f32 = 40.0;
+pub const PILL_HEIGHT: f32 = 40.0;
+/// Room around an [`icon_button`]'s icon.
+const ICON_BUTTON_PADDING: f32 = 12.0;
 /// Room either side of a pill's content, and what its icon (with its gap) takes.
 const PILL_PADDING: f32 = 16.0;
 const PILL_ICON: f32 = 22.0;
@@ -35,10 +37,15 @@ pub fn chip(ui: &mut Ui, label: &str, on: bool) -> Response {
 
 /// Icon-only button; brightens on hover.
 pub fn icon_button(ui: &mut Ui, icon: Icon, size: f32, color: Color32) -> Response {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size + 12.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(icon_button_width(size)), Sense::click());
     let tint = if resp.hovered() { colors().text } else { color };
     icons::paint(ui.painter(), Rect::from_center_size(rect.center(), Vec2::splat(size)), icon, tint);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// How wide an [`icon_button`] with a `size` icon is.
+pub fn icon_button_width(size: f32) -> f32 {
+    size + ICON_BUTTON_PADDING
 }
 
 /// A heart button at a fixed spot that takes no layout space, for rows and bars

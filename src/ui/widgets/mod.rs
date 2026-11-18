@@ -16,7 +16,8 @@ mod track_table;
 pub use art::{cover, tile};
 pub use cards::{CardClick, FlowPick, card, channel_card, flow_panel, play_knob, queue_row};
 pub use controls::{
-    chip, heart_at, icon_button, icon_pill, pill, pill_fit, pill_width, play_button, segmented, tag, text_field, thin_slider, wave_slider,
+    PILL_HEIGHT, chip, heart_at, icon_button, icon_button_width, icon_pill, pill, pill_fit, pill_width, play_button, segmented, tag,
+    text_field, thin_slider, wave_slider,
 };
 pub use decor::{equalizer, fade_to, wordmark};
 pub use empty::{empty_panel, empty_state};
