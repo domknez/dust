@@ -25,6 +25,7 @@ mod source;
 mod subsonic;
 mod ui;
 mod update;
+mod uuid;
 
 fn main() -> eframe::Result {
     log::install_panic_hook();

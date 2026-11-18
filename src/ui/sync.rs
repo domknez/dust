@@ -16,6 +16,8 @@ pub const BACKUPS: usize = 14;
 const BACKUP_DIR: &str = "backups";
 /// dust's folder inside the sync folder.
 const SYNC_SUBDIR: &str = "dust";
+/// iCloud Drive's folder, in the home folder.
+const ICLOUD_DRIVE: &str = "Library/Mobile Documents/com~apple~CloudDocs";
 
 /// The sync folder in use, and this computer's name in it.
 #[derive(Clone, Debug, PartialEq)]
@@ -255,7 +257,7 @@ pub fn places() -> Vec<Place> {
     let dir = |p: PathBuf| p.is_dir().then_some(p);
     let mut places = Vec::new();
     if cfg!(target_os = "macos") {
-        places.push(Place { name: "iCloud Drive", path: dir(home.join("Library/Mobile Documents/com~apple~CloudDocs")) });
+        places.push(Place { name: "iCloud Drive", path: dir(home.join(ICLOUD_DRIVE)) });
     }
     places.push(Place { name: "Dropbox", path: in_cloud("Dropbox", "").or_else(|| dir(home.join("Dropbox"))) });
     places.push(Place { name: "Syncthing", path: dir(home.join("Sync")) });
@@ -271,9 +273,13 @@ pub fn places() -> Vec<Place> {
 
 /// "~/Dropbox › dust": a folder as Settings shows it.
 pub fn shown_path(folder: &Path) -> String {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    let icloud = home.as_ref().map(|h| h.join("Library/Mobile Documents/com~apple~CloudDocs"));
-    let text = match (icloud, &home) {
+    shown_path_from(folder, std::env::var_os("HOME").map(PathBuf::from).as_deref())
+}
+
+/// [`shown_path`] with the home folder at `home`.
+fn shown_path_from(folder: &Path, home: Option<&Path>) -> String {
+    let icloud = home.map(|h| h.join(ICLOUD_DRIVE));
+    let text = match (icloud, home) {
         (Some(icloud), _) if folder.starts_with(&icloud) => {
             let rest = folder.strip_prefix(&icloud).unwrap_or(folder);
             Path::new("iCloud Drive").join(rest).display().to_string()
@@ -434,6 +440,15 @@ mod tests {
         let name = new_device_name();
         assert!(name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'), "{name}");
         assert_eq!(display_name("Domagoj-s-MacBook-Pro-3f2a"), "Domagoj s MacBook Pro");
+    }
+
+    #[test]
+    fn folders_read_short() {
+        let home = Path::new("/Users/me");
+        let shown = |folder: &str| shown_path_from(Path::new(folder), Some(home));
+        assert_eq!(shown("/Users/me/Library/Mobile Documents/com~apple~CloudDocs/Music"), "iCloud Drive/Music › dust");
+        assert_eq!(shown("/Users/me/Dropbox/"), "~/Dropbox › dust");
+        assert_eq!(shown("/Volumes/NAS/sync"), "/Volumes/NAS/sync › dust");
     }
 
     #[test]

@@ -43,12 +43,22 @@ impl Session {
         let Some((name, rest)) = set_cookie.split_once('=') else { return };
         let name = name.trim();
         let value = rest.split(';').next().unwrap_or("").trim();
-        let expired = value == "deleted" || set_cookie.to_ascii_lowercase().contains("max-age=0");
+        let expired = value == "deleted" || expires_now(rest);
         self.cookies.retain(|(k, _)| k != name);
         if !expired {
             self.cookies.push((name.to_string(), value.to_string()));
         }
     }
+}
+
+/// Whether a cookie's attributes (`Max-Age=0`, an `Expires` date gone by) say
+/// to drop it.
+fn expires_now(attributes: &str) -> bool {
+    attributes.split(';').skip(1).filter_map(|a| a.split_once('=')).any(|(name, value)| match name.trim().to_ascii_lowercase().as_str() {
+        "max-age" => value.trim().parse::<i64>().is_ok_and(|secs| secs <= 0),
+        "expires" => jiff::fmt::rfc2822::parse(value.trim()).is_ok_and(|at| at.timestamp() <= jiff::Timestamp::now()),
+        _ => false,
+    })
 }
 
 /// One gw-light call. `extra` adds URL query parameters (e.g. `gateway_input`).
@@ -113,7 +123,10 @@ mod tests {
         s.store("dzr_uniq_id=x; path=/");
         s.store("sid=def; path=/");
         s.store("account_id=deleted; Max-Age=0");
-        assert_eq!(s.cookie_header("A"), "arl=A; dzr_uniq_id=x; sid=def");
+        s.store("dzr_uniq_id=x; Max-Age=03600");
+        s.store("old=1; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/");
+        s.store("later=1; expires=Fri, 01 Jan 2100 00:00:00 GMT");
+        assert_eq!(s.cookie_header("A"), "arl=A; sid=def; dzr_uniq_id=x; later=1", "an hour's Max-Age and a future date keep");
         assert_eq!(Session::new().cookie_header(""), "");
     }
 

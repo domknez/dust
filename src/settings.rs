@@ -258,6 +258,22 @@ mod tests {
     }
 
     #[test]
+    fn an_update_writes_only_what_changed() {
+        let dir = std::env::temp_dir().join(format!("dust-settings-{}", std::process::id()));
+        let file = dir.join("settings.conf");
+        let mut p = Prefs { file: Some(file.clone()), ..Prefs::parse("") };
+        p.update(|p| p.shuffle = false);
+        assert!(!file.exists(), "nothing changed, nothing written");
+        p.update(|p| p.shuffle = true);
+        // Meanwhile another dust (or a person) changed another setting.
+        std::fs::write(&file, format!("{}theme=dark\n", read(&file))).unwrap();
+        p.update(|p| p.volume = 0.5);
+        let saved = Prefs::parse(&read(&file));
+        assert!(saved.shuffle && saved.volume == 0.5 && saved.theme == Appearance::Dark, "theirs kept, ours added");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn saving_keeps_other_lines() {
         let text = merge("future=1\nquality=flac\n", &[("quality", "mp3_128".into())]);
         assert_eq!(text, "future=1\nquality=mp3_128\n");

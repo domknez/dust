@@ -289,6 +289,12 @@ mod tests {
         assert_eq!(titles, ["Albums", "Singles & EPs", "Live & compilations"]);
         assert_eq!(sections[1].items[0].subtitle, "2021 · Single");
         assert_eq!(sections[2].items.iter().map(|i| i.subtitle.as_str()).collect::<Vec<_>>(), ["2019 · Compilation", "Live"]);
+        // A release that's several things is the most telling of them.
+        let kind = |types: &[&str]| release_kind(&json!({"releaseTypes": types}));
+        assert_eq!(kind(&["Single", "EP"]), ReleaseKind::Single);
+        assert_eq!(kind(&["EP", "Live"]), ReleaseKind::Live);
+        assert_eq!(kind(&["single", "Compilation"]), ReleaseKind::Compilation, "any case");
+        assert_eq!(kind(&[]), ReleaseKind::Album);
     }
 
     #[test]

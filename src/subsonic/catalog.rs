@@ -317,8 +317,7 @@ impl Subsonic {
 
     /// Remove every occurrence of the tracks (Subsonic removes by position).
     pub fn remove_from_playlist(&self, playlist: &PlaylistId, tracks: &[TrackId]) -> Result<()> {
-        let positions: Vec<String> =
-            self.playlist(playlist)?.iter().enumerate().filter(|(_, t)| tracks.contains(&t.id)).map(|(i, _)| i.to_string()).collect();
+        let positions = positions_of(&self.playlist(playlist)?, tracks);
         if positions.is_empty() {
             return Ok(());
         }
@@ -361,6 +360,12 @@ fn mix_cards(albums: Option<&Value>) -> Vec<Item> {
     cards
 }
 
+/// Where on `playlist` the `tracks` are (every time each comes up), as
+/// `updatePlaylist` takes them.
+fn positions_of(playlist: &[Track], tracks: &[TrackId]) -> Vec<String> {
+    playlist.iter().enumerate().filter(|(_, t)| tracks.contains(&t.id)).map(|(i, _)| i.to_string()).collect()
+}
+
 /// The Radio panel: the whole library, then the biggest genres (each card's id is
 /// the genre, empty for the whole library).
 fn radio_stations(genres: &Value) -> Vec<Item> {
@@ -386,6 +391,13 @@ fn radio_stations(genres: &Value) -> Vec<Item> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_track_on_a_playlist_twice_goes_from_both_places() {
+        let playlist = [Track::test(1), Track::test(2), Track::test(1), Track::test(3)];
+        assert_eq!(positions_of(&playlist, &[TrackId::from(1)]), ["0", "2"]);
+        assert!(positions_of(&playlist, &[TrackId::from(9)]).is_empty());
+    }
 
     #[test]
     fn radio_offers_the_biggest_genres() {

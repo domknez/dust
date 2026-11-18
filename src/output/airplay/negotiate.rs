@@ -180,12 +180,9 @@ fn stream_setup(local: &Local, audio_key: &[u8; 32]) -> Value {
     dict([("streams", Value::Array(vec![stream]))])
 }
 
+/// A session or group id, in the capitals Apple's senders use.
 fn uuid_v4() -> String {
-    let mut u = random_bytes::<16>();
-    u[6] = (u[6] & 0x0f) | 0x40;
-    u[8] = (u[8] & 0x3f) | 0x80;
-    let hex: String = u.iter().map(|b| format!("{b:02X}")).collect();
-    format!("{}-{}-{}-{}-{}", &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..])
+    crate::uuid::v4().to_uppercase()
 }
 
 fn random_bytes<const N: usize>() -> [u8; N] {

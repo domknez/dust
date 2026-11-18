@@ -98,3 +98,62 @@ impl ListenTracker {
         Some(played)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::media::{OpenError, Playback};
+    use crate::model::{Error, Quality};
+    use std::sync::Mutex;
+
+    /// Keeps the listens reported.
+    #[derive(Default)]
+    struct Reports(Mutex<Vec<Listen>>);
+
+    impl Library for Reports {
+        fn open(&self, _: &Track, _: Quality, _: f64) -> std::result::Result<Box<dyn Playback>, OpenError> {
+            Err(OpenError::Unavailable("not here".into()))
+        }
+        fn flow(&self, _: Option<&str>) -> std::result::Result<Vec<Track>, Error> {
+            Ok(Vec::new())
+        }
+        fn report_listen_start(&self, _: TrackId) {}
+        fn report_listen(&self, listen: Listen) {
+            self.0.lock().unwrap().push(listen);
+        }
+    }
+
+    /// A 200 s track heard for `secs` (seeked in it with `seeked`): what the play
+    /// history keeps (skipped?) and what the source is told (skipped?).
+    fn listen(secs: u64, seeked: bool) -> (Option<bool>, Option<bool>) {
+        let reports = Reports::default();
+        let mut tracker = ListenTracker::new();
+        tracker.start(Some(&reports), crate::deezer::ID, TrackId::from(1), Format::Mp3(320), &Track::test(1), None);
+        tracker.heard(Duration::from_secs(secs));
+        if seeked {
+            tracker.seeked();
+        }
+        let played = tracker.finish(Some(&reports)).map(|p| p.skipped);
+        let reported = reports.0.lock().unwrap().first().map(|l| l.skipped);
+        (played, reported)
+    }
+
+    #[test]
+    fn skips_and_listens_through() {
+        assert_eq!(listen(0, false), (None, None), "not heard: nothing to keep or tell");
+        assert_eq!(listen(20, false), (Some(true), Some(true)), "moved on early");
+        assert_eq!(listen(150, false), (Some(false), Some(true)), "most of it: heard, but ended early");
+        assert_eq!(listen(200 - SKIP_TOLERANCE_SECS, false), (Some(false), Some(false)), "to the end, near enough");
+        assert_eq!(listen(200, true), (Some(false), Some(true)), "a seek tells the source it wasn't straight through");
+    }
+
+    #[test]
+    fn reports_can_be_turned_off_but_the_history_still_keeps_it() {
+        let reports = Reports::default();
+        let mut tracker = ListenTracker { enabled: false, ..ListenTracker::new() };
+        tracker.start(Some(&reports), crate::deezer::ID, TrackId::from(1), Format::Mp3(320), &Track::test(1), None);
+        tracker.heard(Duration::from_secs(60));
+        assert_eq!(tracker.finish(Some(&reports)).map(|p| p.source), Some("deezer"));
+        assert!(reports.0.lock().unwrap().is_empty());
+    }
+}

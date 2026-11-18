@@ -119,18 +119,24 @@ impl Deezer {
             "track_tokens": [token],
         });
         let r: Value = self.0.agent.post(MEDIA_API).send_json(body).map_err(http)?.into_body().read_json().map_err(http)?;
-        let item = &r["data"][0];
-        if let Some(err) = item["errors"].get(0) {
-            // 2002: "Track token has no sufficient rights on requested media".
-            return Err(match err["code"].as_u64() {
-                Some(2002) => Error::NotAvailable,
-                _ => api(text(&err["message"])),
-            });
-        }
-        let media = &item["media"][0];
-        let url = media["sources"][0]["url"].as_str().ok_or(Error::NotAvailable)?;
-        Ok((url.to_string(), format_from_api(media["format"].as_str())))
+        media_from(&r)
     }
+}
+
+/// The stream address and format in a media service reply.
+fn media_from(r: &Value) -> Result<(String, Format)> {
+    /// "Track token has no sufficient rights on requested media".
+    const NO_RIGHTS: u64 = 2002;
+    let item = &r["data"][0];
+    if let Some(err) = item["errors"].get(0) {
+        return Err(match err["code"].as_u64() {
+            Some(NO_RIGHTS) => Error::NotAvailable,
+            _ => api(text(&err["message"])),
+        });
+    }
+    let media = &item["media"][0];
+    let url = media["sources"][0]["url"].as_str().ok_or(Error::NotAvailable)?;
+    Ok((url.to_string(), format_from_api(media["format"].as_str())))
 }
 
 /// Whether `e` would stop any track the same way (the session, the network, the
@@ -160,6 +166,17 @@ fn format_from_api(name: Option<&str>) -> Format {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn media_replies_give_the_stream_or_why_not() {
+        let found = serde_json::json!({"data": [{"media": [{"format": "FLAC", "sources": [{"url": "https://cdn/x"}]}]}]});
+        assert_eq!(media_from(&found).unwrap(), ("https://cdn/x".to_string(), Format::Flac));
+        let refused = serde_json::json!({"data": [{"errors": [{"code": 2002, "message": "no rights"}]}]});
+        assert!(matches!(media_from(&refused), Err(Error::NotAvailable)));
+        let other = serde_json::json!({"data": [{"errors": [{"code": 1000, "message": "boom"}]}]});
+        assert!(matches!(media_from(&other), Err(Error::Api { message, .. }) if message == "boom"));
+        assert!(matches!(media_from(&serde_json::json!({"data": [{"media": []}]})), Err(Error::NotAvailable)), "no source");
+    }
 
     #[test]
     fn formats_have_media_service_names() {
