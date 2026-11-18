@@ -70,7 +70,7 @@ and *Connect a Navidrome server*.
   page of their own (Back, `Esc` or the button again returns), with the queue still
   beside them; synced ones follow the song with the sung line lit, and clicking a line
   jumps there
-- **Crate:** things to check out later, from any source. `⌘⇧S` (or *Save* in the
+- **Crate:** things to check out later, from any source. `⇧⌘S` (or *Save* in the
   panel's *crate* tab) saves what's playing, with the Flow it came from; right-click
   any track → *Save to Crate*, an album's ⋯ menu or an artist's *Save* add those, and
   the tab's field takes a name you heard somewhere ("that Turkish psych band"). Each
@@ -364,7 +364,7 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
   Explore, New releases
 - `⌘←` / `⌘→` (`Alt+←` / `Alt+→` on Windows and Linux), or the mouse's side buttons:
   back / forward between pages
-- `⌘⇧M` / `Ctrl+Shift+M`: mini player on/off
+- `⇧⌘M` / `Ctrl+Shift+M`: mini player on/off
 - `⌘,` / `Ctrl+,`: Settings (`Esc` closes them)
 - Double-click a track, or click its number: play from there
 - Click a track to pick it; `⌘`-click (`Ctrl`-click) adds or drops one, `Shift`-click

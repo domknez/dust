@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.32.0 (2026-11-18)
+
 - Logins: a keychain that can't be read for a moment no longer leads to the other
   source's login being dropped on the next save
 - Crate and history: a backup is restored only once what's there now is backed up;
