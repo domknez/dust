@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.33.0 (2026-11-18)
+
 - A notification for each new track while dust is out of sight (macOS and
   Linux): Settings → Playback → Notify on track change, off by default
 - Export any list (a playlist, album, Loved tracks or a list from your history) as
