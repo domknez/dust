@@ -42,7 +42,10 @@ apple-native-keyring-store = { version = "1", features = ["keychain"] }
 # Keeping macOS from napping dust while it plays (audio goes to the network, so the
 # system can't tell), and real-time priority for the audio threads.
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSProcessInfo", "NSString"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSProcessInfo", "NSString", "NSBundle", "NSError"] }
+# Track-change notifications (Notification Center).
+objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "block2", "UNUserNotificationCenter", "UNNotification", "UNNotificationContent", "UNNotificationRequest", "UNNotificationTrigger"] }
+block2 = { version = "0.6", default-features = false, features = ["alloc"] }
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
@@ -51,6 +54,8 @@ windows-native-keyring-store = { version = "1", default-features = false }
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
+# Track-change notifications (the desktop's notification service).
+dbus = "0.9"
 
 [features]
 default = ["login-window", "self-update"]

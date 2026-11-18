@@ -116,6 +116,8 @@ pub enum Action {
     Quality(Quality),
     Appearance(Appearance),
     ToggleReportListens,
+    /// Notifications of new tracks while dust is in the background.
+    ToggleNotifyTracks,
     /// New releases go in the Crate, or not.
     ReleaseAlerts(bool),
     /// Turn a part of dust on or off.
@@ -269,6 +271,7 @@ impl App {
             Action::Quality(quality) => self.set_quality(quality),
             Action::Appearance(appearance) => self.set_appearance(appearance),
             Action::ToggleReportListens => self.toggle_report_listens(),
+            Action::ToggleNotifyTracks => self.toggle_notify_tracks(ctx),
             Action::ReleaseAlerts(on) => self.prefs.update(|p| p.release_alerts = on),
             Action::FlowNewOnly(on) => {
                 self.prefs.update(|p| p.flow_new_only = on);

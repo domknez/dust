@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A notification for each new track while dust is out of sight (macOS and
+  Linux): Settings → Playback → Notify on track change, off by default
 - Export any list (a playlist, album, Loved tracks or a list from your history) as
   CSV or M3U from its ⋯ menu, into Downloads
 - Import a playlist from a file: drop it on the window or use Playlists → Import….

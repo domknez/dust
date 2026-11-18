@@ -5,6 +5,7 @@
 use crate::model::Quality;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
+use crate::ui::notify;
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{Appearance, colors, typography as ty};
 use crate::ui::switches::{Page, Switch};
@@ -151,6 +152,14 @@ impl App {
         let (title, sub) = self.client.as_ref().map_or(("Report listens", ""), |c| c.listen_reports());
         if widgets::switch_row(ui, title, Some(sub), self.prefs.report_listens, true).clicked() {
             acts.push(Action::ToggleReportListens);
+        }
+        // Shown while on even where they can't show (any more), so it can go off.
+        if notify::available() || self.prefs.notify_tracks {
+            let blocked = notify::blocked().filter(|_| self.prefs.notify_tracks);
+            let sub = blocked.unwrap_or("A notification for each new track while dust is out of sight");
+            if widgets::switch_row(ui, "Notify on track change", Some(sub), self.prefs.notify_tracks, true).clicked() {
+                acts.push(Action::ToggleNotifyTracks);
+            }
         }
     }
 

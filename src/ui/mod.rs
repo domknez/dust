@@ -6,7 +6,8 @@
 //! - [`views`]: one module per screen or panel
 //! - [`widgets`]: reusable painted components
 //! - [`style`]: colours, type scale, metrics, icons
-//! - [`now_playing`]: media keys and the OS "Now Playing" widget
+//! - [`now_playing`]: media keys and the OS "Now Playing" widget; [`notify`]: a
+//!   notification for each new track while dust is in the background
 //! - [`updates`]: background update checks and installs
 //! - [`sources`]: the logged-in music sources: connecting, switching, the account menu's rows
 //! - [`library`]: the source's playlists, likes and lists; [`browse`]: the page on screen
@@ -33,6 +34,7 @@ mod import;
 mod library;
 mod likes;
 mod load;
+mod notify;
 mod now_playing;
 mod palette;
 mod playlist_edit;
