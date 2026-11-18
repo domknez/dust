@@ -136,6 +136,9 @@ and *Connect a Navidrome server*.
 - **Media keys and Now Playing:** keyboard and headset media keys, plus the system's
   Now Playing controls with cover art (macOS Control Center, Windows media overlay,
   Linux MPRIS)
+- **Track notifications** (macOS and Linux, off by default): Settings → Playback →
+  *Notify on track change* shows each new track's title, artist and album while dust is
+  in the background
 - **Mini player**: a borderless always-on-top strip with cover, title, artist and the
   speaker it plays on, controls and a progress line along the bottom; drag it anywhere,
   make it narrower for just the title, times and play, double-click the cover to go back

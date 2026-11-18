@@ -169,6 +169,8 @@ pub struct App {
     pub(super) logo: egui::TextureHandle,
     remote_control: Option<dacp::Server>,
     now_playing: Option<NowPlaying>,
+    /// The track last told in a notification.
+    track_notices: super::notify::TrackNotices,
     pub(super) updates: Updates,
     /// What just happened away from the page on screen (a playlist changed, a like
     /// that didn't go through).
@@ -200,6 +202,11 @@ impl App {
         }
         app.remote_control = start_remote_control(app.player.clone());
         app.now_playing = NowPlaying::start(cc, app.player.clone());
+        super::notify::probe();
+        if app.prefs.notify_tracks {
+            let ctx = cc.egui_ctx.clone();
+            super::notify::ask(move || ctx.request_repaint());
+        }
         app.start_sources();
         app
     }
@@ -249,6 +256,7 @@ impl App {
             logo: crate::icon::logo_texture(ctx),
             remote_control: None,
             now_playing: None,
+            track_notices: Default::default(),
             toasts: Toasts::default(),
             queued_flash: None,
             queue_saved: None,
@@ -445,6 +453,24 @@ impl App {
         self.prefs.update(|p| p.theme = appearance);
     }
 
+    /// A notification for a track that just started (`st`) while dust is out of
+    /// sight. From [`App::tick`], which runs while the window is hidden too.
+    fn notify_new_track(&mut self, ctx: &egui::Context, st: &Status) {
+        let out_of_sight = ctx.input(|i| super::notify::out_of_sight(i.viewport(), i.focused, self.mini_player.is_some()));
+        let tell = self.prefs.notify_tracks && out_of_sight;
+        if let Some(notice) = self.track_notices.due(st, tell) {
+            super::notify::show(notice);
+        }
+    }
+
+    pub(super) fn toggle_notify_tracks(&mut self, ctx: &egui::Context) {
+        self.prefs.update(|p| p.notify_tracks = !p.notify_tracks);
+        if self.prefs.notify_tracks {
+            let ctx = ctx.clone();
+            super::notify::ask(move || ctx.request_repaint());
+        }
+    }
+
     pub(super) fn toggle_report_listens(&mut self) {
         self.prefs.update(|p| p.report_listens = !p.report_listens);
         self.player.send(Cmd::ReportListens(self.prefs.report_listens));
@@ -639,6 +665,7 @@ impl App {
         if let Some(np) = &mut self.now_playing {
             np.update(&self.covers, &st);
         }
+        self.notify_new_track(ctx, &st);
         // Also in the mini player, so an error doesn't show late, once back.
         self.toasts.player_error(ctx, st.error.as_deref());
         self.status = Some(st);

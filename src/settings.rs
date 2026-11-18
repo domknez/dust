@@ -60,6 +60,8 @@ pub struct Prefs {
     pub lyrics: bool,
     /// AirPlay speakers are looked for on the network.
     pub airplay: bool,
+    /// A system notification tells each new track while dust is in the background.
+    pub notify_tracks: bool,
     /// Sidebar pages turned off, by [`crate::ui::Page`] key.
     pub hidden_pages: Vec<String>,
     /// Playlists tracks were last added to, the latest first: "Add to playlist"
@@ -106,6 +108,7 @@ impl Prefs {
             history_on: get("history") != Some("false"),
             lyrics: get("lyrics") != Some("false"),
             airplay: get("airplay") != Some("false"),
+            notify_tracks: get("notify_tracks") == Some("true"),
             hidden_pages: get("hidden_pages")
                 .map(|k| k.split(',').filter(|k| !k.is_empty()).map(str::to_string).collect())
                 .unwrap_or_default(),
@@ -148,7 +151,7 @@ impl Prefs {
     }
 
     /// Every preference as its key and saved value.
-    fn values(&self) -> [(&'static str, String); 20] {
+    fn values(&self) -> [(&'static str, String); 21] {
         let flag = |on: bool| if on { "true" } else { "false" }.to_string();
         [
             ("source", self.source.key.into()),
@@ -167,6 +170,7 @@ impl Prefs {
             ("history", flag(self.history_on)),
             ("lyrics", flag(self.lyrics)),
             ("airplay", flag(self.airplay)),
+            ("notify_tracks", flag(self.notify_tracks)),
             ("hidden_pages", self.hidden_pages.join(",")),
             ("recent_playlists", self.recent_playlists.iter().map(PlaylistId::as_str).collect::<Vec<_>>().join(",")),
             ("sync_folder", self.sync_folder.as_ref().map(|f| f.display().to_string()).unwrap_or_default()),
@@ -203,7 +207,7 @@ mod tests {
 
     /// A file as dust writes it.
     const SAVED: &str = "airplay=false\nauto_update=false\ncrate=false\ndevice=Air-3f2a\nflow_new_only=true\nhidden_pages=podcasts,explore\nhistory=false\nlyrics=false\n\
-                         output=Kitchen\nquality=flac\nrecent_playlists=12,ab-3\nrelease_alerts=false\nrepeat=all\n\
+                         notify_tracks=true\noutput=Kitchen\nquality=flac\nrecent_playlists=12,ab-3\nrelease_alerts=false\nrepeat=all\n\
                          report_listens=false\nshuffle=true\nsidebar_playlists=closed\nsource=navidrome\n\
                          sync_folder=/Users/me/Dropbox\ntheme=dark\nvolume=0.250\n";
 
@@ -214,7 +218,7 @@ mod tests {
         assert_eq!(p.quality, Quality::Flac);
         assert_eq!(p.theme, Appearance::Dark);
         assert!(!p.report_listens && p.shuffle && !p.auto_update && !p.sidebar_playlists && p.flow_new_only && !p.release_alerts);
-        assert!(!p.crate_on && !p.history_on && !p.lyrics && !p.airplay);
+        assert!(!p.crate_on && !p.history_on && !p.lyrics && !p.airplay && p.notify_tracks);
         assert_eq!(p.hidden_pages, ["podcasts", "explore"]);
         assert_eq!(p.repeat, Repeat::All);
         assert_eq!(p.output.as_deref(), Some("Kitchen"));
@@ -246,6 +250,7 @@ mod tests {
         assert_eq!(p.output, None);
         assert_eq!(p.volume, 1.0);
         assert!(p.recent_playlists.is_empty());
+        assert!(!p.notify_tracks, "no notifications until asked for");
         assert!(p.sync_folder.is_none() && p.device.is_empty());
         assert!(p.crate_on && p.history_on && p.lyrics && p.airplay && p.hidden_pages.is_empty(), "every part of dust is on at first");
     }
