@@ -81,12 +81,7 @@ impl Subsonic {
         getrandom::fill(&mut salt).expect("OS RNG");
         let salt: String = salt.iter().map(|b| format!("{b:02x}")).collect();
         let token = hex(&Md5::digest(format!("{}{salt}", server.password).as_bytes()));
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .user_agent(format!("dust/{}", env!("CARGO_PKG_VERSION")))
-            .timeout_connect(Some(Duration::from_secs(10)))
-            .timeout_global(Some(CALL_TIMEOUT))
-            .build()
-            .into();
+        let agent = crate::http::agent(crate::http::USER_AGENT, Some(CALL_TIMEOUT));
         let user = server.user.trim().to_string();
         let client = Subsonic(Arc::new(Inner { agent, base, user, token, salt, song_lyrics: AtomicBool::new(false) }));
         client.call("ping", &[]).map_err(|e| connect_error(client.host(), e))?;

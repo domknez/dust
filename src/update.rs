@@ -66,12 +66,7 @@ fn package_name(version: &str) -> Option<String> {
 }
 
 fn agent(timeout: Option<Duration>) -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .user_agent(concat!("dust/", env!("CARGO_PKG_VERSION")))
-        .timeout_connect(Some(Duration::from_secs(10)))
-        .timeout_global(timeout)
-        .build()
-        .into()
+    crate::http::agent(crate::http::USER_AGENT, timeout)
 }
 
 /// `a` is a newer `major.minor.patch` than `b`. Missing parts are 0 ("0.2" is

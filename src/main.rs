@@ -11,6 +11,7 @@ mod atomic_file;
 mod cli;
 mod credentials;
 mod deezer;
+mod http;
 mod icon;
 #[cfg(feature = "login-window")]
 mod login;

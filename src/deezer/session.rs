@@ -14,12 +14,7 @@ const NO_TOKEN: &str = "null";
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub fn http_agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .user_agent(USER_AGENT)
-        .timeout_connect(Some(Duration::from_secs(10)))
-        .timeout_global(Some(CALL_TIMEOUT))
-        .build()
-        .into()
+    crate::http::agent(USER_AGENT, Some(CALL_TIMEOUT))
 }
 
 /// CSRF token plus every cookie the server set. The token is bound to the whole

@@ -18,17 +18,8 @@ pub fn response(mut body: Value) -> Result<Value> {
     Err(api(if message.is_empty() { format!("server error {}", r["error"]["code"]) } else { message }))
 }
 
-pub fn text(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        Value::Null => String::new(),
-        other => other.to_string(),
-    }
-}
-
-fn number(v: &Value) -> u64 {
-    v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())).unwrap_or(0)
-}
+use crate::source::json::number;
+pub use crate::source::json::text;
 
 /// The entries under `key`, which servers send as a list (or, with one entry, an
 /// object).
@@ -209,10 +200,7 @@ pub fn plain_lyrics(r: &Value) -> Option<Lyrics> {
 }
 
 fn lyrics_from(synced: Vec<LyricLine>, plain: Vec<String>) -> Option<Lyrics> {
-    if plain.iter().all(|l| l.trim().is_empty()) {
-        return None;
-    }
-    Some(Lyrics { synced, plain, writers: String::new(), copyright: String::new() })
+    Lyrics::new(synced, plain, String::new(), String::new())
 }
 
 #[cfg(test)]

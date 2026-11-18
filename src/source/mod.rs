@@ -11,6 +11,8 @@
 //! default methods that say it's unsupported, and is flagged in [`Features`] so
 //! the UI can leave it out.
 
+pub mod json;
+
 use crate::media::{OpenError, Playback};
 use crate::model::{
     AlbumInfo, Art, ArtResolver, ArtistPage, Error, Item, Likeable, Likes, Link, Listen, Lyrics, Page, Playlist, PlaylistId, Quality,

@@ -31,10 +31,7 @@ fn lyrics(r: &Value) -> Option<Lyrics> {
     } else {
         text.lines().map(|l| l.trim_end().to_string()).collect()
     };
-    if plain.iter().all(|l| l.trim().is_empty()) {
-        return None;
-    }
-    Some(Lyrics { synced, plain, writers: parse::text(&r["LYRICS_WRITERS"]), copyright: parse::text(&r["LYRICS_COPYRIGHTS"]) })
+    Lyrics::new(synced, plain, parse::text(&r["LYRICS_WRITERS"]), parse::text(&r["LYRICS_COPYRIGHTS"]))
 }
 
 #[cfg(test)]

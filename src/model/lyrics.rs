@@ -18,6 +18,15 @@ pub struct Lyrics {
 }
 
 impl Lyrics {
+    /// Lyrics of these lines; None when there's nothing but blank lines (sources
+    /// answer an empty text rather than "none").
+    pub fn new(synced: Vec<LyricLine>, plain: Vec<String>, writers: String, copyright: String) -> Option<Lyrics> {
+        if plain.iter().all(|l| l.trim().is_empty()) {
+            return None;
+        }
+        Some(Lyrics { synced, plain, writers, copyright })
+    }
+
     /// Index of the synced line being sung at `ms`, if one has started.
     pub fn line_at(&self, ms: u32) -> Option<usize> {
         self.synced.partition_point(|l| l.at_ms <= ms).checked_sub(1)

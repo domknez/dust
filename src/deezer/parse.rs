@@ -7,23 +7,7 @@ use crate::model::{
 };
 use serde_json::Value;
 
-/// String field, tolerating numbers and nulls.
-pub fn text(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        Value::Null => String::new(),
-        other => other.to_string(),
-    }
-}
-
-/// Unsigned number field, tolerating numeric strings; 0 when absent.
-pub fn number(v: &Value) -> u64 {
-    match v {
-        Value::Number(n) => n.as_u64().unwrap_or(0),
-        Value::String(s) => s.parse().unwrap_or(0),
-        _ => 0,
-    }
-}
+pub use crate::source::json::{number, text};
 
 /// One of Deezer's ids (written out by [`TrackId`] and [`PlaylistId`]) as the API
 /// takes it: the number it is.
