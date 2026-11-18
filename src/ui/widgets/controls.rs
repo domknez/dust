@@ -88,7 +88,7 @@ pub fn pill(ui: &mut Ui, label: &str, icon: Option<Icon>, primary: bool) -> Resp
     let p = colors();
     let corner = CornerRadius::same(radius::CONTROL);
     let fg = if primary {
-        let bg = if resp.hovered() { p.accent_fill.lerp_to_gamma(Color32::WHITE, 0.3) } else { p.accent_fill };
+        let bg = if resp.hovered() { p.accent_hover() } else { p.accent_fill };
         ui.painter().rect_filled(rect, corner, bg);
         p.on_accent
     } else {
@@ -206,11 +206,11 @@ pub fn thin_slider(ui: &mut Ui, value: &mut f32, width: f32, enabled: bool, lime
     let track = Rect::from_center_size(rect.center(), vec2(rect.width(), if active { 4.0 } else { 3.0 }));
     let fill = Rect::from_min_max(track.min, pos2(track.left() + track.width() * *value, track.bottom()));
     let painter = ui.painter();
-    painter.rect_filled(track, CornerRadius::same(1), p.line);
-    painter.rect_filled(fill, CornerRadius::same(1), if lime || active { p.accent } else { p.text });
+    painter.rect_filled(track, CornerRadius::same(radius::BAR), p.line);
+    painter.rect_filled(fill, CornerRadius::same(radius::BAR), if lime || active { p.accent } else { p.text });
     if active {
         let knob = Rect::from_center_size(pos2(fill.right(), track.center().y), Vec2::splat(10.0));
-        painter.rect_filled(knob, CornerRadius::same(2), p.text);
+        painter.rect_filled(knob, CornerRadius::same(radius::KNOB), p.text);
     }
     if enabled {
         resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -254,7 +254,7 @@ pub fn wave_slider(ui: &mut Ui, value: &mut f32, width: f32, seed: u64, enabled:
         } else {
             p.raised
         };
-        painter.rect_filled(bar, CornerRadius::same(1), color);
+        painter.rect_filled(bar, CornerRadius::same(radius::BAR), color);
     }
     if enabled {
         resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -302,7 +302,7 @@ pub fn segmented(ui: &mut Ui, items: &[(Icon, &str)], selected: usize) -> Option
         let resp = ui.interact(seg, ui.scope_id().with(("segment", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
         let on = i == selected;
         if on {
-            ui.painter().rect_filled(seg, CornerRadius::same(5), p.text);
+            ui.painter().rect_filled(seg, CornerRadius::same(radius::SEGMENT), p.text);
         }
         let color = match (on, resp.hovered()) {
             (true, _) => p.bg,

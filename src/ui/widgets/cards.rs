@@ -128,7 +128,7 @@ pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, ra
             painter.text(pos2(x, tab.center().y), Align2::LEFT_CENTER, label, font, color);
             if on {
                 let line = Rect::from_min_size(pos2(x, tab.center().y + size.y / 2.0 + 3.0), vec2(size.x, 2.0));
-                painter.rect_filled(line, CornerRadius::same(1), p.accent);
+                painter.rect_filled(line, CornerRadius::same(radius::BAR), p.accent);
             }
             if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                 chosen = is_genres;
@@ -142,7 +142,7 @@ pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, ra
 
     let play = Rect::from_min_size(pos2(rect.right() - 68.0, rect.top() + 20.0), Vec2::splat(48.0));
     let resp = ui.interact(play, ui.scope_id().with("flow-play"), Sense::click()).on_hover_text(format!("Play {name}"));
-    let fill = if resp.hovered() { p.accent_fill.lerp_to_gamma(egui::Color32::WHITE, 0.3) } else { p.accent_fill };
+    let fill = if resp.hovered() { p.accent_hover() } else { p.accent_fill };
     painter.rect_filled(play, CornerRadius::same(radius::CONTROL), fill);
     icons::paint(&painter, Rect::from_center_size(play.center(), Vec2::splat(20.0)), Icon::Play, p.on_accent);
     if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -177,7 +177,7 @@ pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, ra
             (false, false) => (None, p.dim),
         };
         if let Some(bg) = bg {
-            painter.rect_filled(chip, CornerRadius::same(5), bg);
+            painter.rect_filled(chip, CornerRadius::same(radius::SEGMENT), bg);
         }
         painter.text(chip.center(), Align2::CENTER_CENTER, label, ty::META.font(), fg);
         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -197,12 +197,12 @@ fn new_only_toggle(ui: &Ui, painter: &egui::Painter, at: egui::Pos2, on: bool) -
     let box_rect = Rect::from_center_size(pos2(at.x + 6.0, at.y), Vec2::splat(12.0));
     let hot = resp.hovered();
     if on {
-        painter.rect_filled(box_rect, CornerRadius::same(3), p.accent_fill);
+        painter.rect_filled(box_rect, CornerRadius::same(radius::CHECK), p.accent_fill);
         let tick = [pos2(-3.5, 0.0), pos2(-1.0, 2.5), pos2(3.5, -2.5)].map(|v| box_rect.center() + v.to_vec2());
         painter.add(egui::Shape::line(tick.to_vec(), egui::Stroke::new(1.5, p.on_accent)));
     } else {
         let edge = if hot { p.text } else { p.dim };
-        painter.rect_stroke(box_rect, CornerRadius::same(3), egui::Stroke::new(1.2, edge), egui::StrokeKind::Inside);
+        painter.rect_stroke(box_rect, CornerRadius::same(radius::CHECK), egui::Stroke::new(1.2, edge), egui::StrokeKind::Inside);
     }
     let color = if on || hot { p.text } else { p.dim };
     painter.text(pos2(box_rect.right() + 7.0, at.y), Align2::LEFT_CENTER, label, ty::META.font(), color);

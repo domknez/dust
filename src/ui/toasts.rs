@@ -136,7 +136,7 @@ impl Toasts {
                     let rect = card.inner;
                     let bar = Rect::from_min_max(pos2(rect.left() + 6.0, rect.top() + 9.0), pos2(rect.left() + 9.0, rect.bottom() - 9.0));
                     let color = if toast.error { p.danger } else { p.accent };
-                    ui.painter().rect_filled(bar, CornerRadius::same(2), color.gamma_multiply(toast.opacity()));
+                    ui.painter().rect_filled(bar, CornerRadius::same(radius::KNOB), color.gamma_multiply(toast.opacity()));
                     // Kept while read.
                     if ui.rect_contains_pointer(rect) && toast.since.elapsed() > FADE {
                         toast.since = Instant::now() - FADE;

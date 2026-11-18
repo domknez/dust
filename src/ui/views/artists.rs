@@ -7,12 +7,11 @@ use crate::ui::app::App;
 use crate::ui::covers::Covers;
 use crate::ui::load::Load;
 use crate::ui::state::Coll;
-use crate::ui::style::{colors, metrics, typography as ty};
-use crate::ui::widgets::{self, CardClick, Grid, GridColumns, text_left};
+use crate::ui::style::{colors, typography as ty};
+use crate::ui::widgets::{self, CardClick, Grid, text_left};
 use eframe::egui::{self, Ui, vec2};
 
-/// Home-sized cards, as many as fit across.
-const CARDS: Grid = Grid { columns: GridColumns::Fit(metrics::HOME_CARD), gap: 18.0, row_gap: 20.0, text: metrics::CARD_TEXT };
+const CARDS: Grid = Grid::HOME_CARDS;
 
 impl App {
     pub(in crate::ui) fn artists_page(&mut self, ui: &mut Ui, acts: &mut Actions) {

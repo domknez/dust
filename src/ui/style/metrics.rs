@@ -64,8 +64,16 @@ pub const GRID_CARD_PX: u32 = 352;
 
 /// Corner radii: small and crisp.
 pub mod radius {
+    /// Thin bars: slider tracks, the equalizer, a card's progress line.
+    pub const BAR: u8 = 1;
+    /// A slider's knob, a toast's colour stripe.
+    pub const KNOB: u8 = 2;
+    /// Tick boxes.
+    pub const CHECK: u8 = 3;
     /// Small thumbnails, tags.
     pub const THUMB: u8 = 4;
+    /// The lit segment of a segmented control, small chips on cards.
+    pub const SEGMENT: u8 = 5;
     /// Hoverable list rows.
     pub const ROW: u8 = 6;
     /// Artwork cards, collection headers.

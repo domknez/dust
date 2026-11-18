@@ -1,6 +1,6 @@
 //! Decorative touches: the wordmark, the playing-track equalizer and fades.
 
-use crate::ui::style::{colors, typography as ty};
+use crate::ui::style::{colors, radius, typography as ty};
 use eframe::egui::{self, Align2, Color32, CornerRadius, Painter, Pos2, Rect, pos2, vec2};
 use std::time::Duration;
 
@@ -23,7 +23,7 @@ pub fn equalizer(p: &Painter, r: Rect, animated: bool) {
         let height = if animated { 0.35 + 0.65 * (0.5 + 0.5 * (t * 7.0 + phase).sin()) } else { 0.5 };
         let x = r.left() + k as f32 * r.width() * 0.38;
         let bar = Rect::from_min_max(pos2(x, r.bottom() - r.height() * height), pos2(x + r.width() * 0.24, r.bottom()));
-        p.rect_filled(bar, CornerRadius::same(1), colors().accent);
+        p.rect_filled(bar, CornerRadius::same(radius::BAR), colors().accent);
     }
     if animated {
         p.ctx().request_repaint_after(Duration::from_millis(80));

@@ -104,7 +104,7 @@ impl App {
                     (false, false) => p.dim,
                 };
                 if on {
-                    ui.painter().rect_filled(tab, CornerRadius::same(5), p.text);
+                    ui.painter().rect_filled(tab, CornerRadius::same(radius::SEGMENT), p.text);
                 }
                 ui.painter().text(tab.center(), egui::Align2::CENTER_CENTER, label, ty::META.font(), color);
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -141,7 +141,11 @@ impl App {
         let remove = Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), Vec2::splat(24.0));
         let over_remove = resp.hover_pos().is_some_and(|pos| remove.contains(pos));
         if show_remove {
-            ui.painter().rect_filled(remove, CornerRadius::same(12), if over_remove { p.raised } else { p.hover });
+            ui.painter().rect_filled(
+                remove,
+                CornerRadius::same((remove.height() / 2.0) as u8),
+                if over_remove { p.raised } else { p.hover },
+            );
             icons::paint(ui.painter(), Rect::from_center_size(remove.center(), Vec2::splat(10.0)), Icon::Close, p.dim);
         }
         if resp.drag_started() {

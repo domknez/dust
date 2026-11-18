@@ -33,6 +33,13 @@ pub struct Palette {
     pub veil: Color32,
 }
 
+impl Palette {
+    /// The accent fill under the pointer: a little lighter.
+    pub fn accent_hover(&self) -> Color32 {
+        self.accent_fill.lerp_to_gamma(Color32::WHITE, 0.3)
+    }
+}
+
 const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
     Color32::from_rgb(r, g, b)
 }

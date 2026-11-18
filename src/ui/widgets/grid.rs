@@ -25,6 +25,15 @@ pub struct Grid {
 }
 
 impl Grid {
+    /// Home-sized cards, as many as fit across (the Artists, Albums and Podcasts
+    /// pages, a genre's page).
+    pub const HOME_CARDS: Grid = Grid {
+        columns: GridColumns::Fit(crate::ui::style::metrics::HOME_CARD),
+        gap: 18.0,
+        row_gap: 20.0,
+        text: crate::ui::style::metrics::CARD_TEXT,
+    };
+
     /// The number of columns and the artwork's side in `width`.
     fn layout(&self, width: f32) -> (usize, f32) {
         match self.columns {

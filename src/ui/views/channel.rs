@@ -9,12 +9,11 @@ use crate::ui::action::Actions;
 use crate::ui::app::App;
 use crate::ui::covers::Covers;
 use crate::ui::state::ChannelView;
-use crate::ui::style::{colors, metrics, typography as ty};
-use crate::ui::widgets::{self, Grid, GridColumns, text_left};
+use crate::ui::style::{colors, typography as ty};
+use crate::ui::widgets::{self, Grid, text_left};
 use eframe::egui::{self, Sense, Ui, pos2, vec2};
 
-/// Home-sized cards, as many as fit across.
-const CARDS: Grid = Grid { columns: GridColumns::Fit(metrics::HOME_CARD), gap: 16.0, row_gap: 20.0, text: metrics::CARD_TEXT };
+const CARDS: Grid = Grid::HOME_CARDS;
 
 impl App {
     pub(in crate::ui) fn channel_view(&mut self, ui: &mut Ui, st: &Status, channel: &ChannelView, acts: &mut Actions) {

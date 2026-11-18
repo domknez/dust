@@ -110,7 +110,7 @@ pub fn switch_row(ui: &mut Ui, title: &str, subtitle: Option<&str>, on: bool, en
     let t = ui.ctx().animate_bool(resp.id.with("switch"), on);
     let fill = if on { p.accent_fill } else { p.border };
     let fill = if enabled { fill } else { fill.gamma_multiply(0.5) };
-    ui.painter().rect_filled(track, CornerRadius::same(10), fill);
+    ui.painter().rect_filled(track, CornerRadius::same((track.height() / 2.0) as u8), fill);
     let knob = pos2(egui::lerp(track.left() + 10.0..=track.right() - 10.0, t), track.center().y);
     ui.painter().circle_filled(knob, 7.0, if on { p.on_accent } else { p.dim });
     if enabled { resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { resp }

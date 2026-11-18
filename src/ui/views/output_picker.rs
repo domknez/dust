@@ -70,15 +70,13 @@ impl App {
     /// one playing is raised and carries the volume.
     fn output_menu(&mut self, ui: &mut Ui, st: &Status, remote: bool, acts: &mut Actions) -> Option<Output> {
         let p = colors();
-        let devices: Vec<Device> =
-            self.discovery.as_ref().map(|d| d.devices()).unwrap_or_default().into_iter().filter(|d| d.supported && !d.password).collect();
+        let found = self.discovery.as_ref().map(|d| d.devices()).unwrap_or_default();
+        let none_found = found.is_empty();
+        let devices: Vec<Device> = found.into_iter().filter(|d| d.supported && !d.password).collect();
         ui.add_space(4.0);
         let (head, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
         text_left(ui.painter(), pos2(head.left() + 8.0, head.center().y), "Play on", ty::SECTION_TITLE, p.text, head.width() - 100.0);
-        let count = match devices.len() {
-            1 => "1 speaker".to_string(),
-            n => format!("{n} speakers"),
-        };
+        let count = crate::ui::format::count(devices.len(), "speaker");
         ui.painter().text(pos2(head.right() - 8.0, head.center().y), Align2::RIGHT_CENTER, count, ty::META.font(), p.dim);
         ui.add_space(6.0);
         ui.spacing_mut().item_spacing.y = 4.0;
@@ -93,7 +91,7 @@ impl App {
                 pick = Some(Output::AirPlay(device));
             }
         }
-        if self.discovery.as_ref().is_none_or(|d| d.devices().is_empty()) {
+        if none_found {
             ui.add_space(4.0);
             ui.label(RichText::new("Looking for AirPlay speakers…").color(p.faint).font(ty::SMALL.font()));
         }
