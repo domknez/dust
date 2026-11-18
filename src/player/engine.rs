@@ -965,7 +965,7 @@ mod tests {
             Ok(Box::new(FakePlayback { id: track.id.clone(), secs: track.duration as f64, written: at, done: false, breaks }))
         }
 
-        fn flow(&self, _: Option<&str>) -> Result<Vec<Track>, String> {
+        fn flow(&self, _: Option<&str>) -> Result<Vec<Track>, crate::model::Error> {
             let mut next = self.next_flow_id.lock().unwrap();
             let batch = (0..3).map(|i| track(100 + *next + i, 2)).collect();
             *next += 3;

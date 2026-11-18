@@ -6,7 +6,7 @@
 use super::library::SharedLibrary;
 use super::queue::Flow;
 use crate::media::{OpenError, Playback};
-use crate::model::{Quality, Track, TrackId};
+use crate::model::{Error, Quality, Track, TrackId};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
@@ -35,7 +35,7 @@ pub enum Preload {
     /// Opened, waiting for the current track to end.
     Ready { id: TrackId, since: Instant, playback: Box<dyn Playback> },
     /// Fetching more of endless Flow on a worker.
-    Refilling { flow: Flow, rx: Receiver<Result<Vec<Track>, String>> },
+    Refilling { flow: Flow, rx: Receiver<Result<Vec<Track>, Error>> },
     /// Didn't work out (`id`: the track that wouldn't open; None: a refill). Not tried
     /// again: the end of the track does it the usual way, and reports the error.
     Failed { id: Option<TrackId> },

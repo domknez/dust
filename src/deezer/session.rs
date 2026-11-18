@@ -1,6 +1,6 @@
 //! gw-light transport: cookie jar, CSRF (`api_token`) handling and the raw call.
 
-use super::{Error, Result, api, http};
+use super::{Error, Result, SERVICE, http};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -79,7 +79,12 @@ pub fn call(agent: &ureq::Agent, arl: &str, session: &mut Session, method: &str,
 fn results(method: &str, reply: Value) -> Result<Value> {
     match &reply["error"] {
         Value::Object(o) if o.contains_key("VALID_TOKEN_REQUIRED") => Err(Error::InvalidToken),
-        Value::Object(o) if !o.is_empty() => Err(api(format!("{method}: {}", Value::Object(o.clone())))),
+        Value::Object(o) if !o.is_empty() => {
+            // Deezer names errors by the keys of its error object, and sometimes in
+            // its values ({"FAVORITE": "ERROR_DATA_EXISTS"}).
+            let codes = o.iter().flat_map(|(k, v)| std::iter::once(k.clone()).chain(v.as_str().map(str::to_string))).collect();
+            Err(SERVICE.api_codes(format!("{method}: {}", Value::Object(o.clone())), codes))
+        }
         _ => Ok(reply["results"].clone()),
     }
 }
@@ -104,7 +109,9 @@ mod tests {
     #[test]
     fn error_replies() {
         assert!(matches!(results("m", json!({"error": {"VALID_TOKEN_REQUIRED": "Invalid CSRF token"}})), Err(Error::InvalidToken)));
-        assert!(matches!(results("m", json!({"error": {"DATA_ERROR": "x"}})), Err(Error::Api { .. })));
+        let e = results("m", json!({"error": {"DATA_ERROR": "x"}})).unwrap_err();
+        assert!(e.has_code("DATA_ERROR") && !e.has_code("ERROR_DATA_EXISTS"));
+        assert!(results("m", json!({"error": {"FAVORITE": "ERROR_DATA_EXISTS"}})).unwrap_err().has_code("ERROR_DATA_EXISTS"));
         assert_eq!(results("m", json!({"error": [], "results": {"a": 1}})).unwrap(), json!({"a": 1}));
     }
 

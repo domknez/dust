@@ -232,8 +232,8 @@ impl Library for Shared {
         (**self).open(track, quality, at)
     }
 
-    fn flow(&self, mood: Option<&str>) -> std::result::Result<Vec<Track>, String> {
-        self.endless(mood).map_err(|e| e.to_string())
+    fn flow(&self, mood: Option<&str>) -> Result<Vec<Track>> {
+        self.endless(mood)
     }
 
     fn report_listen_start(&self, song_id: TrackId) {

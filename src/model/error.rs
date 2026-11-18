@@ -21,7 +21,12 @@ impl Service {
 
     /// The service answered with an error.
     pub fn api(self, message: impl Into<String>) -> Error {
-        Error::Api { service: self, message: message.into() }
+        Error::Api { service: self, message: message.into(), codes: Vec::new() }
+    }
+
+    /// The service answered with an error it names with `codes` ("DATA_ERROR").
+    pub fn api_codes(self, message: impl Into<String>, codes: Vec<String>) -> Error {
+        Error::Api { service: self, message: message.into(), codes }
     }
 
     /// The service couldn't be reached.
@@ -60,9 +65,10 @@ pub enum Error {
     /// Couldn't reach the service.
     #[error("Couldn't reach {}: {message}", service.place)]
     Network { service: Service, message: String },
-    /// The service answered with an error.
+    /// The service answered with an error; `codes` are the names it gave it, for
+    /// telling one error from another without reading the message.
     #[error("{service}: {message}")]
-    Api { service: Service, message: String },
+    Api { service: Service, message: String, codes: Vec<String> },
     /// The service answered with an HTTP error status (kept as a number so callers
     /// can tell "not found" from "try again later").
     #[error("{service}: HTTP {status}")]
@@ -81,6 +87,11 @@ pub enum Error {
 impl Error {
     pub fn is_session_expired(&self) -> bool {
         matches!(self, Error::SessionExpired)
+    }
+
+    /// The service's answer named this error `code`.
+    pub fn has_code(&self, code: &str) -> bool {
+        matches!(self, Error::Api { codes, .. } if codes.iter().any(|c| c == code))
     }
 }
 

@@ -1,7 +1,7 @@
 //! Browsing the catalogue: search, the user's library, the home page and what its
 //! items open (albums, artists, mixes, Flow).
 
-use super::{Deezer, Error, Result, parse};
+use super::{Deezer, Result, parse};
 use crate::model::{
     AlbumInfo, ArtistPage, Item, Likeable, Likes, Page, Playlist, PlaylistId, Release, SearchResults, Section, Track, TrackId,
 };
@@ -191,7 +191,7 @@ impl Deezer {
         };
         match self.call(method, body) {
             // Already liked: the outcome we wanted.
-            Err(Error::Api { message: e, .. }) if liked && e.contains("ERROR_DATA_EXISTS") => Ok(()),
+            Err(e) if liked && e.has_code("ERROR_DATA_EXISTS") => Ok(()),
             other => other.map(|_| ()),
         }
     }
