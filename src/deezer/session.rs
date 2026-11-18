@@ -136,10 +136,10 @@ mod tests {
     #[ignore]
     fn session_csrf_roundtrip() {
         let agent = http_agent();
-        let mut session = Session::new();
-        let data = call(&agent, "", &mut session, "deezer.getUserData", json!({}), &[]).unwrap();
-        session.api_token = parse::text(&data["checkForm"]);
-        let r = call(&agent, "", &mut session, "deezer.pageSearch", json!({"query": "daft punk", "start": 0, "nb": 5}), &[]).unwrap();
+        let session = Mutex::new(Session::new());
+        let data = call(&agent, "", &session, "deezer.getUserData", json!({}), &[]).unwrap();
+        lock(&session).api_token = parse::text(&data["checkForm"]);
+        let r = call(&agent, "", &session, "deezer.pageSearch", json!({"query": "daft punk", "start": 0, "nb": 5}), &[]).unwrap();
         assert!(!parse::tracks(&r["TRACK"]["data"]).is_empty(), "{r}");
     }
 }
