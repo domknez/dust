@@ -10,8 +10,6 @@ use eframe::egui::{self, Color32, CornerRadius, Key, Response, Sense, Ui, Vec2, 
 const CONTEXT_MENU_WIDTH: f32 = 190.0;
 /// Playlists used last, offered on top of "Add to playlist".
 const RECENT: usize = 3;
-/// The shortcut that adds what's playing to the playlist used last, as menus show it.
-
 /// The playlists "Add to playlist" offers: the account's own ones of `all`, those
 /// tracks were added to last (`recent`, the latest first) on top.
 #[derive(Clone, Copy)]

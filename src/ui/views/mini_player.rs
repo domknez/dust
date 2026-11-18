@@ -15,8 +15,6 @@ use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
 use eframe::egui::{self, CornerRadius, Rect, Sense, Stroke, Ui, UiBuilder, Vec2, ViewportCommand, WindowLevel, pos2, vec2};
 
-/// The mini player shortcut, as menus show it.
-
 const PAD: f32 = 10.0;
 /// Controls width: previous, play/pause, next.
 const TRANSPORT: f32 = 116.0;
