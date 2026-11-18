@@ -91,14 +91,14 @@ pub fn switch_row(ui: &mut Ui, title: &str, subtitle: Option<&str>, on: bool, en
     let (title_color, sub_color) = if enabled { (p.text, p.faint) } else { (p.faint, p.faint) };
     match subtitle {
         Some(sub) => {
-            let title = super::Line { text: title, style: ty::ITEM, color: title_color };
+            let title = super::TextLine { text: title, style: ty::ITEM, color: title_color };
             super::two_lines(
                 ui.painter(),
                 x,
                 rect.center().y,
                 width,
                 title,
-                super::Line { text: sub, style: ty::CAPTION, color: sub_color },
+                super::TextLine { text: sub, style: ty::CAPTION, color: sub_color },
             );
         }
         None => {

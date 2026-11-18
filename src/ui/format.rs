@@ -25,9 +25,9 @@ pub fn release_date(iso: &str) -> Option<String> {
     (year.len() == 4 && (1..=12).contains(&month)).then(|| format!("{day} {} {year}", MONTHS[month - 1]))
 }
 
-/// `n` of `thing`: "1 track", "12 tracks" (a regular plural).
+/// `n` of `thing`: "1 track", "1,234 tracks" (a regular plural).
 pub fn count(n: usize, thing: &str) -> String {
-    if n == 1 { format!("1 {thing}") } else { format!("{n} {thing}s") }
+    if n == 1 { format!("1 {thing}") } else { format!("{} {thing}s", thousands(n as u64)) }
 }
 
 /// How long ago something `secs` ago was: "just now", "a minute ago", "5 minutes
@@ -75,6 +75,7 @@ mod tests {
     #[test]
     fn counts_and_times_read_naturally() {
         assert_eq!((count(1, "track"), count(0, "track"), count(12, "track")), ("1 track".into(), "0 tracks".into(), "12 tracks".into()));
+        assert_eq!(count(12_345, "play"), "12,345 plays");
         let ago_all = [0, 59, 60, 119, 120, 3599, 3600, 7199, 7200, 86_399, 86_400, 172_800].map(ago);
         assert_eq!(
             ago_all,

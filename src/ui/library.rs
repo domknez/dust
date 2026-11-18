@@ -40,7 +40,10 @@ impl Library {
             None => {}
         }
         match self.likes_load.poll_take() {
-            Some(Ok(likes)) => self.likes.likes = likes,
+            Some(Ok(likes)) => {
+                self.likes.likes = likes;
+                self.likes.revision += 1;
+            }
             Some(Err(e)) => log_warn!("loading likes: {e}"),
             None => {}
         }

@@ -121,11 +121,11 @@ impl App {
     /// expired session goes to `failed`, to end it.
     pub(in crate::ui) fn poll_playlist_edits(&mut self, ctx: &egui::Context, failed: &mut Vec<Error>) {
         let results = self.library.editing.finished();
-        if results.is_empty() {
-            return;
-        }
-        // Even a failed edit may have changed some of it.
-        if let Some(client) = self.client.clone() {
+        // Even a failed edit may have changed some of it; an expired session
+        // logs out instead.
+        if results.iter().any(|r| !r.as_ref().is_err_and(Error::is_session_expired))
+            && let Some(client) = self.client.clone()
+        {
             self.library.playlists_load.start(&self.jobs, move || client.playlists());
         }
         for result in results {

@@ -13,8 +13,6 @@ use crate::ui::style::{colors, typography as ty};
 use crate::ui::widgets::{self, Grid, text_left};
 use eframe::egui::{self, Sense, Ui, pos2, vec2};
 
-const CARDS: Grid = Grid::HOME_CARDS;
-
 impl App {
     pub(in crate::ui) fn channel_view(&mut self, ui: &mut Ui, st: &Status, channel: &ChannelView, acts: &mut Actions) {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -53,5 +51,5 @@ fn card_grid(ui: &mut Ui, covers: &mut Covers, section: &Section, acts: &mut Act
     ui.add_space(26.0);
     section_title(ui, section, acts);
     ui.add_space(10.0);
-    CARDS.add(ui, items.len(), |ui, k| item_card(ui, covers, items[k], acts));
+    Grid::HOME_CARDS.add(ui, items.len(), |ui, k| item_card(ui, covers, items[k], acts));
 }

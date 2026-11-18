@@ -206,6 +206,10 @@ impl App {
         if !self.view_allowed(&self.browse.view) {
             self.open_view(View::Home);
         }
+        // Last: leaving the page just turned off put it behind Back.
+        let mut history = std::mem::take(&mut self.browse.history);
+        history.keep(|v| self.view_allowed(&v.view));
+        self.browse.history = history;
     }
 }
 
@@ -297,6 +301,9 @@ mod tests {
         t.update(Action::ShowPanel(Some(SidePanel::Crate)));
         t.app.set_switch(&t.ctx.clone(), Switch::Crate, false);
         assert_eq!(t.app.browse.view, View::Home);
+        t.update(Action::Back);
+        assert_eq!(t.app.browse.view, View::Home, "Back skips the Crate, now off");
+        assert!(!t.app.browse.history.can_go_back(), "and there's nothing else behind");
         assert!(t.app.side_panel == Some(SidePanel::Queue) && t.app.side_tab == SidePanel::Queue);
         t.update(Action::OpenCrate(None, None));
         assert_eq!(t.app.browse.view, View::Home, "the Crate stays shut");

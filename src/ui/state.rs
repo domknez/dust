@@ -2,7 +2,6 @@
 
 use crate::model::{Art, ArtistRef, Item, ItemKind, Playlist, PlaylistId, Track};
 use crate::player::Cmd;
-use crate::source::Source;
 
 /// The page in the main area.
 #[derive(Clone, PartialEq, Debug)]
@@ -101,21 +100,13 @@ impl CollSource {
                 let tracks = history(which);
                 Box::new(move || Ok(tracks))
             }
-            source => Box::new(move || source.fetch(&*client)),
-        }
-    }
-
-    /// From the source; a history list has nothing to fetch (see [`CollSource::fetcher`]).
-    fn fetch(&self, client: &dyn Source) -> crate::model::Result<Vec<Track>> {
-        match self {
-            CollSource::Playlist(id) => client.playlist(id),
-            CollSource::Album(id) => client.album(id),
-            CollSource::Artist(id) | CollSource::TopTracks(id) => client.artist_top(id),
-            CollSource::TrackMix(id) => client.track_mix(id),
-            CollSource::Mix(id) => client.mix(id),
-            CollSource::ArtistMix(id) => client.artist_mix(id),
-            CollSource::Show(id) => client.show_episodes(id),
-            CollSource::History(_) => Ok(Vec::new()),
+            CollSource::Playlist(id) => Box::new(move || client.playlist(&id)),
+            CollSource::Album(id) => Box::new(move || client.album(&id)),
+            CollSource::Artist(id) | CollSource::TopTracks(id) => Box::new(move || client.artist_top(&id)),
+            CollSource::TrackMix(id) => Box::new(move || client.track_mix(&id)),
+            CollSource::Mix(id) => Box::new(move || client.mix(&id)),
+            CollSource::ArtistMix(id) => Box::new(move || client.artist_mix(&id)),
+            CollSource::Show(id) => Box::new(move || client.show_episodes(&id)),
         }
     }
 }

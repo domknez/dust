@@ -122,8 +122,8 @@ impl App {
         icons::paint(ui.painter(), Rect::from_center_size(tile.center(), Vec2::splat(18.0)), Icon::Speaker, tile_fg);
         let x = tile.right() + 12.0;
         let width = row.right() - 44.0 - x;
-        let title = widgets::Line { text: name, style: ty::ITEM.strong(), color: p.text };
-        widgets::two_lines(ui.painter(), x, row.center().y, width, title, widgets::Line { text: kind, style: ty::SMALL, color: p.dim });
+        let title = widgets::TextLine { text: name, style: ty::ITEM.strong(), color: p.text };
+        widgets::two_lines(ui.painter(), x, row.center().y, width, title, widgets::TextLine { text: kind, style: ty::SMALL, color: p.dim });
         let check = pos2(row.right() - 22.0, row.center().y);
         if current {
             ui.painter().circle_filled(check, 11.0, p.accent_fill);

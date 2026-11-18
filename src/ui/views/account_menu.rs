@@ -70,7 +70,7 @@ fn account_header(ui: &mut Ui, name: &str, label: &str) {
     let (head, _) = ui.allocate_exact_size(vec2(ui.available_width(), 48.0), Sense::hover());
     avatar(ui, pos2(head.left() + 22.0, head.center().y), 17.0, name, ty::LEAD);
     let width = head.width() - 56.0;
-    let title = widgets::Line { text: name, style: ty::TITLE.strong(), color: colors().text };
-    let subtitle = widgets::Line { text: label, style: ty::SMALL, color: colors().faint };
+    let title = widgets::TextLine { text: name, style: ty::TITLE.strong(), color: colors().text };
+    let subtitle = widgets::TextLine { text: label, style: ty::SMALL, color: colors().faint };
     widgets::two_lines(ui.painter(), head.left() + 48.0, head.center().y, width, title, subtitle);
 }

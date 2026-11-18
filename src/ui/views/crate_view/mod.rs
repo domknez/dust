@@ -77,6 +77,8 @@ impl Crates {
     pub fn forget_jobs(&mut self) {
         self.radio = Load::default();
         self.about = Load::default();
+        // Those being looked up are tried again when their source is back.
+        self.about_tried.clear();
     }
 }
 

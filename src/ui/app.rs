@@ -328,11 +328,19 @@ impl App {
 
     /// A page with a track list: empty it and load the new one.
     fn load_list(&mut self, client: Shared, view: View) {
-        // The tracks of a collection other than an album (whose page says more).
-        let fetch = match &view {
-            View::Collection(coll) if !matches!(coll.source, CollSource::Album(_)) => {
-                Some(coll.source.clone().fetcher(client.clone(), |which| self.history_list(which)))
-            }
+        // A collection's tracks; an album's page says more (year, label, ...).
+        type Tracks = Box<dyn FnOnce() -> crate::model::Result<(Vec<Track>, Option<crate::model::AlbumInfo>)> + Send>;
+        let collection: Option<Tracks> = match &view {
+            View::Collection(coll) => Some(match &coll.source {
+                CollSource::Album(id) => {
+                    let (client, id) = (client.clone(), id.clone());
+                    Box::new(move || client.album_page(&id).map(|(tracks, info)| (tracks, Some(info))))
+                }
+                source => {
+                    let fetch = source.clone().fetcher(client.clone(), |which| self.history_list(which));
+                    Box::new(move || fetch().map(|tracks| (tracks, None)))
+                }
+            }),
             _ => None,
         };
         let browse = &mut self.browse;
@@ -361,13 +369,11 @@ impl App {
                 browse.search_load.start(&self.jobs, move || client.search(&query));
             }
             View::Loved => browse.tracks_load.start(&self.jobs, move || client.loved().map(|t| (t, None))),
-            View::Collection(coll) => match (fetch, coll.source) {
-                (Some(fetch), _) => browse.tracks_load.start(&self.jobs, move || fetch().map(|t| (t, None))),
-                (None, CollSource::Album(id)) => {
-                    browse.tracks_load.start(&self.jobs, move || client.album_page(&id).map(|(t, info)| (t, Some(info))))
+            View::Collection(_) => {
+                if let Some(tracks) = collection {
+                    browse.tracks_load.start(&self.jobs, tracks);
                 }
-                (None, _) => {}
-            },
+            }
         }
     }
 
@@ -806,8 +812,8 @@ pub(super) mod testing {
     /// The player showing a queue of these tracks.
     pub fn queue(ids: &[u64], index: usize) -> Status {
         // Each a queue the player made anew, as its own snapshots are.
-        static VERSION: AtomicUsize = AtomicUsize::new(1);
-        let queue_version = VERSION.fetch_add(1, Ordering::Relaxed) as u64;
+        static VERSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let queue_version = VERSION.fetch_add(1, Ordering::Relaxed);
         Status { queue: std::sync::Arc::new(ids.iter().map(|&id| track(id, true)).collect()), queue_version, index, ..Default::default() }
     }
 }
@@ -934,6 +940,9 @@ mod tests {
     fn play_now_goes_in_next_and_on_to_it() {
         let mut t = logged_in();
         t.sent();
+        t.update(Action::PlayNow(track(3, true)));
+        assert!(matches!(&t.sent()[..], [Cmd::Play(tracks, 0)] if super::testing::ids(tracks) == [3]), "nothing queued: it plays");
+        t.app.player.set_status(|st| *st = super::testing::queue(&[1, 2], 0));
         t.update(Action::PlayNow(track(4, true)));
         assert!(matches!(&t.sent()[..], [Cmd::PlayNext(tracks), Cmd::Next] if super::testing::ids(tracks) == [4]));
         t.update(Action::PlayNow(track(5, false)));

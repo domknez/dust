@@ -25,8 +25,8 @@ enum Line {
     Play(usize),
 }
 
-/// The panel's lines, worked out again only when the plays, the day or the
-/// source change.
+/// The panel's lines, worked out again only when the plays, the day, the source
+/// or what endless play is called (Flow or Radio) change.
 #[derive(Default)]
 pub struct HistoryView {
     lines: Option<(LinesKey, Vec<Line>)>,
@@ -120,9 +120,7 @@ impl App {
                             None => {}
                         }
                         let over_heart = hovered && resp.hover_pos().is_some_and(|pos| pos.x > right - 24.0);
-                        if resp.clicked() && !over_heart && track.available {
-                            // In after the track playing, then on to it: the queue
-                            // (and endless Flow) carries on afterwards.
+                        if resp.clicked() && !over_heart {
                             acts.push(Action::PlayNow(track.clone()));
                         }
                         resp.on_hover_cursor(egui::CursorIcon::PointingHand);

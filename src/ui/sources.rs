@@ -475,6 +475,7 @@ mod tests {
         assert!(t.app.crates.radio.is_loading());
         t.update(Action::SwitchSource(navidrome()));
         assert!(!t.app.crates.radio.is_loading(), "its tracks are Deezer's");
+        assert!(!t.app.crates.about.is_loading() && t.app.crates.about_tried.is_empty(), "and its lookups, to be tried again later");
     }
 
     #[test]

@@ -11,8 +11,6 @@ use crate::ui::style::{colors, typography as ty};
 use crate::ui::widgets::{self, CardClick, Grid, text_left};
 use eframe::egui::{self, Ui, vec2};
 
-const CARDS: Grid = Grid::HOME_CARDS;
-
 impl App {
     pub(in crate::ui) fn artists_page(&mut self, ui: &mut Ui, acts: &mut Actions) {
         card_grid(ui, &mut self.covers, "Artists", &self.library.followed, "Artists you follow show up here.", acts);
@@ -40,7 +38,7 @@ fn card_grid(ui: &mut Ui, covers: &mut Covers, title: &str, items: &Load<Vec<Ite
     };
     let colls: Vec<Coll> = items.iter().filter_map(Coll::from_item).collect();
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        CARDS.add(ui, colls.len(), |ui, k| match widgets::card(ui, covers, &colls[k]) {
+        Grid::HOME_CARDS.add(ui, colls.len(), |ui, k| match widgets::card(ui, covers, &colls[k]) {
             CardClick::Open => acts.push(Action::OpenCollection(colls[k].clone())),
             CardClick::Play(mode) => acts.push(Action::PlaySource(colls[k].source.clone(), mode)),
             CardClick::None => {}

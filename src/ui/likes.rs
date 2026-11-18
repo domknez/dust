@@ -11,6 +11,8 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 
 pub struct LikeState {
     pub likes: Likes,
+    /// Goes up whenever `likes` changes, for what's worked out from them.
+    pub revision: u64,
     /// Finished toggles: what, the state that was asked for, and the outcome.
     done_tx: Sender<(Likeable, bool, Result<(), Error>)>,
     done: Receiver<(Likeable, bool, Result<(), Error>)>,
@@ -19,7 +21,7 @@ pub struct LikeState {
 impl Default for LikeState {
     fn default() -> Self {
         let (done_tx, done) = channel();
-        Self { likes: Likes::default(), done_tx, done }
+        Self { likes: Likes::default(), revision: 0, done_tx, done }
     }
 }
 
@@ -64,6 +66,7 @@ impl App {
 
     /// Lists built from likes are out of date now; reload them when next shown.
     fn like_changed(&mut self, what: &Likeable) {
+        self.library.likes.revision += 1;
         match what {
             Likeable::Artist(_) => self.library.followed = Load::Idle,
             Likeable::Album(_) => self.library.favorite_albums = Load::Idle,

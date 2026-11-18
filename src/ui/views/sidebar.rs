@@ -160,8 +160,8 @@ impl App {
             Some(c) if !c.features().quality => c.detail(),
             _ => self.prefs.quality.label().to_lowercase(),
         };
-        let title = widgets::Line { text: &name, style: ty::BODY.strong(), color: p.text };
-        let subtitle = widgets::Line { text: &quality, style: ty::META, color: p.faint };
+        let title = widgets::TextLine { text: &name, style: ty::BODY.strong(), color: p.text };
+        let subtitle = widgets::TextLine { text: &quality, style: ty::META, color: p.faint };
         widgets::two_lines(ui.painter(), rect.left() + 48.0, rect.center().y, width, title, subtitle);
         self.account_menu(&resp, &name, acts);
     }

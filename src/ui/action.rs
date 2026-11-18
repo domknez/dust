@@ -227,10 +227,15 @@ impl App {
             }
             Action::ToggleLike(what) => self.toggle_like(what),
             Action::TrackMenu(tracks, choice) => self.track_menu_choice(ctx, tracks, choice),
-            // One that can't play leaves the one playing alone.
+            // One that can't play leaves the one playing alone; with nothing
+            // queued, it's the queue.
             Action::PlayNow(track) if track.available => {
-                self.track_menu_choice(ctx, vec![track], TrackMenu::Play(PlayMode::Next));
-                self.player.send(Cmd::Next);
+                if self.player.status().queue.is_empty() {
+                    self.player.send(Cmd::Play(vec![track], 0));
+                } else {
+                    self.track_menu_choice(ctx, vec![track], TrackMenu::Play(PlayMode::Next));
+                    self.player.send(Cmd::Next);
+                }
             }
             Action::PlayNow(_) => {}
             Action::SaveToCrate(thing, from) => self.save_to_crate(ctx, thing, from),

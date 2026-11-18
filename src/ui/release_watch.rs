@@ -153,7 +153,8 @@ pub fn fresh(releases: Vec<Release>, since: Date, today: Date, seen: &HashSet<St
 }
 
 impl crate::ui::app::App {
-    /// Each frame: take in what a look found, and start one when it's time.
+    /// Take in what a look found, and start one when it's time (with the app's
+    /// other background work, also while the window is hidden).
     pub(in crate::ui) fn release_tick(&mut self, ctx: &eframe::egui::Context) {
         let Some(client) = self.client.clone() else { return };
         let now = crate::clock::unix_now();
@@ -171,7 +172,7 @@ impl crate::ui::app::App {
         self.releases.start(&self.jobs, client, listened, today);
     }
 
-    /// The artists heard most in the last 90 days, by plays heard through.
+    /// The artists heard most in the last [`LISTENED_DAYS`], by plays heard through.
     pub(in crate::ui) fn listened_artists(&self, source: &str, now: u64) -> Artists {
         let since = now.saturating_sub(LISTENED_DAYS * crate::ui::stats::DAY);
         let mut count: std::collections::HashMap<(String, String), u32> = std::collections::HashMap::new();

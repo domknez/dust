@@ -43,29 +43,24 @@ impl History {
         self.forward.clear();
     }
 
-    /// The page before `current`, skipping (and forgetting) ones not `allowed` any
-    /// more: a part turned off in Settings since.
-    pub fn back(&mut self, current: Visit, allowed: impl Fn(&Visit) -> bool) -> Option<Visit> {
-        let previous = pop_allowed(&mut self.back, allowed)?;
+    pub fn back(&mut self, current: Visit) -> Option<Visit> {
+        let previous = self.back.pop()?;
         self.forward.push(current);
         Some(previous)
     }
 
-    /// The page after `current`, skipping ones not `allowed`, as [`History::back`].
-    pub fn forward(&mut self, current: Visit, allowed: impl Fn(&Visit) -> bool) -> Option<Visit> {
-        let next = pop_allowed(&mut self.forward, allowed)?;
+    pub fn forward(&mut self, current: Visit) -> Option<Visit> {
+        let next = self.forward.pop()?;
         self.back.push(current);
         Some(next)
     }
-}
 
-fn pop_allowed(visits: &mut Vec<Visit>, allowed: impl Fn(&Visit) -> bool) -> Option<Visit> {
-    while let Some(visit) = visits.pop() {
-        if allowed(&visit) {
-            return Some(visit);
-        }
+    /// Forget the pages not `allowed` any more (a part turned off in Settings), so
+    /// Back and Forward only go where there's something to show.
+    pub fn keep(&mut self, allowed: impl Fn(&Visit) -> bool) {
+        self.back.retain(&allowed);
+        self.forward.retain(&allowed);
     }
-    None
 }
 
 impl App {
@@ -77,20 +72,14 @@ impl App {
 
     pub(in crate::ui) fn go_back(&mut self) {
         let current = self.current_visit();
-        let mut history = std::mem::take(&mut self.browse.history);
-        let visit = history.back(current, |v| self.view_allowed(&v.view));
-        self.browse.history = history;
-        if let Some(visit) = visit {
+        if let Some(visit) = self.browse.history.back(current) {
             self.revisit(visit);
         }
     }
 
     pub(in crate::ui) fn go_forward(&mut self) {
         let current = self.current_visit();
-        let mut history = std::mem::take(&mut self.browse.history);
-        let visit = history.forward(current, |v| self.view_allowed(&v.view));
-        self.browse.history = history;
-        if let Some(visit) = visit {
+        if let Some(visit) = self.browse.history.forward(current) {
             self.revisit(visit);
         }
     }
@@ -127,19 +116,18 @@ mod tests {
         Visit { view, query: String::new() }
     }
 
-    fn any(_: &Visit) -> bool {
-        true
-    }
-
     #[test]
-    fn pages_turned_off_since_are_skipped() {
+    fn pages_turned_off_are_forgotten() {
         let mut h = History::default();
         h.leave(at(View::Home), &at(View::Crate));
         h.leave(at(View::Crate), &at(View::Loved));
-        let no_crate = |v: &Visit| v.view != View::Crate;
-        assert_eq!(h.back(at(View::Loved), no_crate), Some(at(View::Home)), "past the Crate");
-        assert_eq!(h.forward(at(View::Home), no_crate), Some(at(View::Loved)));
-        assert_eq!(h.back(at(View::Loved), any), Some(at(View::Home)), "and it's forgotten");
+        h.keep(|v| v.view != View::Crate);
+        assert_eq!(h.back(at(View::Loved)), Some(at(View::Home)), "past the Crate");
+        assert_eq!(h.forward(at(View::Home)), Some(at(View::Loved)));
+        let mut only_crate = History::default();
+        only_crate.leave(at(View::Crate), &at(View::Lyrics));
+        only_crate.keep(|v| v.view != View::Crate);
+        assert!(!only_crate.can_go_back(), "nothing left behind: Back is off");
     }
 
     #[test]
@@ -147,14 +135,14 @@ mod tests {
         let mut h = History::default();
         h.leave(at(View::Home), &at(View::Loved));
         h.leave(at(View::Loved), &at(View::Playlists));
-        assert_eq!(h.back(at(View::Playlists), any), Some(at(View::Loved)));
-        assert_eq!(h.back(at(View::Loved), any), Some(at(View::Home)));
-        assert_eq!(h.back(at(View::Home), any), None);
-        assert_eq!(h.forward(at(View::Home), any), Some(at(View::Loved)));
+        assert_eq!(h.back(at(View::Playlists)), Some(at(View::Loved)));
+        assert_eq!(h.back(at(View::Loved)), Some(at(View::Home)));
+        assert_eq!(h.back(at(View::Home)), None);
+        assert_eq!(h.forward(at(View::Home)), Some(at(View::Loved)));
         // A new page drops the forward trail.
         h.leave(at(View::Loved), &at(View::Artists));
         assert!(!h.can_go_forward());
-        assert_eq!(h.back(at(View::Artists), any), Some(at(View::Loved)));
+        assert_eq!(h.back(at(View::Artists)), Some(at(View::Loved)));
     }
 
     #[test]
@@ -164,6 +152,6 @@ mod tests {
         assert!(!h.can_go_back());
         let search = |q: &str| Visit { view: View::Search, query: q.into() };
         h.leave(search("daft"), &search("justice"));
-        assert_eq!(h.back(search("justice"), any), Some(search("daft")), "a new query is a new page");
+        assert_eq!(h.back(search("justice")), Some(search("daft")), "a new query is a new page");
     }
 }

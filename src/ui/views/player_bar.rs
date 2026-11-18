@@ -23,7 +23,6 @@ const VOLUME_WIDTH: f32 = 64.0;
 const TRANSPORT_WIDTH: f32 = 204.0;
 /// Room for "12:34" on each side of the progress bar.
 const TIME_WIDTH: f32 = 40.0;
-/// Adds what's playing to the playlist used last.
 /// Progress refresh while playing.
 pub(in crate::ui) const TICK: Duration = Duration::from_millis(500);
 

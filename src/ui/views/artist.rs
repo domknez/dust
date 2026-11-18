@@ -359,14 +359,14 @@ fn show_timeline(
             let width = rect.right() - x - mark_width - 20.0;
             let kind = item.release.as_ref().map_or("", |r| r.kind.label());
             let title_color = if was_heard || plays.is_none() { p.text } else { p.dim };
-            let title = widgets::Line { text: &item.title, style: ty::BODY.strong(), color: title_color };
+            let title = widgets::TextLine { text: &item.title, style: ty::BODY.strong(), color: title_color };
             widgets::two_lines(
                 ui.painter(),
                 x,
                 rect.center().y,
                 width,
                 title,
-                widgets::Line { text: kind, style: ty::CAPTION, color: p.faint },
+                widgets::TextLine { text: kind, style: ty::CAPTION, color: p.faint },
             );
             if let Some(mode) = widgets::queue_menu(&resp) {
                 acts.push(Action::PlaySource(coll.source.clone(), mode));

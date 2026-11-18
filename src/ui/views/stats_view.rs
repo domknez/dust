@@ -3,7 +3,6 @@
 //! chart of listening by day or month, the top artists, albums and tracks, the
 //! artists heard for the first time, and the same week a year ago.
 
-use crate::model::Track;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::crate_store::Thing;
@@ -36,6 +35,8 @@ struct Key {
     period: Period,
     /// [`Plays::revision`](crate::ui::plays::Plays::revision).
     plays: u64,
+    /// The likes' revision: a list counts liked tracks.
+    likes: u64,
     today: jiff::civil::Date,
 }
 
@@ -52,7 +53,13 @@ impl App {
         let p = colors();
         let Some(source) = self.client.as_ref().map(|c| c.id().key.to_string()) else { return };
         let zone = when::zone();
-        let key = Key { source, period: self.stats_view.period, plays: self.plays.revision(), today: when::today(&zone) };
+        let key = Key {
+            source,
+            period: self.stats_view.period,
+            plays: self.plays.revision(),
+            likes: self.library.likes.revision,
+            today: when::today(&zone),
+        };
         if self.stats_view.cache.as_ref().is_none_or(|(k, _)| *k != key) {
             let plays = self.plays.oldest_first(&key.source);
             let now = crate::clock::unix_now();
@@ -161,7 +168,7 @@ impl App {
                 Rect::from_min_size(pos2(rect.left() + 30.0, rect.center().y - metrics::LIST_ART / 2.0), Vec2::splat(metrics::LIST_ART));
             let corner = if kind == Kind::Artist { (metrics::LIST_ART / 2.0) as u8 } else { radius::THUMB };
             widgets::cover(ui, &mut self.covers, track.art.as_ref(), metrics::THUMB_PX, art, corner);
-            let count = plays_label(ranked.plays);
+            let count = plays(ranked.plays);
             let count_width = ui.painter().layout_no_wrap(count.clone(), ty::META.font(), p.dim).size().x;
             ui.painter().text(pos2(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, count, ty::META.font(), p.dim);
             let x = art.right() + 12.0;
@@ -171,14 +178,14 @@ impl App {
                 Kind::Album => (track.album.as_str(), track.artist.clone()),
                 Kind::Track => (track.title.as_str(), track.artist.clone()),
             };
-            let title = widgets::Line { text: name, style: ty::ITEM.strong(), color: p.text };
+            let title = widgets::TextLine { text: name, style: ty::ITEM.strong(), color: p.text };
             widgets::two_lines(
                 ui.painter(),
                 x,
                 rect.center().y,
                 width,
                 title,
-                widgets::Line { text: &sub, style: ty::SECONDARY, color: p.dim },
+                widgets::TextLine { text: &sub, style: ty::SECONDARY, color: p.dim },
             );
             let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
             match kind {
@@ -204,23 +211,13 @@ impl App {
                         None => {}
                     }
                     if resp.clicked() && track.available {
-                        play_now(track, acts);
+                        acts.push(Action::PlayNow(track.clone()));
                     }
                 }
             }
         }
         ui.spacing_mut().item_spacing.y = 6.0;
     }
-}
-
-/// In after the track playing, then on to it.
-fn play_now(track: &Track, acts: &mut Actions) {
-    acts.push(Action::PlayNow(track.clone()));
-}
-
-/// "1 play", "12 plays".
-fn plays_label(n: u32) -> String {
-    if n == 1 { "1 play".into() } else { format!("{} plays", thousands(u64::from(n))) }
 }
 
 /// Where a list card's description starts, and the room under it for the count.
@@ -353,12 +350,17 @@ fn chart(ui: &mut Ui, bars: &[Bar]) {
     }
 }
 
+/// "1 play", "12,345 plays".
+fn plays(n: u32) -> String {
+    crate::ui::format::count(n as usize, "play")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn plays_read_naturally() {
-        assert_eq!((plays_label(1), plays_label(2), plays_label(12_345)), ("1 play".into(), "2 plays".into(), "12,345 plays".into()));
+        assert_eq!((plays(1), plays(12_345)), ("1 play".into(), "12,345 plays".into()));
     }
 }
