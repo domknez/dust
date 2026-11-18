@@ -131,6 +131,7 @@ impl App {
         all.push(Command::new("Window", "Mini player", || vec![Action::ToggleMiniPlayer]));
         all.push(Command::new("Window", "Show the queue", || vec![Action::ShowPanel(Some(SidePanel::Queue))]));
         all.push(Command::new("Window", "Show the play history", || vec![Action::ShowPanel(Some(SidePanel::History))]));
+        all.push(Command::new("Window", "Import a playlist…", || vec![Action::ImportPlaylist]));
 
         // The player.
         let paused = st.state != crate::player::State::Playing;

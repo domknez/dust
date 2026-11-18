@@ -151,6 +151,14 @@ impl Source for Deezer {
         links::is_link(text)
     }
 
+    fn track_id(&self, link: &str) -> Option<TrackId> {
+        links::track_id(link)
+    }
+
+    fn tracks(&self, ids: &[TrackId]) -> Result<Vec<Track>> {
+        Deezer::tracks(self, ids)
+    }
+
     fn resolve_link(&self, pasted: &str) -> Result<Link> {
         Deezer::resolve_link(self, pasted)
     }

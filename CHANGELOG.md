@@ -4,6 +4,13 @@
 
 - Export any list (a playlist, album, Loved tracks or a list from your history) as
   CSV or M3U from its ⋯ menu, into Downloads
+- Import a playlist from a file: drop it on the window or use Playlists → Import….
+  Reads Spotify exports (Exportify CSV, the account data JSON), CSV, M3U and
+  "Artist - Title" lines, finds each track at the source (Deezer links checked in
+  one go) and lists what it couldn't; a long search can be stopped, keeping what it
+  found
+- A music server takes long playlists: tracks go on 100 at a time, and if some
+  don't make it the message says so
 - Playing a track from the history, the Crate or Listening with nothing queued
   plays it (before, nothing happened)
 - A login the keychain couldn't keep says so, instead of being forgotten at the

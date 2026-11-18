@@ -7,15 +7,29 @@ use crate::ui::covers::Covers;
 use crate::ui::state::{Coll, CollSource};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, Grid, GridColumns, text_left};
-use eframe::egui::{self, CornerRadius, Rect, Sense, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, CornerRadius, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
 
 /// Covers as many as fit across, with the title and track count under each.
 const PLAYLISTS: Grid = Grid { columns: GridColumns::Fit(metrics::GRID_CARD), gap: 22.0, row_gap: 24.0, text: 54.0 };
 
+/// The page title's middle, from the top of the page, and the room its row takes
+/// (as on the Artists and Albums pages).
+const TITLE_MID: f32 = 18.0;
+const TITLE_ROW: f32 = 52.0;
+
 impl App {
     pub(in crate::ui) fn playlists_page(&mut self, ui: &mut Ui, acts: &mut Actions) {
-        text_left(ui.painter(), ui.cursor().min + vec2(0.0, 18.0), "Playlists", ty::PAGE_TITLE, colors().text, 400.0);
-        ui.add_space(52.0);
+        let top = ui.cursor().min;
+        text_left(ui.painter(), top + vec2(0.0, TITLE_MID), "Playlists", ty::PAGE_TITLE, colors().text, 400.0);
+        // Right of the title, on its line; a child of its own, so the page below
+        // starts where it does on every other page.
+        let line = Rect::from_min_size(top, vec2(ui.available_width(), 2.0 * TITLE_MID));
+        let mut right = ui.new_child(UiBuilder::new().max_rect(line).layout(egui::Layout::right_to_left(egui::Align::Center)));
+        let import = widgets::pill(&mut right, "Import…", None, false).on_hover_text("A playlist from a file: Spotify, CSV or M3U");
+        if import.clicked() {
+            acts.push(Action::ImportPlaylist);
+        }
+        ui.add_space(TITLE_ROW);
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             let playlists = &self.library.playlists;
             PLAYLISTS.add(ui, playlists.len(), |ui, k| playlist_card(ui, &mut self.covers, &playlists[k], acts));

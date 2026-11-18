@@ -31,6 +31,9 @@ fn capped<T>(what: &str, list: Vec<T>, limit: usize) -> Vec<T> {
     list
 }
 
+/// Songs per `song.getListData` call.
+const SONGS_PER_CALL: usize = 100;
+
 impl Deezer {
     pub fn search(&self, query: &str) -> Result<SearchResults> {
         let r = self.call(
@@ -148,6 +151,17 @@ impl Deezer {
     pub fn track_mix(&self, id: &str) -> Result<Vec<Track>> {
         let r = self.call("song.getSearchTrackMix", json!({"sng_id": id, "start_with_input_track": true}))?;
         Ok(parse::tracks(&r["data"]))
+    }
+
+    /// The playable tracks among `ids`, in their order ([`SONGS_PER_CALL`] per call).
+    pub fn tracks(&self, ids: &[TrackId]) -> Result<Vec<Track>> {
+        let mut found = Vec::with_capacity(ids.len());
+        for batch in ids.chunks(SONGS_PER_CALL) {
+            let ids: Vec<_> = batch.iter().map(|id| parse::id_value(id.as_str())).collect();
+            let songs = parse::tracks(&self.call("song.getListData", json!({"sng_ids": ids}))?["data"]);
+            found.extend(songs.into_iter().filter(|t| t.available));
+        }
+        Ok(found)
     }
 
     pub fn artist_top(&self, id: &str) -> Result<Vec<Track>> {

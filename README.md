@@ -65,6 +65,11 @@ and *Connect a Navidrome server*.
 - **Export any list:** a playlist, album, Loved tracks or a list from your history →
   ⋯ → *Export as CSV* / *Export as M3U*, saved into Downloads (Deezer tracks with
   their links), for a spreadsheet, another player or another service
+- **Import a playlist:** drop a playlist file on the window (or Playlists → *Import…*):
+  a CSV from Exportify, Soundiiz or TuneMyMusic, Spotify's own data export
+  (`Playlist1.json`, `YourLibrary.json`), an M3U or plain "Artist - Title" lines. dust
+  finds each track on Deezer or your server, the right version by artist, title and
+  length, shows what it couldn't find (to copy), then creates the playlist
 - **Endless play:** Deezer's Flow and the server's Radio keep going, fetching more as you
   listen. *new to me only* on the Flow panel leaves out tracks already in your play
   history, and a lime dot in *up next* marks each track you've never heard

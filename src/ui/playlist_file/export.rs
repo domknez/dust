@@ -98,17 +98,7 @@ fn slug(title: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Origin, ServerSong, TrackId};
-    use crate::ui::app::testing;
-
-    fn song(id: &str, title: &str, artist: &str, album: &str, secs: u32, deezer: bool) -> Track {
-        let mut t = testing::track(1, true);
-        (t.id, t.title, t.artist, t.album, t.duration) = (TrackId::new(id), title.into(), artist.into(), album.into(), secs);
-        if !deezer {
-            t.origin = Origin::Server(ServerSong { suffix: "flac".into() });
-        }
-        t
-    }
+    use crate::ui::playlist_file::fixtures::song;
 
     #[test]
     fn a_list_as_csv_quotes_what_needs_it() {

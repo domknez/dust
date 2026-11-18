@@ -242,6 +242,8 @@ impl App {
         self.browse = Browse::default();
         self.lyrics = Default::default();
         self.crates.forget_jobs();
+        // Its tracks were found at the source before.
+        self.close_import();
     }
 
     /// What the source in use offers (everything while none is).
