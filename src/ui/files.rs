@@ -83,6 +83,8 @@ mod tests {
         assert_eq!(expand_home("~/Music"), home().map(|h| h.join("Music")));
     }
 
+    // XDG user dirs are Linux's (and Unix paths: Windows doesn't count "/data" as absolute).
+    #[cfg(unix)]
     #[test]
     fn the_desktop_names_its_downloads_folder() {
         let home = Path::new("/home/me");
