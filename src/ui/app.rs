@@ -173,10 +173,10 @@ pub struct App {
     pub(super) toasts: Toasts,
     /// When a whole list was last added to the queue (for the button's confirmation).
     pub(super) queued_flash: Option<std::time::Instant>,
-    /// What the saved queue file last reflected (queue snapshot, index, Flow);
+    /// What the saved queue file last reflected (queue version, index, Flow);
     /// None until the saved queue was offered to the player after login, so the
     /// empty startup queue never overwrites it.
-    pub(super) queue_saved: Option<(usize, usize, Option<Flow>)>,
+    pub(super) queue_saved: Option<(u64, usize, Option<Flow>)>,
     /// A restore was sent and the player hasn't shown the queue yet.
     pub(super) restore_pending: bool,
 }
@@ -389,7 +389,7 @@ impl App {
     /// The tracks of a list made from the play history (the source in use's).
     pub(super) fn history_list(&self, which: super::stats::Smart) -> Vec<Track> {
         let source = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
-        let now = jiff::Timestamp::now().as_second().max(0) as u64;
+        let now = crate::clock::unix_now();
         let likes = &self.library.likes.likes;
         super::stats::smart_list(&self.plays.oldest_first(source), which, now, &|id| likes.tracks.contains(id))
     }
@@ -486,7 +486,7 @@ impl App {
             self.restore_pending = false;
         }
         let Some(last) = &self.queue_saved else { return };
-        let key = (std::sync::Arc::as_ptr(&st.queue) as usize, st.index, st.flow.clone());
+        let key = (st.queue_version, st.index, st.flow.clone());
         if *last != key {
             if let Some(client) = &self.client {
                 self.queues.save(st, client.id());
@@ -811,7 +811,10 @@ pub(super) mod testing {
 
     /// The player showing a queue of these tracks.
     pub fn queue(ids: &[u64], index: usize) -> Status {
-        Status { queue: std::sync::Arc::new(ids.iter().map(|&id| track(id, true)).collect()), index, ..Default::default() }
+        // Each a queue the player made anew, as its own snapshots are.
+        static VERSION: AtomicUsize = AtomicUsize::new(1);
+        let queue_version = VERSION.fetch_add(1, Ordering::Relaxed) as u64;
+        Status { queue: std::sync::Arc::new(ids.iter().map(|&id| track(id, true)).collect()), queue_version, index, ..Default::default() }
     }
 }
 

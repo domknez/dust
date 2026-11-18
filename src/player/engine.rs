@@ -853,6 +853,7 @@ impl Engine {
         st.index = self.handoff.as_ref().map_or(self.queue.index(), |h| h.index);
         if let Some(snapshot) = self.queue.take_snapshot() {
             st.queue = Arc::new(snapshot);
+            st.queue_version += 1;
         }
         st.flow = self.queue.flow.clone();
         drop(st);

@@ -48,7 +48,7 @@ impl ListenTracker {
         let listen = Listen {
             song_id: song_id.clone(),
             format,
-            started_unix: unix_now(),
+            started_unix: crate::clock::unix_now(),
             listened_secs: 0,
             skipped: false,
             stream_id: stream_uuid(),
@@ -104,10 +104,6 @@ impl ListenTracker {
         }
         Some(played)
     }
-}
-
-fn unix_now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 /// Random RFC 4122 v4-shaped id, as Deezer's clients send per stream.

@@ -150,7 +150,7 @@ impl crate::ui::app::App {
     /// Each frame: take in what a look found, and start one when it's time.
     pub(in crate::ui) fn release_tick(&mut self, ctx: &eframe::egui::Context) {
         let Some(client) = self.client.clone() else { return };
-        let now = jiff::Timestamp::now().as_second().max(0) as u64;
+        let now = crate::clock::unix_now();
         if let Some(found) = self.releases.poll(now)
             && self.prefs.crate_on
         {

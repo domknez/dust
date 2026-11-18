@@ -9,6 +9,7 @@
 mod log;
 mod atomic_file;
 mod cli;
+mod clock;
 mod credentials;
 mod deezer;
 mod http;

@@ -2,7 +2,7 @@
 //! Pure data manipulation — no audio, no network — so it is fully unit-testable.
 
 use crate::model::{Track, TrackId};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Endless Flow (a music server's Radio): the queue refills itself from the source
 /// as it runs out.
@@ -105,9 +105,12 @@ impl Queue {
             return;
         }
         let order = self.unshuffled.take().unwrap_or_default();
-        let rank = |id: &TrackId| order.iter().position(|o| o == id).unwrap_or(usize::MAX);
+        let mut rank: HashMap<&TrackId, usize> = HashMap::with_capacity(order.len());
+        for (i, id) in order.iter().enumerate() {
+            rank.entry(id).or_insert(i);
+        }
         let mut entries: Vec<usize> = (0..self.tracks.len()).collect();
-        entries.sort_by_key(|&i| rank(&self.tracks[i].id));
+        entries.sort_by_key(|&i| rank.get(&self.tracks[i].id).copied().unwrap_or(usize::MAX));
         self.index = entries.iter().position(|&i| i == self.index).unwrap_or(0);
         self.tracks = entries.into_iter().map(|i| self.tracks[i].clone()).collect();
         self.dirty = true;

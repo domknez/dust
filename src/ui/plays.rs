@@ -8,7 +8,7 @@ use crate::player::saved::{decode_track, encode_track};
 use crate::player::{Flow, Played};
 use crate::ui::sync::Log;
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Plays kept, across sources and computers: about a year of listening, for the
 /// stats.
@@ -84,10 +84,8 @@ fn slim(mut track: Value) -> Value {
 #[derive(Default)]
 pub struct Plays {
     plays: Vec<Play>,
-    /// Every track in `plays`.
-    heard: HashSet<TrackId>,
-    /// The albums of those tracks, by id.
-    albums: HashSet<String>,
+    /// The tracks and albums in `plays`.
+    heard: Heard,
     log: Log,
     /// Lines in this computer's file, to know when to compact it.
     lines: usize,
@@ -111,9 +109,9 @@ impl Plays {
             plays.drain(..plays.len() - KEEP);
         }
         let lines = log.own_lines();
-        let heard = plays.iter().map(|p| p.track.id.clone()).collect();
-        let albums = plays.iter().filter(|p| !p.track.album_id.is_empty()).map(|p| p.track.album_id.clone()).collect();
-        Plays { plays, heard, albums, log, lines, unsaved: false, revision: 0 }
+        let mut heard = Heard::default();
+        plays.iter().for_each(|p| heard.add(p));
+        Plays { plays, heard, log, lines, unsaved: false, revision: 0 }
     }
 
     /// Read the log again (another computer added to it). Plays not yet written
@@ -141,21 +139,25 @@ impl Plays {
     pub fn record(&mut self, play: Play) {
         self.revision += 1;
         let line = play.encode().to_string();
-        self.heard.insert(play.track.id.clone());
-        if !play.track.album_id.is_empty() {
-            self.albums.insert(play.track.album_id.clone());
-        }
+        self.heard.add(&play);
         let at = self.plays.partition_point(|p| p.at <= play.at);
         self.plays.insert(at, play);
-        if self.plays.len() > KEEP {
-            self.plays.remove(0);
-        }
+        self.keep_latest();
         if self.unsaved || self.lines + 1 >= COMPACT_AT {
             self.rewrite();
         } else if self.log.append(&line) {
             self.lines += 1;
         } else {
             self.unsaved = true;
+        }
+    }
+
+    /// Keep the last [`KEEP`] plays; the tracks and albums of those dropped are no
+    /// longer heard, as they wouldn't be after a restart.
+    fn keep_latest(&mut self) {
+        let Some(over) = self.plays.len().checked_sub(KEEP).filter(|&n| n > 0) else { return };
+        for dropped in self.plays.drain(..over) {
+            self.heard.remove(&dropped);
         }
     }
 
@@ -184,17 +186,17 @@ impl Plays {
 
     /// Whether `id` was played before (any source, any computer; the plays kept).
     pub fn has_heard(&self, id: &TrackId) -> bool {
-        self.heard.contains(id)
+        self.heard.tracks.contains_key(id)
     }
 
     /// Whether a track of album `id` was played before.
     pub fn has_heard_album(&self, id: &str) -> bool {
-        self.albums.contains(id)
+        self.heard.albums.contains_key(id)
     }
 
     /// The tracks played before, for Flow to leave out.
     pub fn heard(&self) -> HashSet<TrackId> {
-        self.heard.clone()
+        self.heard.tracks.keys().cloned().collect()
     }
 
     pub fn len(&self) -> usize {
@@ -218,19 +220,42 @@ impl Plays {
             return;
         }
         self.revision += 1;
-        for play in &missing {
-            self.heard.insert(play.track.id.clone());
-            if !play.track.album_id.is_empty() {
-                self.albums.insert(play.track.album_id.clone());
-            }
-        }
+        missing.iter().for_each(|p| self.heard.add(p));
         self.plays.extend(missing);
         self.plays.sort_by_key(|p| p.at);
-        if self.plays.len() > KEEP {
-            self.plays.drain(..self.plays.len() - KEEP);
-        }
+        self.keep_latest();
         // One write for them all.
         self.rewrite();
+    }
+}
+
+/// The tracks and albums of the plays kept, with how many plays each has, so
+/// dropping a play forgets its track only with its last play.
+#[derive(Default)]
+struct Heard {
+    tracks: HashMap<TrackId, usize>,
+    albums: HashMap<String, usize>,
+}
+
+impl Heard {
+    fn add(&mut self, play: &Play) {
+        *self.tracks.entry(play.track.id.clone()).or_default() += 1;
+        if !play.track.album_id.is_empty() {
+            *self.albums.entry(play.track.album_id.clone()).or_default() += 1;
+        }
+    }
+
+    fn remove(&mut self, play: &Play) {
+        fn forget<K: std::hash::Hash + Eq>(counts: &mut HashMap<K, usize>, key: &K) {
+            if let Some(n) = counts.get_mut(key) {
+                *n -= 1;
+                if *n == 0 {
+                    counts.remove(key);
+                }
+            }
+        }
+        forget(&mut self.tracks, &play.track.id);
+        forget(&mut self.albums, &play.track.album_id);
     }
 }
 
@@ -345,6 +370,7 @@ mod tests {
         }
         assert_eq!(plays.of("deezer").count(), KEEP);
         assert_eq!(plays.of("deezer").next().map(|p| p.track.id.clone()), Some(TrackId::from(COMPACT_AT as u64 + 4)));
+        assert!(!plays.has_heard(&TrackId::from(0)), "the oldest, dropped, isn't heard any more");
         let lines = std::fs::read_to_string(dir.join("history.jsonl")).unwrap().lines().count();
         assert!(lines < COMPACT_AT, "the file was compacted, {lines} lines");
         assert_eq!(Plays::load(log(&dir)).of("deezer").count(), KEEP);

@@ -163,6 +163,8 @@ pub struct Status {
     pub state: State,
     pub track: Option<Track>,
     pub queue: Arc<Vec<Track>>,
+    /// Goes up each time `queue` changes, to tell a new queue from the one seen.
+    pub queue_version: u64,
     /// Index of the current track in `queue`.
     pub index: usize,
     pub position: f64,

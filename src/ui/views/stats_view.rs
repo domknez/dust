@@ -56,7 +56,7 @@ impl App {
         let key = Key { source, period: self.stats_view.period, plays: self.plays.revision(), today: when::today(&zone) };
         if self.stats_view.cache.as_ref().is_none_or(|(k, _)| *k != key) {
             let plays = self.plays.oldest_first(&key.source);
-            let now = jiff::Timestamp::now().as_second().max(0) as u64;
+            let now = crate::clock::unix_now();
             let worked_out = stats::compute(&plays, key.period, now, &zone);
             let likes = &self.library.likes.likes;
             let liked = |id: &crate::model::TrackId| likes.tracks.contains(id);

@@ -294,7 +294,7 @@ impl Crate {
         let entry = Entry {
             id: new_id(),
             source: if thing == Thing::Note { String::new() } else { source.to_string() },
-            saved: unix_now(),
+            saved: crate::clock::unix_now(),
             from: from.to_string(),
             note: note.trim().to_string(),
             heard: false,
@@ -319,7 +319,7 @@ impl Crate {
 
     /// Apply `change` and add it to the log.
     pub fn change(&mut self, change: Change) {
-        let at = unix_now();
+        let at = crate::clock::unix_now();
         let line = change.encode(at).to_string();
         self.apply(at, change);
         if self.unsaved || self.lines + 1 > self.entries.len() + self.removed.len() + SLACK {
@@ -417,10 +417,6 @@ impl Crate {
 
 fn new_id() -> String {
     format!("{:016x}", fastrand::u64(..))
-}
-
-fn unix_now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 #[cfg(test)]
