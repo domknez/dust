@@ -260,7 +260,8 @@ impl Info {
 enum Comments {
     /// A comment, as in an M3U.
     Skipped,
-    /// A name, as in plain text ("#9 Dream").
+    /// A name, as in plain text ("#9 Dream"), unless it reads as a comment: `#`
+    /// then a space or another `#`, or nothing.
     Kept,
 }
 
@@ -282,13 +283,18 @@ fn from_lines(text: &str, stem: &str, comments: Comments) -> Imported {
             if let Some(info) = &mut info {
                 info.album = album.trim().to_string();
             }
-        } else if !line.starts_with('#') || comments == Comments::Kept {
+        } else if !line.starts_with('#') || (comments == Comments::Kept && !is_comment(line)) {
             wanted.push(info.take().unwrap_or_default().wanted(Some(line)));
         }
     }
     wanted.extend(info.map(|i| i.wanted(None)));
     wanted.retain(Wanted::is_named);
     Imported { title: title.filter(|t| !t.is_empty()).unwrap_or_else(|| stem.to_string()), wanted }
+}
+
+/// A plain-text line that's a note, not a name: "# Mix for Saturday", "##", "#".
+fn is_comment(line: &str) -> bool {
+    line.strip_prefix('#').is_some_and(|rest| rest.is_empty() || rest.starts_with([' ', '\t', '#']))
 }
 
 /// "Artist - Title" → ("Artist", "Title"); a name without a dash is a title.
@@ -303,16 +309,27 @@ fn split_name(name: &str) -> (String, String) {
 const AUDIO: [&str; 11] = ["mp3", "flac", "m4a", "aac", "ogg", "opus", "wav", "aiff", "aif", "alac", "wma"];
 
 /// What an entry line names: an audio file's name without its number and
-/// extension ("Music/Band/01 - Band - Song.mp3" → "Band - Song"), or the line.
+/// extension ("Music/Band/01 - Band - Song.mp3" → "Band - Song"), or the line
+/// itself ("AC/DC - Thunderstruck" isn't a path), less a track number in front
+/// of an "Artist - Title" ("01 - Band - Song").
 fn entry_name(line: &str) -> String {
     let file = line.rsplit(['/', '\\']).next().unwrap_or(line);
     let path = Path::new(file);
     let audio = path.extension().is_some_and(|e| AUDIO.contains(&e.to_string_lossy().to_lowercase().as_str()));
-    if !audio && !line.contains(['/', '\\']) {
-        return line.to_string();
+    if !audio && !looks_like_a_path(line) {
+        // "311 - Amber" is a band and a song; "01 - Band - Song" has a number.
+        let named = without_track_number(line);
+        return if named.contains(" - ") { named } else { line }.trim().to_string();
     }
     let stem = path.file_stem().map_or(file.to_string(), |s| s.to_string_lossy().to_string());
     without_track_number(&stem).trim().to_string()
+}
+
+/// Whether a line without an audio extension is still a file's path: it starts
+/// at a folder ("/", "~/", "./", "../", "C:\\") or uses Windows separators.
+fn looks_like_a_path(line: &str) -> bool {
+    let drive = line.as_bytes().get(1..3) == Some(b":\\".as_slice());
+    ["/", "~/", "./", "../"].iter().any(|start| line.starts_with(start)) || line.contains('\\') || drive
 }
 
 /// A file name without the track number in front: "01 - Song", "01. Song",
@@ -443,6 +460,20 @@ mod tests {
         assert_eq!(list.wanted[1].link.as_deref(), Some("https://deezer.com/en/track/42?utm=x"));
         assert_eq!(list.wanted[1].name(), "https://deezer.com/en/track/42?utm=x", "a link is its own name");
         assert_eq!(list.wanted[2], want("", "Just a title", 0));
+    }
+
+    #[test]
+    fn plain_lines_keep_slashes_and_lose_track_numbers_and_comments() {
+        let text = "AC/DC - Thunderstruck\n01 - Arctic Monkeys - Do I Wanna Know?\n02. The Killers - Mr. Brightside\n\
+                    311 - Amber\n# a comment line, not a track\n#\n## notes\n#9 Dream\n";
+        let names: Vec<String> = read("mix.txt", text).unwrap()[0].wanted.iter().map(Wanted::name).collect();
+        assert_eq!(
+            names,
+            ["AC/DC - Thunderstruck", "Arctic Monkeys - Do I Wanna Know?", "The Killers - Mr. Brightside", "311 - Amber", "#9 Dream"],
+            "a band called 311 keeps its name; only #-then-space lines are comments"
+        );
+        assert_eq!(entry_name("C:\\Music\\01 - Band - Song"), "Band - Song", "a Windows path");
+        assert_eq!(entry_name("~/Music/Band/Song"), "Song");
     }
 
     #[test]
