@@ -63,6 +63,9 @@ pub enum Action {
     ToggleLike(Likeable),
     /// A choice in a track's right-click menu.
     TrackMenu(Vec<Track>, TrackMenu),
+    /// Hear this track now: in after the one playing, then on to it, so the queue
+    /// (and endless Flow) carries on afterwards. Nothing for one that can't play.
+    PlayNow(Track),
     EditPlaylist(Edit),
     /// Ask for a name, then create a playlist holding these tracks.
     NewPlaylist(Vec<Track>),
@@ -224,6 +227,12 @@ impl App {
             }
             Action::ToggleLike(what) => self.toggle_like(what),
             Action::TrackMenu(tracks, choice) => self.track_menu_choice(ctx, tracks, choice),
+            // One that can't play leaves the one playing alone.
+            Action::PlayNow(track) if track.available => {
+                self.track_menu_choice(ctx, vec![track], TrackMenu::Play(PlayMode::Next));
+                self.player.send(Cmd::Next);
+            }
+            Action::PlayNow(_) => {}
             Action::SaveToCrate(thing, from) => self.save_to_crate(ctx, thing, from),
             Action::CrateNote(note) => self.crate_note(note),
             Action::Crate(change) => self.crates.store.change(change),

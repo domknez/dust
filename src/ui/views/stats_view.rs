@@ -4,13 +4,12 @@
 //! artists heard for the first time, and the same week a year ago.
 
 use crate::model::Track;
-use crate::player::Cmd;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::crate_store::Thing;
 use crate::ui::format::thousands;
 use crate::ui::plays::when;
-use crate::ui::state::{Coll, CollSource, PlayMode};
+use crate::ui::state::{Coll, CollSource};
 use crate::ui::stats::{self, Bar, Period, Ranked, Smart, Stats};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, MenuTarget, Playlists, TrackMenu, text_left};
@@ -209,8 +208,7 @@ impl App {
 
 /// In after the track playing, then on to it.
 fn play_now(track: &Track, acts: &mut Actions) {
-    acts.push(Action::TrackMenu(vec![track.clone()], TrackMenu::Play(PlayMode::Next)));
-    acts.push(Action::Player(Cmd::Next));
+    acts.push(Action::PlayNow(track.clone()));
 }
 
 /// "1 play", "12 plays".

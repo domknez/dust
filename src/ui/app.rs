@@ -937,6 +937,16 @@ mod tests {
     }
 
     #[test]
+    fn play_now_goes_in_next_and_on_to_it() {
+        let mut t = logged_in();
+        t.sent();
+        t.update(Action::PlayNow(track(4, true)));
+        assert!(matches!(&t.sent()[..], [Cmd::PlayNext(tracks), Cmd::Next] if super::testing::ids(tracks) == [4]));
+        t.update(Action::PlayNow(track(5, false)));
+        assert!(t.sent().is_empty(), "one that can't play doesn't skip the one playing");
+    }
+
+    #[test]
     fn the_queue_and_history_keep_up_without_a_frame_drawn() {
         let mut t = TestApp::new("");
         t.app.source_ready(deezer());

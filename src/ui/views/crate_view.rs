@@ -9,10 +9,10 @@ use crate::ui::app::App;
 use crate::ui::crate_store::{About, Change, Crate, Entry, Thing};
 use crate::ui::load::Load;
 use crate::ui::plays::{flow_label, when};
-use crate::ui::state::{ArtistView, Coll, CollSource, PlayMode, View};
+use crate::ui::state::{ArtistView, Coll, CollSource, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
-use crate::ui::widgets::{self, TrackMenu, text_left};
+use crate::ui::widgets::{self, text_left};
 use eframe::egui::{
     self, Align2, CornerRadius, Key, KeyboardShortcut, Modifiers, PopupCloseBehavior, Rect, RectAlign, RichText, Sense, Ui, UiBuilder,
     Vec2, pos2, vec2,
@@ -556,8 +556,7 @@ impl App {
             match (&entry.thing, here) {
                 (Thing::Track(track), true) if track.available => {
                     if widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {
-                        acts.push(Action::TrackMenu(vec![track.clone()], TrackMenu::Play(PlayMode::Next)));
-                        acts.push(Action::Player(Cmd::Next));
+                        acts.push(Action::PlayNow(track.clone()));
                     }
                     self.crate_add_to_playlist(ui, track, acts);
                 }

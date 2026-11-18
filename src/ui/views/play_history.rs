@@ -4,13 +4,11 @@
 //! track menu, the heart likes it.
 
 use crate::model::Likeable;
-use crate::player::Cmd;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::crate_store::Thing;
 use crate::ui::format::{mmss, thousands};
 use crate::ui::plays::{KEEP, Play, flow_label, when};
-use crate::ui::state::PlayMode;
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, MenuTarget, Playlists, TrackMenu, text_left};
 use eframe::egui::{self, Align2, CornerRadius, RichText, Sense, Ui, pos2, vec2};
@@ -125,8 +123,7 @@ impl App {
                         if resp.clicked() && !over_heart && track.available {
                             // In after the track playing, then on to it: the queue
                             // (and endless Flow) carries on afterwards.
-                            acts.push(Action::TrackMenu(vec![track.clone()], TrackMenu::Play(PlayMode::Next)));
-                            acts.push(Action::Player(Cmd::Next));
+                            acts.push(Action::PlayNow(track.clone()));
                         }
                         resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                     }
