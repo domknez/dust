@@ -102,7 +102,10 @@ impl Command {
                     let playlist = required(&mut args, "playlist id")?;
                     let quality = match args.next() {
                         None => Quality::Mp3_320,
-                        Some(q) => Quality::from_key(&q).ok_or(format!("quality {q:?} isn't one of mp3_128, mp3_320, flac"))?,
+                        Some(q) => Quality::from_key(&q).ok_or_else(|| {
+                            let keys: Vec<&str> = Quality::ALL.iter().map(|q| q.key()).collect();
+                            format!("quality {q:?} isn't one of {}", keys.join(", "))
+                        })?,
                     };
                     Ok(Command::DebugDecode { playlist, quality, start: optional(&mut args, "start", 0.0)? })
                 };

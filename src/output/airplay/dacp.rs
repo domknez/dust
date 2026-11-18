@@ -6,7 +6,7 @@
 //! another computer on the network can't drive the player.
 
 use mdns_sd::{IfKind, ServiceDaemon, ServiceInfo};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
@@ -25,7 +25,10 @@ static ACTIVE_REMOTES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 impl ActiveRemote {
     pub fn new() -> Self {
-        let id = fastrand::u32(..).to_string();
+        // Unguessable: it's what lets a request in.
+        let mut bytes = [0u8; 8];
+        getrandom::fill(&mut bytes).expect("OS RNG");
+        let id = u64::from_le_bytes(bytes).to_string();
         ACTIVE_REMOTES.lock().unwrap_or_else(|e| e.into_inner()).push(id.clone());
         ActiveRemote(id)
     }
@@ -45,11 +48,8 @@ fn is_active(id: &str) -> bool {
     ACTIVE_REMOTES.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|a| a == id)
 }
 
-/// How long a receiver's connection may sit idle, and the most taken of one line
-/// and of a request's headers.
+/// How long a receiver's connection may sit idle.
 const IDLE: Duration = Duration::from_secs(600);
-const MAX_LINE: u64 = 8 * 1024;
-const MAX_HEADERS: usize = 64;
 /// Volume change of one press of a receiver's volume button.
 const VOLUME_STEP: f32 = 1.0 / 16.0;
 
@@ -207,27 +207,10 @@ fn handle(stream: TcpStream) {
 /// The next request's path and `Active-Remote` header; None once the connection
 /// closes or sends more than a request may hold.
 fn read_request(reader: &mut impl BufRead) -> Option<(String, Option<String>)> {
-    let mut line = String::new();
-    let mut read_line = |line: &mut String| {
-        line.clear();
-        reader.take(MAX_LINE).read_line(line).ok().filter(|&n| n > 0 && line.ends_with('\n')).map(|_| ())
-    };
-    read_line(&mut line)?;
-    let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
-    let mut remote = None;
-    for _ in 0..=MAX_HEADERS {
-        read_line(&mut line)?;
-        let header = line.trim_end();
-        if header.is_empty() {
-            return Some((path, remote));
-        }
-        if let Some((k, v)) = header.split_once(':')
-            && k.trim().eq_ignore_ascii_case("Active-Remote")
-        {
-            remote = Some(v.trim().to_string());
-        }
-    }
-    None
+    let head = super::head::read(reader).ok()?;
+    let path = head.first.split_whitespace().nth(1).unwrap_or("").to_string();
+    let remote = head.header("Active-Remote").map(str::to_string);
+    Some((path, remote))
 }
 
 #[cfg(test)]
@@ -255,7 +238,7 @@ mod tests {
         let id = session.as_str().to_string();
         drop(session);
         assert!(!is_active(&id), "gone with its session");
-        let headers = "X: y\r\n".repeat(MAX_HEADERS + 1);
+        let headers = "X: y\r\n".repeat(super::super::head::MAX_HEADERS + 1);
         assert_eq!(read(format!("GET / HTTP/1.1\r\n{headers}\r\n")), None, "too many headers");
     }
 }

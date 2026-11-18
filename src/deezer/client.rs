@@ -10,6 +10,10 @@ pub(super) struct Inner {
     pub agent: ureq::Agent,
     pub arl: String,
     pub session: Mutex<Session>,
+    /// Held while the CSRF token is fetched again, so calls that found it stale
+    /// at once fetch one token, not one each (each new one rotates the cookies the
+    /// others were given).
+    pub refreshing: Mutex<()>,
     pub license_token: String,
     pub user_id: u64,
     pub loved_id: u64,
@@ -41,6 +45,7 @@ impl Deezer {
             agent,
             arl,
             session,
+            refreshing: Mutex::new(()),
             license_token,
             user_id,
             loved_id: number(&user["LOVEDTRACKS_ID"]),
@@ -55,6 +60,7 @@ impl Deezer {
             agent: session::http_agent(),
             arl: String::new(),
             session: Mutex::new(Session::new()),
+            refreshing: Mutex::new(()),
             license_token: String::new(),
             user_id: 1,
             loved_id: 0,
@@ -89,18 +95,30 @@ impl Deezer {
     /// Authenticated call; refreshes an expired CSRF token once and retries.
     pub(super) fn call_with(&self, method: &str, body: Value, extra: &[(&str, &str)]) -> Result<Value> {
         let inner = &self.0;
+        let sent = session::lock(&inner.session).api_token.clone();
         match session::call(&inner.agent, &inner.arl, &inner.session, method, body.clone(), extra) {
             Err(Error::InvalidToken) => {
-                session::lock(&inner.session).reset_token();
-                let data = session::call(&inner.agent, &inner.arl, &inner.session, "deezer.getUserData", json!({}), &[])?;
-                // A rejected token with no logged-in user behind it: the session is gone.
-                if number(&data["USER"]["USER_ID"]) == 0 {
-                    return Err(Error::SessionExpired);
-                }
-                session::lock(&inner.session).api_token = text(&data["checkForm"]);
+                self.refresh_csrf(&sent)?;
                 session::call(&inner.agent, &inner.arl, &inner.session, method, body, extra)
             }
             result => result,
         }
+    }
+
+    /// Fetch a new CSRF token in place of `stale`, unless another call already has.
+    fn refresh_csrf(&self, stale: &str) -> Result<()> {
+        let inner = &self.0;
+        let _one_at_a_time = inner.refreshing.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if session::lock(&inner.session).api_token != stale {
+            return Ok(());
+        }
+        session::lock(&inner.session).reset_token();
+        let data = session::call(&inner.agent, &inner.arl, &inner.session, "deezer.getUserData", json!({}), &[])?;
+        // A rejected token with no logged-in user behind it: the session is gone.
+        if number(&data["USER"]["USER_ID"]) == 0 {
+            return Err(Error::SessionExpired);
+        }
+        session::lock(&inner.session).api_token = text(&data["checkForm"]);
+        Ok(())
     }
 }

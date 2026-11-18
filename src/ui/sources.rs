@@ -136,14 +136,16 @@ impl App {
     }
 
     /// Server connections finishing.
-    pub(super) fn poll_sources(&mut self) {
+    pub(super) fn poll_sources(&mut self, ctx: &egui::Context) {
         let Some(result) = self.sources.connecting.poll_take() else { return };
         let typed = self.sources.connecting_new.take();
         match result {
             Ok(server) => {
                 let server: Shared = Arc::new(server);
                 if let Some(login) = &typed {
-                    credentials::save(subsonic::ID, &login.to_json());
+                    if let Err(e) = credentials::save(subsonic::ID, &login.to_json()) {
+                        self.toasts.error(ctx, format!("Connected, but dust can't remember the server for next time: {e}"));
+                    }
                     self.sources.form = None;
                     // Just added: switch to it.
                     self.sources.logged_in.insert(subsonic::ID, server.clone());
@@ -215,9 +217,11 @@ impl App {
 
     /// Log out of the source in use and forget its login; another logged-in one
     /// takes over, otherwise the login screen shows.
-    pub(super) fn log_out(&mut self) {
+    pub(super) fn log_out(&mut self, ctx: &egui::Context) {
         let Some(id) = self.client.as_ref().map(|c| c.id()) else { return };
-        credentials::clear(id);
+        if let Err(e) = credentials::clear(id) {
+            self.toasts.error(ctx, format!("Logged out, but the stored login couldn't be removed: {e}"));
+        }
         self.sources.logged_in.remove(&id);
         match self.sources.first() {
             Some(other) => self.switch_source(other),
@@ -385,7 +389,7 @@ mod tests {
         let (tx, rx) = channel();
         t.app.sources.connecting = Load::Loading(rx);
         tx.send(Ok(crate::subsonic::Subsonic::offline("nas:4533", "me"))).unwrap();
-        t.app.poll_sources();
+        t.app.poll_sources(&t.ctx);
     }
 
     fn in_use(t: &TestApp) -> Option<&'static str> {

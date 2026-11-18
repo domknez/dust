@@ -64,7 +64,8 @@ fn entry_for(account: &str) -> Option<keyring_core::Entry> {
 
 /// Run `f` on the logins, reading them from the keychain the first time. None
 /// while the keychain can't be read: nothing is cached then, so the next call
-/// tries again, and nothing can be written over logins that weren't seen.
+/// tries again, and nothing can be written over logins that weren't seen. (An
+/// item that's there but unreadable counts as empty: its logins are lost anyway.)
 fn with_logins<R>(f: impl FnOnce(&mut Logins) -> R) -> Option<R> {
     let mut slot = LOGINS.lock().unwrap_or_else(|e| e.into_inner());
     cached(&mut slot, read).map(f)
@@ -102,33 +103,35 @@ fn migrate() -> Logins {
     let logins = Logins(OLD_ITEMS.iter().filter_map(|(account, source)| Some((source.login_key.to_string(), take(account)?))).collect());
     if logins != Logins::default() {
         log_info!("moved the stored logins into one keychain item");
-        write(&logins);
+        if let Err(e) = write(&logins) {
+            log_warn!("{e}");
+        }
     }
     logins
 }
 
-fn write(logins: &Logins) {
-    let Some(entry) = entry_for(ACCOUNT) else { return };
+fn write(logins: &Logins) -> Result<(), String> {
+    let entry = entry_for(ACCOUNT).ok_or("there's no keychain to keep it in")?;
     let result = if *logins == Logins::default() { entry.delete_credential() } else { entry.set_password(&logins.to_json()) };
     match result {
-        Ok(()) | Err(keyring_core::Error::NoEntry) => {}
-        Err(e) => log_warn!("could not save logins to the keychain: {e}"),
+        Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
+        Err(e) => Err(format!("the keychain refused it ({e})")),
     }
 }
 
 /// Change the logins and save them (only if they changed: every write to the
 /// keychain may ask for access again).
-fn update(f: impl FnOnce(&mut Logins)) {
+fn update(f: impl FnOnce(&mut Logins)) -> Result<(), String> {
     let saved = with_logins(|logins| {
         let before = logins.clone();
         f(logins);
-        if *logins != before {
-            write(logins);
-        }
+        if *logins != before { write(logins) } else { Ok(()) }
     });
-    if saved.is_none() {
-        log_warn!("login not saved: the keychain couldn't be read, and writing now would drop the other logins");
+    let saved = saved.unwrap_or_else(|| Err("the keychain couldn't be read (writing now would drop the other logins)".into()));
+    if let Err(e) = &saved {
+        log_warn!("logins not saved: {e}");
     }
+    saved
 }
 
 /// The stored login of `source`, if any.
@@ -136,16 +139,18 @@ pub fn load(source: SourceId) -> Option<String> {
     with_logins(|l| l.0.get(source.login_key).cloned()).flatten()
 }
 
-pub fn save(source: SourceId, secret: &str) {
+/// Keep `secret` as the login of `source`; Err says why it couldn't be.
+pub fn save(source: SourceId, secret: &str) -> Result<(), String> {
     update(|l| {
         l.0.insert(source.login_key.to_string(), secret.to_string());
-    });
+    })
 }
 
-pub fn clear(source: SourceId) {
+/// Forget the login of `source`; Err says why it couldn't be.
+pub fn clear(source: SourceId) -> Result<(), String> {
     update(|l| {
         l.0.remove(source.login_key);
-    });
+    })
 }
 
 #[cfg(test)]

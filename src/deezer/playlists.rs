@@ -6,7 +6,6 @@ use crate::model::{Playlist, PlaylistId, TrackId};
 use serde_json::{Value, json};
 
 /// Deezer's playlist visibility (`STATUS`).
-/// A playlist's `STATUS`.
 const PUBLIC: u64 = 0;
 pub(super) const PRIVATE: u64 = 1;
 

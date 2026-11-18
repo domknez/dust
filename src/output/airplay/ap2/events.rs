@@ -84,7 +84,10 @@ impl Frames {
     }
 }
 
-/// `frame` (its text, then a 16-byte tag) decrypted; None if it's too short or
+/// A frame's authentication tag, after its text.
+const TAG_LEN: usize = 16;
+
+/// `frame` (its text, then its tag) decrypted; None if it's too short or
 /// doesn't check out.
 fn open(key: &[u8; 32], counter: u64, aad: &[u8], frame: &[u8]) -> Option<Vec<u8>> {
     let n = frame.len().checked_sub(TAG_LEN)?;
@@ -94,8 +97,6 @@ fn open(key: &[u8; 32], counter: u64, aad: &[u8], frame: &[u8]) -> Option<Vec<u8
     cipher.decrypt_inout_detached(&super::pairing::nonce(counter), aad, buf.as_mut_slice().into(), &tag).ok()?;
     Some(buf)
 }
-
-const TAG_LEN: usize = 16;
 
 /// Length of the first complete request (head + Content-Length body) in `buf`.
 fn request_len(buf: &[u8]) -> Option<usize> {

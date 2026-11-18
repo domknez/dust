@@ -1,13 +1,11 @@
 //! Minimal RTSP client for AirPlay control, encrypted once AirPlay 2 pairing is done.
 
 use super::ap2::pairing::{DecryptReader, Encryptor, hkdf32};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 
-/// Longest reply line, and most headers and body bytes, taken from a receiver: far
-/// above what one sends (small plists), well below what could exhaust memory.
-const MAX_LINE: u64 = 8 * 1024;
-const MAX_HEADERS: usize = 64;
+/// Most body bytes taken from a receiver: far above what one sends (small
+/// plists), well below what could exhaust memory.
 const MAX_BODY: usize = 1024 * 1024;
 
 pub struct Rtsp {
@@ -123,33 +121,12 @@ impl Rtsp {
     }
 }
 
-/// One reply from `reader`: its status, headers and body, within the limits above.
+/// One reply from `reader`: its status, headers and body, within limits.
 fn read_response(reader: &mut impl BufRead) -> Result<(u16, Response), String> {
-    let mut read_line = |line: &mut String| {
-        line.clear();
-        reader.take(MAX_LINE).read_line(line).map_err(|e| e.to_string())?;
-        if !line.ends_with('\n') {
-            return Err(format!("reply line cut off or over {MAX_LINE} bytes"));
-        }
-        Ok(())
-    };
-    let mut line = String::new();
-    read_line(&mut line)?;
-    let status = line.split_whitespace().nth(1).and_then(|s| s.parse().ok()).ok_or_else(|| format!("bad response {line:?}"))?;
-    let mut headers = Vec::new();
-    loop {
-        read_line(&mut line)?;
-        let l = line.trim_end();
-        if l.is_empty() {
-            break;
-        }
-        if headers.len() == MAX_HEADERS {
-            return Err(format!("reply has over {MAX_HEADERS} headers"));
-        }
-        if let Some((k, v)) = l.split_once(':') {
-            headers.push((k.trim().to_string(), v.trim().to_string()));
-        }
-    }
+    let head = super::head::read(reader)?;
+    let status =
+        head.first.split_whitespace().nth(1).and_then(|s| s.parse().ok()).ok_or_else(|| format!("bad response {:?}", head.first))?;
+    let headers = head.headers;
     let mut resp = Response { headers, body: Vec::new() };
     if let Some(len) = resp.header("Content-Length").and_then(|l| l.parse::<usize>().ok()) {
         if len > MAX_BODY {
@@ -179,9 +156,9 @@ mod tests {
         let (status, resp) = reply(b"RTSP/1.0 200 OK\r\nCSeq: 2\r\nContent-Length: 2\r\n\r\nhi").unwrap();
         assert_eq!((status, resp.header("cseq"), resp.body.as_slice()), (200, Some("2"), &b"hi"[..]));
         assert!(reply(b"RTSP/1.0 200 OK\r\nContent-Length: 999999999999\r\n\r\n").is_err(), "no giant buffer");
-        let long = [b"RTSP/1.0 200 OK\r\nX: ".as_slice(), &vec![b'a'; MAX_LINE as usize], b"\r\n\r\n"].concat();
+        let long = [b"RTSP/1.0 200 OK\r\nX: ".as_slice(), &vec![b'a'; super::super::head::MAX_LINE as usize], b"\r\n\r\n"].concat();
         assert!(reply(&long).is_err(), "no endless line");
-        let many = [b"RTSP/1.0 200 OK\r\n".as_slice(), &b"X: y\r\n".repeat(MAX_HEADERS + 1), b"\r\n"].concat();
+        let many = [b"RTSP/1.0 200 OK\r\n".as_slice(), &b"X: y\r\n".repeat(super::super::head::MAX_HEADERS + 1), b"\r\n"].concat();
         assert!(reply(&many).is_err());
         assert!(reply(b"RTSP/1.0 200 OK\r\nCSeq: 2").is_err(), "cut off");
     }

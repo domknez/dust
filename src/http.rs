@@ -5,7 +5,7 @@ use std::time::Duration;
 /// How long to wait for a server to accept a connection.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// "dust/0.31.1", for servers that like to know who's asking.
+/// "dust/<version>", for servers that like to know who's asking.
 pub const USER_AGENT: &str = concat!("dust/", env!("CARGO_PKG_VERSION"));
 
 /// An HTTP client sending `user_agent`, each request given at most `deadline`

@@ -755,8 +755,14 @@ impl Engine {
                 self.track_error(e);
                 self.halt(at);
             }
-            // The stream's URL may have expired; resolve it again.
-            Err(OpenError::Unavailable(_)) => self.start_track(at),
+            // The stream's URL may have expired; resolve it again, still minding
+            // where it broke off (the fresh stream may break there too).
+            Err(OpenError::Unavailable(_)) => {
+                self.start_track(at);
+                if self.stream.is_some() {
+                    self.broken_at = Some(at);
+                }
+            }
         }
     }
 
@@ -957,6 +963,9 @@ mod tests {
     enum Breaks {
         Once,
         Always,
+        /// Every time, and opening it again where it broke off fails as an
+        /// expired address does, so the track is opened afresh.
+        Expired,
     }
 
     struct FakePlayback {
@@ -1002,6 +1011,9 @@ mod tests {
             self.written = t;
         }
         fn reopen(&self, at: f64) -> Result<Box<dyn Playback>, OpenError> {
+            if self.breaks.is_some_and(|(_, how)| how == Breaks::Expired) {
+                return Err(OpenError::Unavailable("link expired".into()));
+            }
             let breaks = self.breaks.filter(|(_, how)| *how == Breaks::Always);
             Ok(Box::new(FakePlayback { id: self.id.clone(), secs: self.secs, written: at, done: false, breaks }))
         }
@@ -1552,6 +1564,16 @@ mod tests {
         assert_eq!(played.iter().map(|p| (n(&p.track.id), p.skipped)).collect::<Vec<_>>(), [(1, false)], "heard to the end");
         assert_eq!(*library.opened.lock().unwrap(), [1, 2], "then the next one, as usual");
         assert_eq!(e.status.lock().unwrap().error, None);
+    }
+
+    #[test]
+    fn a_stream_breaking_off_after_a_fresh_open_still_stops_there() {
+        let (mut e, library, _tx) = engine(FakeLibrary { breaks: Some((1, 2.0, Breaks::Expired)), ..Default::default() });
+        e.handle(Cmd::Play(vec![track(1, 5), track(2, 3)], 0));
+        play_out(&mut e);
+        assert_eq!(e.restored_at, Some(2.0), "waiting where it broke off");
+        let opened = library.opened.lock().unwrap().iter().filter(|&&id| id == 1).count();
+        assert_eq!(opened, 2, "opened afresh once, not over and over (track 2 is preloaded meanwhile)");
     }
 
     #[test]

@@ -147,21 +147,19 @@ pub fn stage(release: &Release, progress: &Arc<AtomicU32>) -> Result<Staged, Str
         .map_err(|e| format!("checksums: {e}"))?;
     let expected = expected_sha256(&sums, &name).ok_or_else(|| format!("no checksum for {name}"))?;
 
-    let dir = private_dir(&format!("dust-update-{}", release.version)).map_err(|e| format!("download folder: {e}"))?;
-    let file = dir.join(&name);
+    let dir = PrivateDir(private_dir(&format!("dust-update-{}", release.version)).map_err(|e| format!("download folder: {e}"))?);
+    let file = dir.0.join(&name);
     let actual = download(url, &file, progress)?;
     if actual != expected {
-        let _ = std::fs::remove_dir_all(&dir);
         return Err(format!("{name}: checksum mismatch"));
     }
     log_info!("update: downloaded and verified {name}");
 
     let path = staged_path(&target);
     let unpacked = match &target {
-        Target::Bundle(_) => unpack_bundle(&file, &path, &dir),
+        Target::Bundle(_) => unpack_bundle(&file, &path, &dir.0),
         Target::Binary(_) => stage_binary(&file, &path),
     };
-    let _ = std::fs::remove_dir_all(&dir);
     unpacked?;
     Ok(Staged { version: release.version.clone(), target, path })
 }
@@ -186,6 +184,16 @@ pub fn apply(staged: &Staged) -> Result<Restart, String> {
 /// [`stage`] then [`apply`] in one go (command line).
 pub fn install(release: &Release, progress: &Arc<AtomicU32>) -> Result<Restart, String> {
     apply(&stage(release, progress)?)
+}
+
+/// A download folder, removed with what's in it however staging ends (a failed
+/// or cut-off download included).
+struct PrivateDir(PathBuf);
+
+impl Drop for PrivateDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 /// A new folder in the temporary folder that only this user can open, so nothing

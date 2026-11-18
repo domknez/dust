@@ -275,7 +275,7 @@ impl App {
             Action::OpenServerForm => self.open_server_form(),
             Action::ConnectServer(server) => self.connect_server(server),
             Action::SwitchSource(source) => self.switch_source(source),
-            Action::LogOut => self.log_out(),
+            Action::LogOut => self.log_out(ctx),
         }
     }
 

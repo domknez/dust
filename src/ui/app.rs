@@ -268,9 +268,11 @@ impl App {
         self.login.task.start(&self.jobs, || Deezer::login(&crate::login::obtain_arl().map_err(Error::Other)?));
     }
 
-    fn on_logged_in(&mut self, client: Deezer) {
-        if std::mem::take(&mut self.login.remember) {
-            credentials::save(deezer::ID, client.arl());
+    fn on_logged_in(&mut self, ctx: &egui::Context, client: Deezer) {
+        if std::mem::take(&mut self.login.remember)
+            && let Err(e) = credentials::save(deezer::ID, client.arl())
+        {
+            self.toasts.error(ctx, format!("Logged in, but dust can't remember it for next time: {e}"));
         }
         self.login.arl.clear();
         self.source_ready(std::sync::Arc::new(client));
@@ -507,8 +509,8 @@ impl App {
 
     /// Collect what background loads finished since the last frame.
     fn poll_loads(&mut self, ctx: &egui::Context) {
-        self.poll_login();
-        self.poll_sources();
+        self.poll_login(ctx);
+        self.poll_sources(ctx);
         let mut failed = self.library.poll();
         self.poll_likes(ctx, &mut failed);
         self.poll_playlist_edits(ctx, &mut failed);
@@ -520,7 +522,7 @@ impl App {
             log_warn!("{error}");
         }
         if let Some(expired) = failed.into_iter().find(Error::is_session_expired) {
-            self.log_out();
+            self.log_out(ctx);
             self.login.error = Some(expired.to_string());
             return;
         }
@@ -529,9 +531,9 @@ impl App {
         }
     }
 
-    fn poll_login(&mut self) {
+    fn poll_login(&mut self, ctx: &egui::Context) {
         match self.login.task.poll_take() {
-            Some(Ok(client)) => self.on_logged_in(client),
+            Some(Ok(client)) => self.on_logged_in(ctx, client),
             Some(Err(e)) => {
                 self.login.remember = false;
                 self.login.error = Some(e.to_string());

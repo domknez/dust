@@ -23,6 +23,7 @@ pub mod ap2;
 mod control;
 pub mod dacp;
 mod discovery;
+mod head;
 mod negotiate;
 mod packets;
 mod rtsp;
