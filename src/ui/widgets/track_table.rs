@@ -287,3 +287,16 @@ pub fn column_captions(ui: &Ui, head: Rect, columns: &Columns, album_caption: &s
     painter.text(pos2(columns.time, y), Align2::RIGHT_CENTER, "TIME", font, color);
     painter.hline(head.x_range(), head.bottom() - 4.0, egui::Stroke::new(1.0, colors().line));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unplayable_tracks_say_when_they_come() {
+        let soon = Track { available: false, available_from: "2026-11-20".into(), ..Track::test(1) };
+        assert_eq!(unavailable_note(&soon), "Available from 20 Nov 2026");
+        let never = Track { available: false, ..Track::test(1) };
+        assert_eq!(unavailable_note(&never), "Not available to stream");
+    }
+}

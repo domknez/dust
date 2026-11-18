@@ -344,3 +344,17 @@ fn wave_seed(id: &TrackId) -> u64 {
         hash.max(1)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_track_keeps_its_waveform() {
+        assert_eq!(wave_seed(&TrackId::from(3135556)), 3135556, "a Deezer number is its own seed");
+        let server = TrackId::new("qPyR7XLJOiu93qWw1n06xy");
+        assert_eq!(wave_seed(&server), wave_seed(&TrackId::new("qPyR7XLJOiu93qWw1n06xy")), "the same id, the same shape");
+        assert_ne!(wave_seed(&server), wave_seed(&TrackId::new("other")));
+        assert_ne!(wave_seed(&TrackId::new("")), 0);
+    }
+}

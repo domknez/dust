@@ -352,3 +352,13 @@ fn chart(ui: &mut Ui, bars: &[Bar]) {
         resp.on_hover_text(format!("{} · {time}", bar.name));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plays_read_naturally() {
+        assert_eq!((plays_label(1), plays_label(2), plays_label(12_345)), ("1 play".into(), "2 plays".into(), "12,345 plays".into()));
+    }
+}

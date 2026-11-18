@@ -332,3 +332,17 @@ pub fn tag(painter: &egui::Painter, pos: egui::Pos2, text: &str) -> Rect {
     painter.galley(pos2(rect.left() + 6.0, rect.center().y - galley.size().y / 2.0), galley, p.on_accent);
     rect
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn waveforms_are_stable_and_in_range() {
+        let levels = wave_levels(42, 64);
+        assert_eq!(levels, wave_levels(42, 64), "the same seed, the same bars");
+        assert_ne!(levels, wave_levels(43, 64));
+        assert!(levels.iter().all(|l| (0.15..=1.0).contains(l)));
+        assert!(wave_levels(1, 0).is_empty() && wave_levels(1, 1).len() == 1);
+    }
+}

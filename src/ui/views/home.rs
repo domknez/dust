@@ -151,3 +151,21 @@ fn flow_first(sections: &[Section]) -> Vec<usize> {
     order.sort_by_key(|&i| !sections[i].items.iter().any(|it| it.kind.is_endless()));
     order
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flow_comes_first_and_the_rest_keep_their_order() {
+        let item = |kind| crate::model::Item { kind, id: "1".into(), title: "T".into(), subtitle: String::new(), picture: None, release: None };
+        let section = |kind| Section::new("S", vec![item(kind)]);
+        let sections = [
+            section(crate::model::ItemKind::Album),
+            section(crate::model::ItemKind::Playlist),
+            section(crate::model::ItemKind::Flow { mood: None }),
+            section(crate::model::ItemKind::Mix),
+        ];
+        assert_eq!(flow_first(&sections), [2, 0, 1, 3]);
+    }
+}
