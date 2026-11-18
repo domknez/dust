@@ -2,6 +2,7 @@
 
 use super::{Error, Result, SERVICE, http};
 use serde_json::Value;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 const GATEWAY: &str = "https://www.deezer.com/ajax/gw-light.php";
@@ -56,23 +57,38 @@ impl Session {
 }
 
 /// One gw-light call. `extra` adds URL query parameters (e.g. `gateway_input`).
-pub fn call(agent: &ureq::Agent, arl: &str, session: &mut Session, method: &str, body: Value, extra: &[(&str, &str)]) -> Result<Value> {
+/// The session is locked only to read the token and cookies and to keep the new
+/// cookies, never across the request: calls run side by side.
+pub fn call(agent: &ureq::Agent, arl: &str, session: &Mutex<Session>, method: &str, body: Value, extra: &[(&str, &str)]) -> Result<Value> {
+    let (token, cookies) = {
+        let s = lock(session);
+        (s.api_token.clone(), s.cookie_header(arl))
+    };
     let resp = agent
         .post(GATEWAY)
         .query("method", method)
         .query("input", "3")
         .query("api_version", "1.0")
-        .query("api_token", &session.api_token)
+        .query("api_token", &token)
         .query_pairs(extra.iter().copied())
-        .header("Cookie", &session.cookie_header(arl))
+        .header("Cookie", &cookies)
         .send_json(body)
         .map_err(http)?;
-    for c in resp.headers().get_all("set-cookie") {
-        if let Ok(c) = c.to_str() {
-            session.store(c);
+    {
+        let mut s = lock(session);
+        for c in resp.headers().get_all("set-cookie") {
+            if let Ok(c) = c.to_str() {
+                s.store(c);
+            }
         }
     }
     results(method, resp.into_body().read_json().map_err(http)?)
+}
+
+/// The session, also after a thread panicked holding it (it's only ever left
+/// whole: each change is one assignment).
+pub fn lock(session: &Mutex<Session>) -> MutexGuard<'_, Session> {
+    session.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// The `results` of a gw-light reply, or its `error` object as an [`Error`].

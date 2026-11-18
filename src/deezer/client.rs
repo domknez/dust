@@ -25,14 +25,14 @@ impl Deezer {
     pub fn login(arl: &str) -> Result<Deezer> {
         let arl = arl.trim().to_string();
         let agent = session::http_agent();
-        let mut session = Session::new();
-        let data = session::call(&agent, &arl, &mut session, "deezer.getUserData", json!({}), &[])?;
+        let session = Mutex::new(Session::new());
+        let data = session::call(&agent, &arl, &session, "deezer.getUserData", json!({}), &[])?;
         let user = &data["USER"];
         let user_id = number(&user["USER_ID"]);
         if user_id == 0 {
             return Err(Error::SessionExpired);
         }
-        session.api_token = text(&data["checkForm"]);
+        session::lock(&session).api_token = text(&data["checkForm"]);
         let license_token = text(&user["OPTIONS"]["license_token"]);
         if license_token.is_empty() {
             return Err(Error::NoStreamingLicense);
@@ -40,7 +40,7 @@ impl Deezer {
         Ok(Deezer(Arc::new(Inner {
             agent,
             arl,
-            session: Mutex::new(session),
+            session,
             license_token,
             user_id,
             loved_id: number(&user["LOVEDTRACKS_ID"]),
@@ -89,17 +89,16 @@ impl Deezer {
     /// Authenticated call; refreshes an expired CSRF token once and retries.
     pub(super) fn call_with(&self, method: &str, body: Value, extra: &[(&str, &str)]) -> Result<Value> {
         let inner = &self.0;
-        let mut session = inner.session.lock().unwrap();
-        match session::call(&inner.agent, &inner.arl, &mut session, method, body.clone(), extra) {
+        match session::call(&inner.agent, &inner.arl, &inner.session, method, body.clone(), extra) {
             Err(Error::InvalidToken) => {
-                session.reset_token();
-                let data = session::call(&inner.agent, &inner.arl, &mut session, "deezer.getUserData", json!({}), &[])?;
+                session::lock(&inner.session).reset_token();
+                let data = session::call(&inner.agent, &inner.arl, &inner.session, "deezer.getUserData", json!({}), &[])?;
                 // A rejected token with no logged-in user behind it: the session is gone.
                 if number(&data["USER"]["USER_ID"]) == 0 {
                     return Err(Error::SessionExpired);
                 }
-                session.api_token = text(&data["checkForm"]);
-                session::call(&inner.agent, &inner.arl, &mut session, method, body, extra)
+                session::lock(&inner.session).api_token = text(&data["checkForm"]);
+                session::call(&inner.agent, &inner.arl, &inner.session, method, body, extra)
             }
             result => result,
         }
