@@ -59,7 +59,7 @@ pub fn menu_row(ui: &mut Ui, icon: Option<Icon>, title: &str, subtitle: Option<&
         Some(sub) => {
             let style = if checked { ty::ITEM.strong() } else { ty::ITEM };
             text_left(painter, pos2(x, rect.center().y - 8.0), title, style, color, width);
-            text_left(painter, pos2(x, rect.center().y + 10.0), sub, ty::CAPTION, colors().faint, width);
+            text_left(painter, pos2(x, rect.center().y + super::SUBTITLE_BELOW), sub, ty::CAPTION, colors().faint, width);
         }
         None => {
             text_left(painter, pos2(x, rect.center().y), title, ty::ITEM, color, width);
@@ -91,8 +91,15 @@ pub fn switch_row(ui: &mut Ui, title: &str, subtitle: Option<&str>, on: bool, en
     let (title_color, sub_color) = if enabled { (p.text, p.faint) } else { (p.faint, p.faint) };
     match subtitle {
         Some(sub) => {
-            text_left(ui.painter(), pos2(x, rect.center().y - 9.0), title, ty::ITEM, title_color, width);
-            text_left(ui.painter(), pos2(x, rect.center().y + 10.0), sub, ty::CAPTION, sub_color, width);
+            let title = super::Line { text: title, style: ty::ITEM, color: title_color };
+            super::two_lines(
+                ui.painter(),
+                x,
+                rect.center().y,
+                width,
+                title,
+                super::Line { text: sub, style: ty::CAPTION, color: sub_color },
+            );
         }
         None => {
             text_left(ui.painter(), pos2(x, rect.center().y), title, ty::ITEM, title_color, width);

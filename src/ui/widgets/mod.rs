@@ -27,5 +27,5 @@ pub use menu::{
     now_playing_menu, offer_crate, playlist_picker, popover_frame, queue_menu, shortcut_row, switch_row, track_menu,
 };
 pub use nav::sidebar_item;
-pub use text::{artist_links, text_left, text_link};
+pub use text::{Line, SUBTITLE_BELOW, TITLE_ABOVE, artist_links, text_left, text_link, two_lines};
 pub use track_table::{Columns, RowMenu, Table, column_captions, track_rows};

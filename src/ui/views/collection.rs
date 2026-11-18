@@ -376,8 +376,9 @@ fn more_releases(ui: &mut Ui, covers: &mut Covers, column: Rect, caption: &str, 
         widgets::cover(ui, covers, item.picture.as_ref(), metrics::THUMB_PX, art, radius::THUMB);
         let x = art.right() + 10.0;
         let width = rect.right() - x - 4.0;
-        text_left(ui.painter(), pos2(x, rect.center().y - 8.0), &item.title, ty::ITEM, p.text, width);
-        text_left(ui.painter(), pos2(x, rect.center().y + 9.0), &item.subtitle, ty::META, p.dim, width);
+        let title = widgets::Line { text: &item.title, style: ty::ITEM, color: p.text };
+        let subtitle = widgets::Line { text: &item.subtitle, style: ty::META, color: p.dim };
+        widgets::two_lines(ui.painter(), x, rect.center().y, width, title, subtitle);
         let Some(coll) = Coll::from_item(item) else { continue };
         if let Some(mode) = widgets::queue_menu(&resp) {
             acts.push(Action::PlaySource(coll.source.clone(), mode));

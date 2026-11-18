@@ -8,7 +8,7 @@ use crate::ui::shortcuts;
 use crate::ui::sources::MENU;
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, typography as ty};
-use crate::ui::widgets::{self, text_left};
+use crate::ui::widgets;
 use eframe::egui::{self, Response, Sense, Ui, pos2, vec2};
 
 const WIDTH: f32 = 272.0;
@@ -70,6 +70,7 @@ fn account_header(ui: &mut Ui, name: &str, label: &str) {
     let (head, _) = ui.allocate_exact_size(vec2(ui.available_width(), 48.0), Sense::hover());
     avatar(ui, pos2(head.left() + 22.0, head.center().y), 17.0, name, ty::LEAD);
     let width = head.width() - 56.0;
-    text_left(ui.painter(), pos2(head.left() + 48.0, head.center().y - 8.0), name, ty::TITLE.strong(), colors().text, width);
-    text_left(ui.painter(), pos2(head.left() + 48.0, head.center().y + 10.0), label, ty::SMALL, colors().faint, width);
+    let title = widgets::Line { text: name, style: ty::TITLE.strong(), color: colors().text };
+    let subtitle = widgets::Line { text: label, style: ty::SMALL, color: colors().faint };
+    widgets::two_lines(ui.painter(), head.left() + 48.0, head.center().y, width, title, subtitle);
 }

@@ -156,12 +156,13 @@ impl App {
         let name = self.account_name();
         avatar(ui, pos2(rect.left() + 24.0, rect.center().y), 14.0, &name, ty::META);
         let width = rect.width() - 80.0;
-        text_left(ui.painter(), pos2(rect.left() + 48.0, rect.center().y - 8.0), &name, ty::BODY.strong(), p.text, width);
         let quality = match &self.client {
             Some(c) if !c.features().quality => c.detail(),
             _ => self.prefs.quality.label().to_lowercase(),
         };
-        text_left(ui.painter(), pos2(rect.left() + 48.0, rect.center().y + 9.0), &quality, ty::META, p.faint, width);
+        let title = widgets::Line { text: &name, style: ty::BODY.strong(), color: p.text };
+        let subtitle = widgets::Line { text: &quality, style: ty::META, color: p.faint };
+        widgets::two_lines(ui.painter(), rect.left() + 48.0, rect.center().y, width, title, subtitle);
         self.account_menu(&resp, &name, acts);
     }
 

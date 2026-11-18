@@ -187,7 +187,7 @@ fn entry_row(ui: &Ui, covers: &mut crate::ui::covers::Covers, rect: Rect, entry:
     let width = rect.right() - x - 8.0;
     let title = if entry.thing == Thing::Note { format!("“{}”", entry.title()) } else { entry.title().to_string() };
     let color = if entry.heard { p.dim } else { p.text };
-    text_left(ui.painter(), pos2(x, rect.center().y - 8.0), &title, ty::ITEM, color, width);
+    text_left(ui.painter(), pos2(x, rect.center().y - widgets::TITLE_ABOVE), &title, ty::ITEM, color, width);
     let mut parts: Vec<String> = Vec::new();
     match &entry.thing {
         Thing::Track(_) | Thing::Album { .. } => parts.push(entry.by().to_string()),
@@ -204,7 +204,7 @@ fn entry_row(ui: &Ui, covers: &mut crate::ui::covers::Covers, rect: Rect, entry:
     if !entry.source.is_empty() && entry.source != current {
         parts.push(format!("on {}", source_name(&entry.source)));
     }
-    text_left(ui.painter(), pos2(x, rect.center().y + 10.0), &parts.join(" · "), ty::SMALL, p.dim, width);
+    text_left(ui.painter(), pos2(x, rect.center().y + widgets::SUBTITLE_BELOW), &parts.join(" · "), ty::SMALL, p.dim, width);
 }
 
 /// "new" in lime or "heard", and the day it was saved.
@@ -217,7 +217,7 @@ fn status_line(ui: &Ui, rect: Rect, entry: &Entry) {
     ui.painter().circle_filled(pos2(right - width - 8.0, y), 3.0, color);
     let zone = when::zone();
     let day = when::day(entry.saved, &zone).map_or_else(String::new, |d| when::day_name(d, when::today(&zone)));
-    ui.painter().text(pos2(right, rect.center().y + 10.0), Align2::RIGHT_CENTER, day, ty::CAPTION.font(), p.faint);
+    ui.painter().text(pos2(right, rect.center().y + widgets::SUBTITLE_BELOW), Align2::RIGHT_CENTER, day, ty::CAPTION.font(), p.faint);
 }
 
 /// The entry's right-click menu: mark it heard (or new again), or remove it.

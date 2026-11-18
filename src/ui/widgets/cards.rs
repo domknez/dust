@@ -232,9 +232,9 @@ pub fn queue_row(ui: &Ui, covers: &mut Covers, rect: Rect, t: &Track, current: b
     let width = rect.right() - x - 52.0;
     let p = colors();
     let painter = ui.painter();
-    text_left(painter, pos2(x, rect.center().y - 8.0), &t.title, ty::ITEM, if current { p.accent } else { p.text }, width);
+    text_left(painter, pos2(x, rect.center().y - super::TITLE_ABOVE), &t.title, ty::ITEM, if current { p.accent } else { p.text }, width);
     if show_time {
         painter.text(pos2(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, mmss(t.duration as f64), ty::META.font(), p.dim);
     }
-    artist_links(ui, pos2(x, rect.center().y + 10.0), &t.artists, &t.artist, ty::SMALL, p.dim, p.text, width).0
+    artist_links(ui, pos2(x, rect.center().y + super::SUBTITLE_BELOW), &t.artists, &t.artist, ty::SMALL, p.dim, p.text, width).0
 }

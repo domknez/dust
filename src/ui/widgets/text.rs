@@ -23,6 +23,24 @@ pub fn text_left(painter: &Painter, pos: Pos2, text: &str, style: Text, color: C
     rect
 }
 
+/// How far above and below a row's middle its title and its second line sit.
+pub const TITLE_ABOVE: f32 = 8.0;
+pub const SUBTITLE_BELOW: f32 = 10.0;
+
+/// One line of text, as [`two_lines`] paints it.
+pub struct Line<'a> {
+    pub text: &'a str,
+    pub style: Text,
+    pub color: Color32,
+}
+
+/// A row's title and the line under it, from `left`, around its middle `center_y`,
+/// each cut at `max_width`.
+pub fn two_lines(painter: &Painter, left: f32, center_y: f32, max_width: f32, title: Line, subtitle: Line) {
+    text_left(painter, pos2(left, center_y - TITLE_ABOVE), title.text, title.style, title.color, max_width);
+    text_left(painter, pos2(left, center_y + SUBTITLE_BELOW), subtitle.text, subtitle.style, subtitle.color, max_width);
+}
+
 /// `text` as a link: left edge at `pos.x`, centred on `pos.y`, underlined on hover.
 /// Returns its response (for clicks and a right-click menu) and its right edge.
 #[allow(clippy::too_many_arguments)]

@@ -171,8 +171,15 @@ impl App {
                 Kind::Album => (track.album.as_str(), track.artist.clone()),
                 Kind::Track => (track.title.as_str(), track.artist.clone()),
             };
-            text_left(ui.painter(), pos2(x, rect.center().y - 8.0), name, ty::ITEM.strong(), p.text, width);
-            text_left(ui.painter(), pos2(x, rect.center().y + 9.0), &sub, ty::SECONDARY, p.dim, width);
+            let title = widgets::Line { text: name, style: ty::ITEM.strong(), color: p.text };
+            widgets::two_lines(
+                ui.painter(),
+                x,
+                rect.center().y,
+                width,
+                title,
+                widgets::Line { text: &sub, style: ty::SECONDARY, color: p.dim },
+            );
             let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
             match kind {
                 Kind::Artist => {

@@ -105,7 +105,7 @@ impl App {
             width,
         );
         let line = track.map_or_else(|| "Nothing playing".to_string(), |t| format!("{} · {}", t.title, t.artist));
-        text_left(ui.painter(), pos2(x, rect.center().y + 10.0), &line, ty::SMALL, p.dim, width);
+        text_left(ui.painter(), pos2(x, rect.center().y + widgets::SUBTITLE_BELOW), &line, ty::SMALL, p.dim, width);
         ui.painter().text(
             pos2(rect.right() - 12.0, rect.center().y),
             Align2::RIGHT_CENTER,
