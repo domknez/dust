@@ -10,11 +10,32 @@ use serde_json::json;
 /// The home page's name for `page.get`.
 const HOME: &str = "home";
 
+/// Most of each list asked for at once (what Deezer's web player asks for, or
+/// more); a list that comes back this long may have been cut, which the log says.
+const SEARCH_HITS: usize = 100;
+const PLAYLIST_TRACKS: usize = 2000;
+const OWN_PLAYLISTS: usize = 500;
+const DISCOGRAPHY: usize = 500;
+const FOLLOWED: usize = 2000;
+const FOLLOWED_SHOWS: usize = 200;
+const EPISODES: usize = 100;
+const TOP_TRACKS: usize = 100;
+const LIKED_TRACKS: usize = 10_000;
+
+/// `list`, noting in the log when it came back as long as asked for (`limit`): the
+/// rest, if any, isn't shown.
+fn capped<T>(what: &str, list: Vec<T>, limit: usize) -> Vec<T> {
+    if list.len() >= limit {
+        log_warn!("{what}: showing the first {limit}; there may be more");
+    }
+    list
+}
+
 impl Deezer {
     pub fn search(&self, query: &str) -> Result<SearchResults> {
         let r = self.call(
             "deezer.pageSearch",
-            json!({"query": query, "start": 0, "nb": 100, "suggest": false, "artist_suggest": false, "top_tracks": false}),
+            json!({"query": query, "start": 0, "nb": SEARCH_HITS, "suggest": false, "artist_suggest": false, "top_tracks": false}),
         )?;
         let sections = [
             ("Artists", "artist", "ARTIST"),
@@ -37,15 +58,15 @@ impl Deezer {
     pub fn playlist(&self, id: &PlaylistId) -> Result<Vec<Track>> {
         let r = self.call(
             "deezer.pagePlaylist",
-            json!({"playlist_id": parse::id_value(id.as_str()), "lang": "en", "nb": 2000, "start": 0, "tab": 0, "tags": true, "header": true}),
+            json!({"playlist_id": parse::id_value(id.as_str()), "lang": "en", "nb": PLAYLIST_TRACKS, "start": 0, "tab": 0, "tags": true, "header": true}),
         )?;
-        Ok(parse::tracks(&r["SONGS"]["data"]))
+        Ok(capped("playlist", parse::tracks(&r["SONGS"]["data"]), PLAYLIST_TRACKS))
     }
 
     /// The account's playlists, without the Loved tracks playlist.
     pub fn playlists(&self) -> Result<Vec<Playlist>> {
-        let r = self.call("deezer.pageProfile", json!({"user_id": self.0.user_id, "tab": "playlists", "nb": 500}))?;
-        let list = r["TAB"]["playlists"]["data"].as_array().cloned().unwrap_or_default();
+        let r = self.call("deezer.pageProfile", json!({"user_id": self.0.user_id, "tab": "playlists", "nb": OWN_PLAYLISTS}))?;
+        let list = capped("playlists", r["TAB"]["playlists"]["data"].as_array().cloned().unwrap_or_default(), OWN_PLAYLISTS);
         let (none, loved) = (PlaylistId::from(0), PlaylistId::from(self.0.loved_id));
         Ok(list.iter().map(|v| parse::playlist(v, self.0.user_id)).filter(|p| p.id != none && p.id != loved).collect())
     }
@@ -88,35 +109,38 @@ impl Deezer {
     /// Everything on an artist's page, including the whole discography.
     pub fn artist(&self, id: &str) -> Result<ArtistPage> {
         let page = self.call("deezer.pageArtist", json!({"art_id": id, "lang": "en", "tab": 0}))?;
-        let discography =
-            self.call("album.getDiscography", json!({"art_id": id, "nb": 500, "nb_songs": 0, "start": 0, "filter_role_id": [0]}))?;
-        Ok(parse::artist_page(&page, &discography["data"]))
+        Ok(parse::artist_page(&page, &self.discography(id)?))
     }
 
     /// An artist's albums, singles and EPs with their release dates.
     pub fn releases(&self, id: &str) -> Result<Vec<Release>> {
-        let r = self.call("album.getDiscography", json!({"art_id": id, "nb": 500, "nb_songs": 0, "start": 0, "filter_role_id": [0]}))?;
-        Ok(parse::releases(&r["data"]))
+        Ok(parse::releases(&self.discography(id)?))
+    }
+
+    /// Everything an artist released as the main artist, as `album.getDiscography`
+    /// lists it.
+    fn discography(&self, id: &str) -> Result<serde_json::Value> {
+        let r =
+            self.call("album.getDiscography", json!({"art_id": id, "nb": DISCOGRAPHY, "nb_songs": 0, "start": 0, "filter_role_id": [0]}))?;
+        Ok(r["data"].clone())
     }
 
     /// Artists the account follows, as cards.
     pub fn favorite_artists(&self) -> Result<Vec<Item>> {
-        let r = self.call("deezer.pageProfile", json!({"user_id": self.0.user_id, "tab": "artists", "nb": 2000}))?;
-        Ok(r["TAB"]["artists"]["data"]
-            .as_array()
-            .map(|a| a.iter().filter_map(|v| parse::card_item("artist", v)).collect())
-            .unwrap_or_default())
+        let r = self.call("deezer.pageProfile", json!({"user_id": self.0.user_id, "tab": "artists", "nb": FOLLOWED}))?;
+        let artists = r["TAB"]["artists"]["data"].as_array().map(|a| a.iter().filter_map(|v| parse::card_item("artist", v)).collect());
+        Ok(capped("followed artists", artists.unwrap_or_default(), FOLLOWED))
     }
 
     /// A podcast's latest episodes, newest first.
     pub fn show_episodes(&self, id: &str) -> Result<Vec<Track>> {
-        let r = self.call("deezer.pageShow", json!({"show_id": id, "start": 0, "nb": 100, "user_id": 0, "lang": "en"}))?;
+        let r = self.call("deezer.pageShow", json!({"show_id": id, "start": 0, "nb": EPISODES, "user_id": 0, "lang": "en"}))?;
         Ok(parse::show_episodes(&r))
     }
 
     /// The podcasts the account follows, as cards.
     pub fn favorite_shows(&self) -> Result<Vec<Item>> {
-        let r = self.call("deezer.pageProfile", json!({"user_id": self.0.user_id, "tab": "podcasts", "nb": 200}))?;
+        let r = self.call("deezer.pageProfile", json!({"user_id": self.0.user_id, "tab": "podcasts", "nb": FOLLOWED_SHOWS}))?;
         Ok(r["TAB"]["shows"]["data"].as_array().map(|a| a.iter().filter_map(|v| parse::card_item("show", v)).collect()).unwrap_or_default())
     }
 
@@ -127,7 +151,7 @@ impl Deezer {
     }
 
     pub fn artist_top(&self, id: &str) -> Result<Vec<Track>> {
-        let r = self.call("artist.getTopTrack", json!({"art_id": id, "nb": 100}))?;
+        let r = self.call("artist.getTopTrack", json!({"art_id": id, "nb": TOP_TRACKS}))?;
         Ok(parse::tracks(&r["data"]))
     }
 
@@ -157,8 +181,8 @@ impl Deezer {
 impl Deezer {
     /// Ids of liked tracks, albums and followed artists.
     pub fn likes(&self) -> Result<Likes> {
-        let songs = self.call("song.getFavoriteIds", json!({"nb": 10000, "start": 0}))?;
-        let tracks = songs["data"]
+        let songs = self.call("song.getFavoriteIds", json!({"nb": LIKED_TRACKS, "start": 0}))?;
+        let ids: Vec<TrackId> = songs["data"]
             .as_array()
             .into_iter()
             .flatten()
@@ -166,17 +190,16 @@ impl Deezer {
             .filter(|&id| id != 0)
             .map(TrackId::from)
             .collect();
+        let tracks = capped("liked tracks", ids, LIKED_TRACKS).into_iter().collect();
         let ids = |items: Vec<Item>| items.into_iter().map(|i| i.id).collect();
         Ok(Likes { tracks, albums: ids(self.favorite_albums()?), artists: ids(self.favorite_artists()?) })
     }
 
     /// Albums the account has added to its favourites, as cards.
     pub fn favorite_albums(&self) -> Result<Vec<Item>> {
-        let r = self.call("deezer.pageProfile", json!({"user_id": self.0.user_id, "tab": "albums", "nb": 2000}))?;
-        Ok(r["TAB"]["albums"]["data"]
-            .as_array()
-            .map(|a| a.iter().filter_map(|v| parse::card_item("album", v)).collect())
-            .unwrap_or_default())
+        let r = self.call("deezer.pageProfile", json!({"user_id": self.0.user_id, "tab": "albums", "nb": FOLLOWED}))?;
+        let albums = r["TAB"]["albums"]["data"].as_array().map(|a| a.iter().filter_map(|v| parse::card_item("album", v)).collect());
+        Ok(capped("liked albums", albums.unwrap_or_default(), FOLLOWED))
     }
 
     /// Like or unlike on Deezer.

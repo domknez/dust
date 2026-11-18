@@ -11,7 +11,7 @@ use super::{LATENCY, LEAD, RATE};
 use crate::output::Sink;
 use chacha20poly1305::ChaCha20Poly1305;
 use chacha20poly1305::aead::KeyInit;
-use std::net::{IpAddr, Ipv6Addr, SocketAddr, TcpStream, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, UdpSocket};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::thread::JoinHandle;
@@ -27,6 +27,9 @@ const RUNTIME_REPLY_TIMEOUT: Duration = Duration::from_secs(2);
 const TEARDOWN_TIMEOUT: Duration = Duration::from_millis(500);
 /// How long to wait for the audio thread to park or drain.
 const HANDOFF_TIMEOUT: Duration = Duration::from_millis(200);
+/// How long the timing and control threads wait on their sockets before looking
+/// whether the session is still on.
+const SOCKET_POLL: Duration = Duration::from_millis(200);
 
 pub struct AirPlaySink {
     /// AirPlay 2 reverse event channel; held open for the session.
@@ -69,11 +72,10 @@ impl AirPlaySink {
         super::dacp::advertise_on(local_ip);
         let mut rtsp = Rtsp::new(stream, format!("rtsp://{local_ip}/{session_id}"), user_agent, super::dacp::id().to_string())?;
 
-        let any: IpAddr = if local_ip.is_ipv4() { [0, 0, 0, 0].into() } else { Ipv6Addr::UNSPECIFIED.into() };
-        let bind = || UdpSocket::bind(SocketAddr::new(any, 0)).map_err(|e| e.to_string());
+        let bind = || UdpSocket::bind(SocketAddr::new(unspecified(local_ip), 0)).map_err(|e| e.to_string());
         let (control, timing, audio) = (bind()?, bind()?, bind()?);
         for s in [&control, &timing] {
-            s.set_read_timeout(Some(Duration::from_millis(200))).ok();
+            s.set_read_timeout(Some(SOCKET_POLL)).ok();
         }
         let local = Local {
             ip: local_ip,
@@ -282,10 +284,16 @@ fn connect_any(device: &Device) -> Result<TcpStream, String> {
 
 /// The local address the OS would send from to reach `remote` (nothing is sent).
 fn route_from(remote: IpAddr) -> Option<IpAddr> {
-    let any: IpAddr = if remote.is_ipv4() { [0, 0, 0, 0].into() } else { Ipv6Addr::UNSPECIFIED.into() };
-    let probe = UdpSocket::bind(SocketAddr::new(any, 0)).ok()?;
-    probe.connect(SocketAddr::new(remote, 9)).ok()?;
+    let probe = UdpSocket::bind(SocketAddr::new(unspecified(remote), 0)).ok()?;
+    // Any port: connecting a UDP socket only picks the route.
+    const DISCARD_PORT: u16 = 9;
+    probe.connect(SocketAddr::new(remote, DISCARD_PORT)).ok()?;
     Some(probe.local_addr().ok()?.ip())
+}
+
+/// "Any address" of `like`'s family, to bind to.
+fn unspecified(like: IpAddr) -> IpAddr {
+    if like.is_ipv4() { Ipv4Addr::UNSPECIFIED.into() } else { Ipv6Addr::UNSPECIFIED.into() }
 }
 
 fn wait_until(done: impl Fn() -> bool) {

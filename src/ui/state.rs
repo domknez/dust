@@ -122,7 +122,7 @@ impl Coll {
             source: CollSource::History(which),
             kind: "FROM YOUR HISTORY",
             title: which.title().to_string(),
-            subtitle: which.about().to_string(),
+            subtitle: which.about(),
             picture: None,
         }
     }

@@ -8,7 +8,13 @@ use jiff::ToSpan;
 use jiff::civil::Date;
 use std::collections::HashMap;
 
-const DAY: u64 = 24 * 60 * 60;
+pub const DAY: u64 = 24 * 60 * 60;
+const YEAR: u64 = 365 * DAY;
+/// "A year ago" is the week around the day: this long before it and after it.
+const YEAR_AGO_BEFORE: u64 = 4 * DAY;
+const YEAR_AGO_AFTER: u64 = 3 * DAY;
+/// Tracks shown from a year ago.
+const YEAR_AGO_TOP: usize = 5;
 /// Entries in each top list.
 pub const TOP: usize = 10;
 
@@ -171,14 +177,15 @@ pub fn compute(plays: &[&Play], period: Period, now: u64, zone: &when::Zone) -> 
         (fresh.top(TOP), count)
     };
 
-    // The same 7 days a year ago.
+    // The week around this day a year ago.
     let year_ago = {
-        let (from, to) = (now.saturating_sub(365 * DAY + 4 * DAY), now.saturating_sub(365 * DAY - 3 * DAY));
-        let mut then = Tally::default();
+        let then = now.saturating_sub(YEAR);
+        let (from, to) = (then.saturating_sub(YEAR_AGO_BEFORE), then + YEAR_AGO_AFTER);
+        let mut tally = Tally::default();
         for play in plays.iter().filter(|p| p.at >= from && p.at < to) {
-            then.add(play.track.id.to_string(), play);
+            tally.add(play.track.id.to_string(), play);
         }
-        then.top(5)
+        tally.top(YEAR_AGO_TOP)
     };
 
     let since = plays.iter().map(|p| p.at).min();
@@ -260,18 +267,26 @@ fn chart(shown: &[&Play], period: Period, now: u64, oldest: Option<u64>, zone: &
 /// Lists made from the play history, opened like playlists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Smart {
-    /// Most heard in the last 30 days.
+    /// Most heard in the last [`ON_REPEAT_DAYS`].
     OnRepeat,
-    /// First heard in the last 45 days and heard again since.
+    /// First heard in the last [`DISCOVERED_DAYS`] and heard again since.
     Discovered,
-    /// Liked, or heard through three times or more, but not in the last 60 days.
+    /// Liked, or heard through [`OFTEN`] or more, but not in the last
+    /// [`FORGOTTEN_DAYS`].
     Forgotten,
-    /// Heard through three times or more and never skipped.
+    /// Heard through [`OFTEN`] or more and never skipped.
     NeverSkipped,
 }
 
 /// Tracks in each list, at most.
 const SMART_MOST: usize = 50;
+/// The lists' windows, in days, and how often a track must be heard through.
+const ON_REPEAT_DAYS: u64 = 30;
+const DISCOVERED_DAYS: u64 = 45;
+const FORGOTTEN_DAYS: u64 = 60;
+/// Heard through this often: again (on repeat, found lately), often (the rest).
+const AGAIN: u32 = 2;
+const OFTEN: u32 = 3;
 
 impl Smart {
     pub const ALL: [Smart; 4] = [Smart::OnRepeat, Smart::Discovered, Smart::Forgotten, Smart::NeverSkipped];
@@ -285,12 +300,12 @@ impl Smart {
         }
     }
 
-    pub fn about(self) -> &'static str {
+    pub fn about(self) -> String {
         match self {
-            Smart::OnRepeat => "What you played most in the last 30 days",
-            Smart::Discovered => "First heard in the last 45 days, and played again since",
-            Smart::Forgotten => "Liked or played often, but not in the last 60 days",
-            Smart::NeverSkipped => "Played three times or more and never skipped",
+            Smart::OnRepeat => format!("What you played most in the last {ON_REPEAT_DAYS} days"),
+            Smart::Discovered => format!("First heard in the last {DISCOVERED_DAYS} days, and played again since"),
+            Smart::Forgotten => format!("Liked or played often, but not in the last {FORGOTTEN_DAYS} days"),
+            Smart::NeverSkipped => format!("Played {OFTEN} times or more and never skipped"),
         }
     }
 }
@@ -308,7 +323,7 @@ struct TrackPlays<'a> {
 /// `liked` says which tracks the account likes.
 pub fn smart_list(plays: &[&Play], which: Smart, now: u64, liked: &dyn Fn(&crate::model::TrackId) -> bool) -> Vec<Track> {
     let window = match which {
-        Smart::OnRepeat => Some(now.saturating_sub(30 * DAY)),
+        Smart::OnRepeat => Some(now.saturating_sub(ON_REPEAT_DAYS * DAY)),
         _ => None,
     };
     let mut by_track: HashMap<&crate::model::TrackId, TrackPlays> = HashMap::new();
@@ -330,10 +345,10 @@ pub fn smart_list(plays: &[&Play], which: Smart, now: u64, liked: &dyn Fn(&crate
         }
     }
     let keep = |t: &TrackPlays| match which {
-        Smart::OnRepeat => t.heard >= 2,
-        Smart::Discovered => t.first >= now.saturating_sub(45 * DAY) && t.heard >= 2,
-        Smart::Forgotten => t.last < now.saturating_sub(60 * DAY) && (t.heard >= 3 || liked(&t.track.id)),
-        Smart::NeverSkipped => t.heard >= 3 && t.skipped == 0,
+        Smart::OnRepeat => t.heard >= AGAIN,
+        Smart::Discovered => t.first >= now.saturating_sub(DISCOVERED_DAYS * DAY) && t.heard >= AGAIN,
+        Smart::Forgotten => t.last < now.saturating_sub(FORGOTTEN_DAYS * DAY) && (t.heard >= OFTEN || liked(&t.track.id)),
+        Smart::NeverSkipped => t.heard >= OFTEN && t.skipped == 0,
     };
     let mut kept: Vec<TrackPlays> = by_track.into_values().filter(|t| keep(t) && !t.track.is_episode()).collect();
     kept.sort_by(|a, b| b.heard.cmp(&a.heard).then(b.last.cmp(&a.last)));

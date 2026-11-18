@@ -22,8 +22,11 @@ const FIRST_LOOK_DAYS: i64 = 14;
 const LOOK_DAYS: i64 = 30;
 /// Most artists looked through each time.
 const MOST_ARTISTS: usize = 300;
-/// The artists listened to most in the last 90 days, besides the followed ones.
+/// The artists listened to most in the last [`LISTENED_DAYS`], besides the
+/// followed ones.
 pub const LISTENED: usize = 40;
+/// How far back "listened to lately" looks, in days.
+const LISTENED_DAYS: u64 = 90;
 /// Album ids remembered.
 const SEEN: usize = 5000;
 /// Between two artists, not to hammer the service.
@@ -167,7 +170,7 @@ impl crate::ui::app::App {
 
     /// The artists heard most in the last 90 days, by plays heard through.
     pub(in crate::ui) fn listened_artists(&self, source: &str, now: u64) -> Artists {
-        let since = now.saturating_sub(90 * 24 * 60 * 60);
+        let since = now.saturating_sub(LISTENED_DAYS * crate::ui::stats::DAY);
         let mut count: std::collections::HashMap<(String, String), u32> = std::collections::HashMap::new();
         for play in self.plays.oldest_first(source).into_iter().filter(|p| p.at >= since && !p.skipped) {
             if let Some(artist) = play.track.artists.first().filter(|a| !a.id.is_empty()) {

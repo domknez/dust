@@ -13,8 +13,17 @@ use serde_json::Value;
 const SHELF: &str = "20";
 /// Songs in a mix.
 const MIX: &str = "50";
-/// Page size when listing the whole library.
+/// Page size when listing the whole library, and the most pages read (an album
+/// list stops there, saying so in the log).
 const PAGE: usize = 500;
+const MAX_PAGES: usize = 20;
+/// Similar artists on an artist page.
+const SIMILAR_ARTISTS: &str = "12";
+/// Popular songs asked for; without Last.fm on the server, this many from the
+/// newest albums (at most `FALLBACK_ALBUMS` of them) instead.
+const TOP_SONGS: &str = "20";
+const FALLBACK_SONGS: usize = 10;
+const FALLBACK_ALBUMS: usize = 3;
 /// Mix ids on the home page: songs like an artist's (anything else: random songs).
 /// The ids are the server's own; only [`Subsonic::mix`] reads them.
 const ARTIST_MIX: &str = "artist:";
@@ -27,10 +36,13 @@ impl Subsonic {
     /// Home: the Radio panel with the library's genres, then shelves of albums
     /// (recently added, played, most played, favourites, random) and mixes.
     pub fn home(&self) -> Result<Vec<Section>> {
+        const NEWEST: &str = "newest";
+        const RECENT: &str = "recent";
+        const FREQUENT: &str = "frequent";
         let shelves = [
-            ("newest", "Recently added"),
-            ("recent", "Recently played"),
-            ("frequent", "Most played"),
+            (NEWEST, "Recently added"),
+            (RECENT, "Recently played"),
+            (FREQUENT, "Most played"),
             ("starred", "Favorite albums"),
             ("random", "Random albums"),
         ];
@@ -40,8 +52,9 @@ impl Subsonic {
             jobs.into_iter().map(|j| j.join().unwrap_or_else(|_| Err(Error::Other("home shelf failed".into())))).collect()
         });
         let lists = lists.into_iter().collect::<Result<Vec<Value>>>()?;
-        // Mixes around the artists played most, else those added last.
-        let mix_source = [2, 1, 0].into_iter().map(|i| &lists[i]).find(|l| !list(l, "album").is_empty());
+        // Mixes around the artists played most, else played last, else added last.
+        let shelf = |kind: &str| shelves.iter().position(|(k, _)| *k == kind).map(|i| &lists[i]);
+        let mix_source = [FREQUENT, RECENT, NEWEST].into_iter().filter_map(shelf).find(|l| !list(l, "album").is_empty());
         let mut sections: Vec<Section> = shelves
             .iter()
             .zip(&lists)
@@ -101,7 +114,7 @@ impl Subsonic {
         let artist = &r["artist"];
         let name = text(&artist["name"]);
         let mut sections = parse::discography(artist);
-        if let Ok(info) = self.call("getArtistInfo2", &[("id", id), ("count", "12")]) {
+        if let Ok(info) = self.call("getArtistInfo2", &[("id", id), ("count", SIMILAR_ARTISTS)]) {
             let similar = parse::artists_items(list(&info["artistInfo2"], "similarArtist"));
             if !similar.is_empty() {
                 sections.push(Section::new("Similar artists", similar));
@@ -115,7 +128,7 @@ impl Subsonic {
     /// An artist's popular songs (needs Last.fm on the server); otherwise songs from
     /// their newest albums.
     fn top_songs(&self, name: &str, artist: &Value) -> Result<Vec<Track>> {
-        let r = self.call("getTopSongs", &[("artist", name), ("count", "20")])?;
+        let r = self.call("getTopSongs", &[("artist", name), ("count", TOP_SONGS)])?;
         let top = parse::songs(list(&r["topSongs"], "song"));
         if !top.is_empty() {
             return Ok(top);
@@ -123,13 +136,13 @@ impl Subsonic {
         let mut albums = list(artist, "album");
         albums.sort_by_key(|a| std::cmp::Reverse(a["year"].as_u64().unwrap_or(0)));
         let mut songs = Vec::new();
-        for album in albums.into_iter().take(3) {
+        for album in albums.into_iter().take(FALLBACK_ALBUMS) {
             songs.extend(self.album(&text(&album["id"]))?);
-            if songs.len() >= 10 {
+            if songs.len() >= FALLBACK_SONGS {
                 break;
             }
         }
-        songs.truncate(10);
+        songs.truncate(FALLBACK_SONGS);
         Ok(songs)
     }
 
@@ -140,7 +153,8 @@ impl Subsonic {
         self.top_songs(&text(&artist["name"]), artist)
     }
 
-    /// Every artist on the server (the Artists page).
+    /// Every artist on the server (the Artists page). The trait calls these the
+    /// favourites; a server's library is all of its music.
     pub fn favorite_artists(&self) -> Result<Vec<Item>> {
         let r = self.call("getArtists", &[])?;
         Ok(list(&r["artists"], "index").into_iter().flat_map(|i| parse::artists_items(list(i, "artist"))).collect())
@@ -153,7 +167,11 @@ impl Subsonic {
             let page = self.album_list("alphabeticalByName", &PAGE.to_string(), &all.len().to_string())?;
             let done = page.len() < PAGE;
             all.extend(page);
-            if done || all.len() >= 20 * PAGE {
+            if done {
+                return Ok(all);
+            }
+            if all.len() >= MAX_PAGES * PAGE {
+                log_warn!("albums: showing the first {}; the server has more", all.len());
                 return Ok(all);
             }
         }

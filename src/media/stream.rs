@@ -15,6 +15,10 @@ use symphonia::core::io::{MediaSourceStream, ReadOnlySource};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::units::TimeBase;
 
+/// A packet starting this close (s) before a seek's target is kept rather than
+/// dropped: less than a frame of audio early beats a gap.
+const SKIP_SLACK: f64 = 0.05;
+
 /// A track's bytes, opened at (about) a position.
 pub struct Opened {
     pub bytes: Box<dyn Read + Send + Sync>,
@@ -130,7 +134,7 @@ impl Stream {
             return Decoded::Nothing;
         }
         let start = self.base + self.time_base.calc_time_saturating(packet.pts).as_secs_f64();
-        if start + 0.05 < self.skip_until {
+        if start + SKIP_SLACK < self.skip_until {
             return Decoded::Nothing;
         }
         let decoded = match self.decoder.decode(&packet) {

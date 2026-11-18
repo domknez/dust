@@ -7,6 +7,11 @@ use cpal::{FromSample, SampleFormat, SizedSample};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+/// Audio buffered for the device, in seconds (of stereo, at its rate).
+const BUFFER_SECS: f32 = 0.2;
+/// Samples a resampled write may come out longer than its share of the rate.
+const RESAMPLER_SLACK: usize = 4;
+
 /// State the sink and the device callback share.
 struct Shared {
     volume: AtomicU32,
@@ -125,8 +130,7 @@ impl LocalSink {
             .unwrap_or(default);
         let rate = config.sample_rate();
         let channels = config.channels() as usize;
-        // ~200 ms of stereo audio at device rate.
-        let (feed, drain) = ring((rate as usize * 2 / 5) & !1, volume);
+        let (feed, drain) = ring(((rate as f32 * 2.0 * BUFFER_SECS) as usize) & !1, volume);
         let stream = match config.sample_format() {
             SampleFormat::F32 => build::<f32>(&device, config.into(), channels, drain),
             SampleFormat::I16 => build::<i16>(&device, config.into(), channels, drain),
@@ -164,7 +168,7 @@ fn stops_the_stream(kind: cpal::ErrorKind) -> bool {
 impl Sink for LocalSink {
     fn write(&mut self, samples: &[i16]) -> usize {
         // Worst-case output size after resampling, rounded to whole frames.
-        let needed = ((samples.len() as u64 * self.rate as u64).div_ceil(RATE as u64) as usize + 4) & !1;
+        let needed = ((samples.len() as u64 * self.rate as u64).div_ceil(RATE as u64) as usize + RESAMPLER_SLACK) & !1;
         // Also refused while a flush is pending (room is 0 then): the callback
         // would throw these away with the old audio.
         if self.feed.room() < needed {

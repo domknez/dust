@@ -237,7 +237,7 @@ fn lists(ui: &mut Ui, lists: &[(Smart, usize)], acts: &mut Actions) {
     let abouts: Vec<_> = lists
         .iter()
         .map(|(which, _)| {
-            let job = egui::text::LayoutJob::simple(which.about().to_string(), ty::CAPTION.font(), p.dim, inner);
+            let job = egui::text::LayoutJob::simple(which.about(), ty::CAPTION.font(), p.dim, inner);
             ui.painter().layout_job(job)
         })
         .collect();

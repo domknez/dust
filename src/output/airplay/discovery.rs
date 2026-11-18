@@ -229,6 +229,8 @@ struct Watch {
 /// While nothing has been found, search again this often: lost first answers (Wi-Fi,
 /// just after waking) would otherwise wait out mDNS's growing pauses.
 const EMPTY_RETRY_EARLY: Duration = Duration::from_secs(5);
+/// Asked to search within this long of the last search: not searched again.
+const ASKED_AGAIN: Duration = Duration::from_secs(3);
 const EMPTY_RETRY_LATER: Duration = Duration::from_secs(30);
 const EARLY: Duration = Duration::from_secs(120);
 
@@ -252,7 +254,7 @@ impl Watch {
             }
         }
         // A menu opened twice in a row shouldn't restart the search twice.
-        if asked && self.last_search.elapsed() > Duration::from_secs(3) {
+        if asked && self.last_search.elapsed() > ASKED_AGAIN {
             reason = reason.or(Some("asked"));
         }
         let retry = if self.started.elapsed() < EARLY { EMPTY_RETRY_EARLY } else { EMPTY_RETRY_LATER };
