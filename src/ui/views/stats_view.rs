@@ -26,7 +26,7 @@ const THREE_COLUMNS: f32 = 900.0;
 #[derive(Default)]
 pub struct StatsView {
     pub period: Period,
-    cache: Option<(Key, Stats)>,
+    cache: Option<(Key, std::rc::Rc<Stats>)>,
     /// How many tracks each list made from the history holds.
     lists: Vec<(Smart, usize)>,
 }
@@ -35,9 +35,9 @@ pub struct StatsView {
 struct Key {
     source: String,
     period: Period,
-    plays: usize,
-    newest: Option<u64>,
-    today: Option<jiff::civil::Date>,
+    /// [`Plays::revision`](crate::ui::plays::Plays::revision).
+    plays: u64,
+    today: jiff::civil::Date,
 }
 
 /// What a top list holds.
@@ -53,24 +53,17 @@ impl App {
         let p = colors();
         let Some(source) = self.client.as_ref().map(|c| c.id().key.to_string()) else { return };
         let zone = when::zone();
-        let plays = self.plays.oldest_first(&source);
-        let key = Key {
-            source,
-            period: self.stats_view.period,
-            plays: plays.len(),
-            newest: plays.last().map(|p| p.at),
-            today: Some(when::today(&zone)),
-        };
+        let key = Key { source, period: self.stats_view.period, plays: self.plays.revision(), today: when::today(&zone) };
         if self.stats_view.cache.as_ref().is_none_or(|(k, _)| *k != key) {
+            let plays = self.plays.oldest_first(&key.source);
             let now = jiff::Timestamp::now().as_second().max(0) as u64;
             let worked_out = stats::compute(&plays, key.period, now, &zone);
             let likes = &self.library.likes.likes;
             let liked = |id: &crate::model::TrackId| likes.tracks.contains(id);
             self.stats_view.lists = Smart::ALL.iter().map(|&which| (which, stats::smart_list(&plays, which, now, &liked).len())).collect();
-            self.stats_view.cache = Some((key, worked_out));
+            self.stats_view.cache = Some((key, std::rc::Rc::new(worked_out)));
         }
-        let Some((_, st)) = &self.stats_view.cache else { return };
-        let st = st.clone();
+        let Some(st) = self.stats_view.cache.as_ref().map(|(_, st)| st.clone()) else { return };
 
         egui::ScrollArea::vertical().id_salt("stats").auto_shrink([false, false]).show(ui, |ui| {
             let head = ui.allocate_exact_size(vec2(ui.available_width(), 64.0), Sense::hover()).0;

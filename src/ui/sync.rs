@@ -123,18 +123,31 @@ impl Log {
 
     /// Ask iCloud Drive for the files of this log it keeps only in the cloud (as
     /// `.crate-iMac-0b1c.jsonl.icloud` placeholders) to save space.
+    /// Runs `brctl` off the UI thread, waiting for each so none is left a zombie.
     pub fn fetch_from_icloud(&self) {
         let Some(sync) = self.sync.as_ref().filter(|_| cfg!(target_os = "macos")) else { return };
         let Ok(read) = std::fs::read_dir(&sync.dir) else { return };
-        let prefix = format!(".{}-", self.name);
-        for entry in read.filter_map(Result::ok) {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with(&prefix) && name.ends_with(".jsonl.icloud") {
-                let real = sync.dir.join(&name[1..name.len() - ".icloud".len()]);
-                if let Err(e) = std::process::Command::new("brctl").arg("download").arg(&real).spawn() {
+        let prefix = format!("{}-", self.name);
+        let wanted: Vec<PathBuf> = read
+            .filter_map(Result::ok)
+            .filter_map(|entry| {
+                let name = entry.file_name().to_string_lossy().to_string();
+                let real = name.strip_prefix('.')?.strip_suffix(".icloud")?;
+                (real.starts_with(&prefix) && real.ends_with(".jsonl")).then(|| sync.dir.join(real))
+            })
+            .collect();
+        if wanted.is_empty() {
+            return;
+        }
+        let asked = std::thread::Builder::new().name("icloud-fetch".into()).spawn(move || {
+            for real in wanted {
+                if let Err(e) = std::process::Command::new("brctl").arg("download").arg(&real).status() {
                     log_warn!("could not ask iCloud for {}: {e}", real.display());
                 }
             }
+        });
+        if let Err(e) = asked {
+            log_warn!("could not ask iCloud for the sync files: {e}");
         }
     }
 
@@ -292,11 +305,55 @@ pub struct SyncState {
     pub error: Option<String>,
     /// The day last backed up ("2026-11-16").
     pub backed_up: Option<String>,
+    /// What Settings shows of the folders, read with each check rather than on
+    /// every frame it's drawn.
+    pub seen: Seen,
+}
+
+/// The sync services found here, the computers writing to the sync folder, and
+/// the backups kept.
+#[derive(Default)]
+pub struct Seen {
+    pub places: Vec<Place>,
+    pub devices: Vec<String>,
+    pub backups: Vec<Backup>,
+}
+
+/// A daily backup, and how many Crate entries it holds.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Backup {
+    pub name: String,
+    pub path: PathBuf,
+    pub entries: usize,
+}
+
+impl Seen {
+    /// Look again. `crate_entries` counts a backup's Crate; each backup is counted
+    /// once (they don't change once written).
+    pub fn refresh(&mut self, dir: Option<&SyncDir>, backups_dir: Option<&Path>, crate_entries: impl Fn(&Path) -> usize) {
+        self.places = places();
+        self.devices = dir.map(SyncDir::devices).unwrap_or_default();
+        let known = std::mem::take(&mut self.backups);
+        self.backups = backups_dir
+            .map(backups)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(name, path)| match known.iter().find(|b| b.name == name) {
+                Some(b) => b.clone(),
+                None => Backup { entries: crate_entries(&path), name, path },
+            })
+            .collect();
+    }
 }
 
 impl SyncState {
     pub fn new(dir: Option<SyncDir>) -> Self {
         SyncState { dir, ..Default::default() }
+    }
+
+    /// Look again at once, not at the next check.
+    pub fn check_soon(&mut self) {
+        self.checked = None;
     }
 
     /// Time to look again.
@@ -377,6 +434,25 @@ mod tests {
         let name = new_device_name();
         assert!(name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'), "{name}");
         assert_eq!(display_name("Domagoj-s-MacBook-Pro-3f2a"), "Domagoj s MacBook Pro");
+    }
+
+    #[test]
+    fn each_backup_is_counted_once() {
+        let root = dir("seen");
+        std::fs::create_dir_all(root.join("2026-11-17")).unwrap();
+        let counted = std::cell::Cell::new(0);
+        let count = |_: &Path| {
+            counted.set(counted.get() + 1);
+            7
+        };
+        let mut seen = Seen::default();
+        seen.refresh(None, Some(&root), count);
+        std::fs::create_dir_all(root.join("2026-11-18")).unwrap();
+        seen.refresh(None, Some(&root), count);
+        let names: Vec<_> = seen.backups.iter().map(|b| (b.name.as_str(), b.entries)).collect();
+        assert_eq!(names, [("2026-11-18", 7), ("2026-11-17", 7)], "newest first");
+        assert_eq!(counted.get(), 2, "the older one wasn't read again");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

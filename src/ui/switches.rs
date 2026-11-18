@@ -246,7 +246,7 @@ mod tests {
     /// The palette's labels, with `playing` playing.
     fn palette(t: &TestApp, playing: Option<u64>) -> Vec<String> {
         let st = crate::player::Status { track: playing.map(|id| track(id, true)), ..Default::default() };
-        t.app.commands(&st).into_iter().map(|c| c.label).collect()
+        t.app.commands(&st, &t.app.new_palette().listened).into_iter().map(|c| c.label).collect()
     }
 
     /// The pages ⌘`key` opens.

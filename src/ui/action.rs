@@ -243,7 +243,7 @@ impl App {
             Action::ShowSettings(show) => self.show_settings = show,
             Action::SettingsSection(section) => self.settings_section = section,
             Action::Switch(switch, on) => self.set_switch(ctx, switch, on),
-            Action::OpenPalette => self.palette = Some(Default::default()),
+            Action::OpenPalette => self.palette = Some(self.new_palette()),
             Action::ToggleSidebarPlaylists => self.prefs.update(|p| p.sidebar_playlists = !p.sidebar_playlists),
             Action::Quality(quality) => self.set_quality(quality),
             Action::Appearance(appearance) => self.set_appearance(appearance),

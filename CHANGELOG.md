@@ -35,6 +35,10 @@
 - Navidrome / Subsonic: adding the same track twice in one go adds it once
 - "1 track" and "an hour ago" instead of "1 tracks" and "1 hours ago"; sync times
   older than a day say "yesterday" or how many days
+- Faster with a long history: Settings → Crate and history, the history panel,
+  the Listening page and the command palette no longer reread files or the
+  whole history on every frame; restoring a backup is quick; iCloud downloads
+  are asked for off the window's thread
 
 ## 0.31.1 (2026-11-18)
 

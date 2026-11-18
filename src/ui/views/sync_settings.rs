@@ -33,6 +33,9 @@ impl App {
         }
         self.sync.checked = Some(std::time::Instant::now());
         self.backup_if_due();
+        let backups = self.crate_box.log().backups_dir();
+        let count = |dir: &Path| Crate::load(Log::new("crate", Some(dir), None)).entries().len();
+        self.sync.seen.refresh(self.sync.dir.as_ref(), backups.as_deref(), count);
         if let Some(dir) = self.sync.dir.clone() {
             if dir.dir.is_dir() {
                 self.crate_box.log().fetch_from_icloud();
@@ -93,8 +96,8 @@ impl App {
         };
         self.crate_box.move_to(Log::new("crate", local.as_deref(), sync_dir.as_ref()));
         self.plays.move_to(Log::new("history", local.as_deref(), sync_dir.as_ref()));
-        let backed_up = self.sync.backed_up.take();
-        self.sync = SyncState { backed_up, ..SyncState::new(sync_dir) };
+        let (backed_up, seen) = (self.sync.backed_up.take(), std::mem::take(&mut self.sync.seen));
+        self.sync = SyncState { backed_up, seen, ..SyncState::new(sync_dir) };
         self.sync_tick(ctx);
         self.prefs.update(|p| p.sync_folder = folder);
         let message =
@@ -139,6 +142,8 @@ impl App {
         }
         self.crate_box.restore(&backup_crate);
         self.plays.restore(&backup_plays);
+        // The backup just made shows in the list.
+        self.sync.check_soon();
         let day = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         self.toasts.info(ctx, format!("Your Crate is back as it was on {day}"));
     }
@@ -165,9 +170,9 @@ impl App {
         if places_open {
             ui.indent("sync-places", |ui| self.sync_places(ui, syncing.as_deref(), acts));
         }
-        if let Some(dir) = &self.sync.dir {
+        if self.sync.dir.is_some() {
             ui.add_space(6.0);
-            self.sync_status(ui, dir);
+            self.sync_status(ui);
         }
         ui.add_space(6.0);
         if widgets::menu_row(ui, None, "Copy Crate as Markdown", Some("A list to paste anywhere"), false, p.text).clicked() {
@@ -183,7 +188,7 @@ impl App {
     fn sync_places(&self, ui: &mut Ui, syncing: Option<&Path>, acts: &mut Actions) {
         let p = colors();
         let mut known = false;
-        for place in sync::places() {
+        for place in &self.sync.seen.places {
             match &place.path {
                 Some(path) => {
                     let on = syncing == Some(path.as_path());
@@ -225,7 +230,7 @@ impl App {
 
     /// When the folder was last read (or why it couldn't be), the computers using
     /// it and how much there is.
-    fn sync_status(&self, ui: &mut Ui, dir: &SyncDir) {
+    fn sync_status(&self, ui: &mut Ui) {
         let p = colors();
         egui::Frame::new().fill(p.bg).stroke(egui::Stroke::new(1.0, p.line)).corner_radius(10).inner_margin(12).show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -239,7 +244,7 @@ impl App {
                 ui.painter().circle_filled(rect.center(), 4.0, dot);
                 ui.label(RichText::new(line).font(ty::BODY.font()).color(p.text));
             });
-            let devices = dir.devices();
+            let devices = &self.sync.seen.devices;
             let used = match devices.len() {
                 0 | 1 => "Used on this computer so far".to_string(),
                 n => format!("Used on {n} computers: {}", devices.join(", ")),
@@ -257,8 +262,7 @@ impl App {
     /// "Restore a backup…", opening the list of daily backups.
     fn backup_list(&self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
-        let Some(root) = self.crate_box.log().backups_dir() else { return };
-        let backups = sync::backups(&root);
+        let backups = &self.sync.seen.backups;
         if backups.is_empty() {
             return;
         }
@@ -270,11 +274,10 @@ impl App {
         }
         if open {
             ui.indent("backups", |ui| {
-                for (name, path) in backups {
-                    let entries = Crate::load(Log::new("crate", Some(&path), None)).entries().len();
-                    let sub = format!("{entries} in Crate · what's there now is backed up first");
-                    if widgets::menu_row(ui, None, &name, Some(&sub), false, p.text).clicked() {
-                        acts.push(Action::RestoreBackup(path));
+                for backup in backups {
+                    let sub = format!("{} in Crate · what's there now is backed up first", backup.entries);
+                    if widgets::menu_row(ui, None, &backup.name, Some(&sub), false, p.text).clicked() {
+                        acts.push(Action::RestoreBackup(backup.path.clone()));
                         ui.data_mut(|d| d.insert_temp(open_id, false));
                     }
                 }

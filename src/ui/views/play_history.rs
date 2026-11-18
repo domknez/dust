@@ -19,12 +19,27 @@ use eframe::egui::{self, Align2, CornerRadius, RichText, Sense, Ui, pos2, vec2};
 const SHOWN: usize = 1000;
 
 /// A line of the history: a day, where a run of plays came from, the end of such a
-/// run, or a play.
-enum Line<'a> {
+/// run, or a play (its place among those shown, newest first).
+enum Line {
     Day(String),
     From(String),
     Gap,
-    Play(&'a Play),
+    Play(usize),
+}
+
+/// The panel's lines, worked out again only when the plays, the day or the
+/// source change.
+#[derive(Default)]
+pub struct HistoryView {
+    lines: Option<(LinesKey, Vec<Line>)>,
+}
+
+#[derive(PartialEq)]
+struct LinesKey {
+    source: &'static str,
+    plays: u64,
+    today: jiff::civil::Date,
+    radio: bool,
 }
 
 impl App {
@@ -32,12 +47,19 @@ impl App {
         ui.add_space(metrics::TOP_INSET);
         self.side_panel_tabs(ui, acts);
         ui.add_space(4.0);
-        let Some(client) = &self.client else { return };
+        let Some(source) = self.client.as_ref().map(|c| c.id().key) else { return };
         let radio = !self.features().flow;
         let zone = when::zone();
-        let lines = lines(self.plays.of(client.id().key).take(SHOWN), &zone, radio);
+        let plays: Vec<&Play> = self.plays.of(source).take(SHOWN).collect();
+        let key = LinesKey { source, plays: self.plays.revision(), today: when::today(&zone), radio };
+        let cache = &mut self.history_view.lines;
+        if cache.as_ref().is_none_or(|(k, _)| *k != key) {
+            *cache = Some((key, lines(&plays, &zone, radio)));
+        }
+        let (key, lines) = cache.take().expect("just made");
         if lines.is_empty() {
             empty_state(ui);
+            self.history_view.lines = Some((key, lines));
             return;
         }
         let playlists = Playlists { all: &self.library.playlists, recent: &self.prefs.recent_playlists };
@@ -55,7 +77,8 @@ impl App {
                     }
                     Line::From(from) => widgets::caption(ui, &from.to_uppercase()),
                     Line::Gap => ui.add_space(10.0),
-                    Line::Play(play) => {
+                    &Line::Play(at) => {
+                        let play = plays[at];
                         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::QUEUE_ROW), Sense::click());
                         // Only what's on screen is drawn: the history is long.
                         if !ui.is_rect_visible(rect) {
@@ -118,13 +141,13 @@ impl App {
             ui.label(RichText::new(note).font(ty::CAPTION.font()).color(p.faint));
             ui.add_space(10.0);
         });
+        self.history_view.lines = Some((key, lines));
     }
 }
 
 /// The history as lines: a day heading before each day's plays, and where a run of
 /// plays came from (a Flow, or an album heard through) before it.
-fn lines<'a>(plays: impl Iterator<Item = &'a Play>, zone: &when::Zone, radio: bool) -> Vec<Line<'a>> {
-    let plays: Vec<&Play> = plays.collect();
+fn lines(plays: &[&Play], zone: &when::Zone, radio: bool) -> Vec<Line> {
     let today = when::today(zone);
     let mut lines = Vec::new();
     let mut last_day = None;
@@ -141,7 +164,7 @@ fn lines<'a>(plays: impl Iterator<Item = &'a Play>, zone: &when::Zone, radio: bo
             lines.push(from.clone().map_or(Line::Gap, Line::From));
         }
         last_from = from;
-        lines.push(Line::Play(play));
+        lines.push(Line::Play(i));
     }
     lines
 }
@@ -190,21 +213,21 @@ mod tests {
         Play { source: "deezer".into(), at, heard_secs: 100, skipped: false, flow, track }
     }
 
-    fn shape(lines: &[Line]) -> Vec<String> {
-        lines
+    fn shape(plays: &[Play], radio: bool) -> Vec<String> {
+        let plays: Vec<&Play> = plays.iter().collect();
+        lines(&plays, &when::Zone::UTC, radio)
             .iter()
             .map(|l| match l {
                 Line::Day(_) => "day".to_string(),
                 Line::From(from) => from.clone(),
                 Line::Gap => "gap".to_string(),
-                Line::Play(p) => p.track.id.to_string(),
+                &Line::Play(at) => plays[at].track.id.to_string(),
             })
             .collect()
     }
 
     #[test]
     fn runs_say_where_they_came_from() {
-        let zone = when::Zone::UTC;
         let noon = 1_763_294_400; // 2025-11-16 12:00 UTC
         let plays = [
             play(6, noon + 60, "x", Some("chill")),
@@ -214,11 +237,10 @@ mod tests {
             play(2, noon + 20, "8", None),
             play(1, noon - 86_400, "7", Some("")),
         ];
-        let lines = lines(plays.iter(), &zone, false);
         assert_eq!(
-            shape(&lines),
+            shape(&plays, false),
             ["day", "Flow · chill", "6", "Flow · classicrock", "5", "Album · Album 9", "4", "3", "gap", "2", "day", "Flow", "1"]
         );
-        assert_eq!(shape(&super::lines(plays[..1].iter(), &zone, true))[1], "Radio · chill");
+        assert_eq!(shape(&plays[..1], true)[1], "Radio · chill");
     }
 }

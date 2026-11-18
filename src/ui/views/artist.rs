@@ -57,7 +57,7 @@ impl App {
             // The tabs, then the timeline: everything by year.
             let tab = self.browse.discography_tab.min(discography.len());
             let on_timeline = !discography.is_empty() && tab == discography.len();
-            let years = timeline(&discography);
+            let years = if on_timeline { timeline(&discography) } else { Vec::new() };
             let items = discography.get(tab).map_or(&[][..], |(_, s)| &s.items[..]);
             let grid_height = match (discography.is_empty(), on_timeline) {
                 (true, _) => 0.0,

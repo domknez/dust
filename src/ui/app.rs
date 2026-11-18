@@ -133,6 +133,7 @@ pub struct App {
     pub(super) crate_box: Crate,
     pub(super) crate_view: super::views::CrateView,
     pub(super) stats_view: super::views::StatsView,
+    pub(super) history_view: super::views::HistoryView,
     /// New releases looked for, of the source in use.
     pub(super) releases: super::release_watch::Watch,
     /// The Crate's new tracks being put together to play.
@@ -231,6 +232,7 @@ impl App {
             crate_box,
             crate_view: Default::default(),
             stats_view: Default::default(),
+            history_view: Default::default(),
             releases: Default::default(),
             crate_radio: Default::default(),
             crate_about: Default::default(),

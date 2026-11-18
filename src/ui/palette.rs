@@ -26,6 +26,9 @@ const WIDTH: f32 = 560.0;
 pub struct Palette {
     pub query: String,
     pub picked: usize,
+    /// The artists listened to lately, worked out once when the palette opens
+    /// (from the whole history: too much to do every frame).
+    pub listened: Vec<(String, String)>,
 }
 
 /// A thing the palette can do.
@@ -91,17 +94,27 @@ impl App {
         if ctx.input_mut(|i| i.consume_shortcut(&SHORTCUT)) {
             self.palette = match self.palette {
                 Some(_) => None,
-                None => Some(Palette::default()),
+                None => Some(self.new_palette()),
             };
         }
     }
 
+    /// The palette, opened.
+    pub(in crate::ui) fn new_palette(&self) -> Palette {
+        Palette { listened: self.palette_artists(), ..Default::default() }
+    }
+
+    /// The artists the palette offers: those listened to lately.
+    fn palette_artists(&self) -> Vec<(String, String)> {
+        let Some(source) = self.client.as_ref().map(|c| c.id().key).filter(|_| self.prefs.history_on) else { return Vec::new() };
+        self.listened_artists(source, jiff::Timestamp::now().as_second().max(0) as u64)
+    }
+
     /// Everything the palette offers now, in the order shown before anything is
-    /// typed.
-    pub(in crate::ui) fn commands(&self, st: &Status) -> Vec<Command> {
+    /// typed; `listened`: the artists listened to lately.
+    pub(in crate::ui) fn commands(&self, st: &Status, listened: &[(String, String)]) -> Vec<Command> {
         let features = self.features();
         let mut all = Vec::new();
-        let source = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
 
         // The track playing.
         if let Some(track) = st.track.as_ref().filter(|t| !t.is_episode()) {
@@ -177,10 +190,8 @@ impl App {
             let coll = Coll::from_playlist(playlist);
             all.push(Command::new("Playlist", playlist.title.clone(), move || vec![Action::OpenCollection(coll.clone())]));
         }
-        let now = jiff::Timestamp::now().as_second().max(0) as u64;
-        let listened = if self.prefs.history_on { self.listened_artists(source, now) } else { Vec::new() };
         for (id, name) in listened {
-            let artist = ArtistRef { id, name: name.clone() };
+            let artist = ArtistRef { id: id.clone(), name: name.clone() };
             all.push(Command::new("Artist", name, move || vec![Action::OpenArtist(artist.clone())]));
         }
         // Nothing that reaches a part turned off in Settings.
@@ -191,7 +202,7 @@ impl App {
     /// The palette, over everything, while it's open.
     pub(in crate::ui) fn palette_window(&mut self, ctx: &egui::Context, st: &Status, acts: &mut Actions) {
         let Some(mut palette) = self.palette.take() else { return };
-        let commands = self.commands(st);
+        let commands = self.commands(st, &palette.listened);
         let query = palette.query.trim().to_string();
         let mut hits = ranked(&commands, &query);
         if query.is_empty() {

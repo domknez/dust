@@ -32,6 +32,11 @@ pub struct Play {
 }
 
 impl Play {
+    /// What makes two plays the same one (in two files, or a backup).
+    fn identity(&self) -> (u64, &str, &TrackId) {
+        (self.at, &self.source, &self.track.id)
+    }
+
     pub fn new(played: Played) -> Self {
         Play {
             source: played.source.to_string(),
@@ -89,6 +94,9 @@ pub struct Plays {
     /// A play that couldn't be written (the sync folder unreachable): the file is
     /// written afresh before it is read again, so the play isn't lost.
     unsaved: bool,
+    /// Goes up with every change, so views can keep what they work out from the
+    /// plays until it does.
+    revision: u64,
 }
 
 impl Plays {
@@ -98,14 +106,14 @@ impl Plays {
             log.read().iter().filter_map(|l| serde_json::from_str(l).ok()).filter_map(|v| Play::decode(&v)).collect();
         plays.sort_by_key(|p| p.at);
         // The same play in two files (a computer's file rewritten with all of them).
-        plays.dedup_by(|a, b| a.at == b.at && a.source == b.source && a.track.id == b.track.id);
+        plays.dedup_by(|a, b| a.identity() == b.identity());
         if plays.len() > KEEP {
             plays.drain(..plays.len() - KEEP);
         }
         let lines = log.own_lines();
         let heard = plays.iter().map(|p| p.track.id.clone()).collect();
         let albums = plays.iter().filter(|p| !p.track.album_id.is_empty()).map(|p| p.track.album_id.clone()).collect();
-        Plays { plays, heard, albums, log, lines, unsaved: false }
+        Plays { plays, heard, albums, log, lines, unsaved: false, revision: 0 }
     }
 
     /// Read the log again (another computer added to it). Plays not yet written
@@ -117,7 +125,9 @@ impl Plays {
                 return;
             }
         }
+        let revision = self.revision + 1;
         *self = Plays::load(std::mem::take(&mut self.log));
+        self.revision = revision;
     }
 
     /// Keep the history in `log` from now on, starting it with what's kept here.
@@ -129,6 +139,7 @@ impl Plays {
 
     /// Keep `play` and add it to the log.
     pub fn record(&mut self, play: Play) {
+        self.revision += 1;
         let line = play.encode().to_string();
         self.heard.insert(play.track.id.clone());
         if !play.track.album_id.is_empty() {
@@ -190,21 +201,36 @@ impl Plays {
         self.plays.len()
     }
 
+    /// See [`Plays::revision`](Plays): changes whenever the plays do.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
     pub fn log(&self) -> &Log {
         &self.log
     }
 
     /// Add the plays of a backup that aren't here.
     pub fn restore(&mut self, backup: &Plays) {
-        let missing: Vec<Play> = backup
-            .plays
-            .iter()
-            .filter(|b| !self.plays.iter().any(|p| p.at == b.at && p.source == b.source && p.track.id == b.track.id))
-            .cloned()
-            .collect();
-        for play in missing {
-            self.record(play);
+        let here: HashSet<(u64, &str, &TrackId)> = self.plays.iter().map(Play::identity).collect();
+        let missing: Vec<Play> = backup.plays.iter().filter(|b| !here.contains(&b.identity())).cloned().collect();
+        if missing.is_empty() {
+            return;
         }
+        self.revision += 1;
+        for play in &missing {
+            self.heard.insert(play.track.id.clone());
+            if !play.track.album_id.is_empty() {
+                self.albums.insert(play.track.album_id.clone());
+            }
+        }
+        self.plays.extend(missing);
+        self.plays.sort_by_key(|p| p.at);
+        if self.plays.len() > KEEP {
+            self.plays.drain(..self.plays.len() - KEEP);
+        }
+        // One write for them all.
+        self.rewrite();
     }
 }
 
@@ -370,6 +396,24 @@ mod tests {
         assert_eq!(plays.len(), 1, "and writes it once the folder is back");
         assert_eq!(Plays::load(plays.log().clone()).len(), 1);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_backup_brings_back_the_plays_missing() {
+        let dir = dir("restore");
+        let mut backup = Plays::load(log(&dir.join("backup")));
+        for id in [1, 2, 3] {
+            backup.record(play("deezer", id));
+        }
+        let mut plays = Plays::load(log(&dir));
+        plays.record(play("deezer", 2));
+        let before = plays.revision();
+        plays.restore(&backup);
+        let ids: Vec<_> = plays.oldest_first("deezer").iter().map(|p| p.track.id.to_string()).collect();
+        assert_eq!(ids, ["1", "2", "3"], "each once, in time order");
+        assert!(plays.revision() > before && plays.has_heard(&TrackId::from(3)));
+        assert_eq!(Plays::load(log(&dir)).len(), 3, "and written");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

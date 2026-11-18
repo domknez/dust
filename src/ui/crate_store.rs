@@ -224,7 +224,7 @@ pub struct Crate {
     changed: HashMap<String, u64>,
     /// Ids removed, and when: an add for one of them (from another computer) is
     /// ignored.
-    removed: Vec<(String, u64)>,
+    removed: HashMap<String, u64>,
     log: Log,
     /// Lines in this computer's file.
     lines: usize,
@@ -335,7 +335,7 @@ impl Crate {
         match change {
             Change::Add(entry) => {
                 let entry = *entry;
-                if self.removed.iter().any(|(id, _)| *id == entry.id) {
+                if self.removed.contains_key(&entry.id) {
                     return;
                 }
                 let id = entry.id.clone();
@@ -360,9 +360,7 @@ impl Crate {
             Change::Remove { id } => {
                 self.entries.retain(|e| e.id != id);
                 self.changed.remove(&id);
-                if !self.removed.iter().any(|(r, _)| *r == id) {
-                    self.removed.push((id, at));
-                }
+                self.removed.entry(id).or_insert(at);
             }
         }
     }
@@ -376,7 +374,9 @@ impl Crate {
             .rev()
             .map(|e| Change::Add(Box::new(e.clone())).encode(self.changed.get(&e.id).copied().unwrap_or(e.saved)).to_string())
             .collect();
-        lines.extend(self.removed.iter().map(|(id, at)| Change::Remove { id: id.clone() }.encode(*at).to_string()));
+        let mut removed: Vec<_> = self.removed.iter().collect();
+        removed.sort_by_key(|&(id, at)| (*at, id));
+        lines.extend(removed.into_iter().map(|(id, at)| Change::Remove { id: id.clone() }.encode(*at).to_string()));
         lines
     }
 
@@ -406,7 +406,7 @@ impl Crate {
                     }
                 }
                 None => {
-                    let removed = self.removed.iter().any(|(id, _)| *id == entry.id);
+                    let removed = self.removed.contains_key(&entry.id);
                     let id = if removed { new_id() } else { entry.id.clone() };
                     self.change(Change::Add(Box::new(Entry { id, ..entry.clone() })));
                 }
