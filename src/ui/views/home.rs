@@ -158,7 +158,8 @@ mod tests {
 
     #[test]
     fn flow_comes_first_and_the_rest_keep_their_order() {
-        let item = |kind| crate::model::Item { kind, id: "1".into(), title: "T".into(), subtitle: String::new(), picture: None, release: None };
+        let item =
+            |kind| crate::model::Item { kind, id: "1".into(), title: "T".into(), subtitle: String::new(), picture: None, release: None };
         let section = |kind| Section::new("S", vec![item(kind)]);
         let sections = [
             section(crate::model::ItemKind::Album),

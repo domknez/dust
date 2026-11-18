@@ -178,4 +178,17 @@ mod tests {
         assert_eq!(retransmit_request(&[0x80, 0xd5, 0, 1, 0, 5, 0, 3]), Some((5, 3)));
         assert_eq!(retransmission(7, &[1, 2])[..], [0x80, 0xd6, 0, 7, 1, 2]);
     }
+
+    #[test]
+    fn sync_packets_lay_out_their_times() {
+        let ntp = sync_ntp(10_000, true);
+        assert_eq!(&ntp[..4], [0x90, 0xd4, 0x00, 0x07], "the first has the extension bit");
+        assert_eq!(sync_ntp(10_000, false)[0], 0x80);
+        assert_eq!(u32::from_be_bytes(ntp[4..8].try_into().unwrap()), 10_000u32.wrapping_sub(LATENCY), "playing now, after the latency");
+        assert_eq!(u32::from_be_bytes(ntp[16..20].try_into().unwrap()), 10_000);
+        let ptp = sync_ptp(10_000, 20_000, 0xABCD, false);
+        assert_eq!(&ptp[..4], [0x80, 0xd7, 0x00, 0x06]);
+        assert_eq!(u32::from_be_bytes(ptp[16..20].try_into().unwrap()), 20_000u32.wrapping_sub(MIN_LATENCY));
+        assert_eq!(u64::from_be_bytes(ptp[20..28].try_into().unwrap()), 0xABCD);
+    }
 }

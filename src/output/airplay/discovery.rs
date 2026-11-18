@@ -310,6 +310,27 @@ mod tests {
     }
 
     #[test]
+    fn speakers_are_kept_once_by_name_and_change_in_place() {
+        let speaker = |id: &str, name: &str| Device {
+            id: id.into(),
+            name: name.into(),
+            addrs: Vec::new(),
+            supported: true,
+            password: false,
+            auth_setup: false,
+            ap2: true,
+            ptp: true,
+            model: String::new(),
+        };
+        let mut list = Vec::new();
+        assert!(upsert(&mut list, speaker("b", "Kitchen")));
+        assert!(upsert(&mut list, speaker("a", "Bedroom")));
+        assert!(!upsert(&mut list, speaker("b", "Kitchen")), "seen again, nothing new");
+        assert!(upsert(&mut list, speaker("b", "Kitchen speaker")), "renamed");
+        assert_eq!(list.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(), ["Bedroom", "Kitchen speaker"]);
+    }
+
+    #[test]
     fn features_from_txt() {
         // Sonos Era 100: AirPlay audio, PTP, CoreUtils pairing.
         let f = parse_features("0x445F8A00,0x801C340");

@@ -7,6 +7,7 @@ use eframe::egui::{self, ColorImage, TextureHandle, TextureId, TextureOptions};
 use std::collections::{HashMap, VecDeque};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 use zune_jpeg::JpegDecoder;
 use zune_jpeg::zune_core::colorspace::ColorSpace;
 use zune_jpeg::zune_core::options::DecoderOptions;
@@ -16,16 +17,35 @@ const BUDGET_BYTES: usize = 16 << 20;
 /// Pending fetches beyond this are dropped (oldest first) and re-requested if needed.
 const MAX_QUEUE: usize = 48;
 const WORKERS: usize = 3;
+/// Once over budget, covers go until this much is left.
+const EVICT_TO: usize = BUDGET_BYTES * 3 / 4;
+/// A cover drawn within this many frames stays (it's on screen).
+const KEEP_FRAMES: u64 = 2;
+/// How long one cover may take to download.
+const FETCH_TIMEOUT: Duration = Duration::from_secs(15);
+/// A cover that couldn't be downloaded is asked for again after this long (the
+/// network may be back); one that downloaded but won't decode, never.
+const RETRY_AFTER: Duration = Duration::from_secs(60);
 
 enum Slot {
     Loading,
-    Failed,
-    Ready { tex: TextureHandle, bytes: usize, last_used: u64 },
+    /// Not to be asked for again (until `retry_at`, if any).
+    Failed {
+        retry_at: Option<Instant>,
+    },
+    Ready {
+        tex: TextureHandle,
+        bytes: usize,
+        last_used: u64,
+    },
 }
 
 enum Done {
     Image(String, ColorImage),
-    Failed(String),
+    /// Not downloaded (the network), so worth another try later.
+    Unreached(String),
+    /// Downloaded, but not a picture dust can show.
+    Unreadable(String),
 }
 
 type Queue = Arc<(Mutex<VecDeque<String>>, Condvar)>;
@@ -70,13 +90,12 @@ impl Covers {
     /// Start the fetching threads, once.
     fn start_workers(&mut self) {
         let Some(tx) = self.done_tx.take() else { return };
-        let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(15))).build().into();
+        let agent = crate::http::agent(crate::http::USER_AGENT, Some(FETCH_TIMEOUT));
         for i in 0..WORKERS {
             let (queue, tx, agent, ctx) = (self.queue.clone(), tx.clone(), agent.clone(), self.ctx.clone());
-            std::thread::Builder::new()
-                .name(format!("covers-{i}"))
-                .spawn(move || worker(queue, tx, agent, ctx))
-                .expect("spawn cover worker");
+            if let Err(e) = std::thread::Builder::new().name(format!("covers-{i}")).spawn(move || worker(queue, tx, agent, ctx)) {
+                log_warn!("cover worker {i}: {e}");
+            }
         }
     }
 
@@ -91,8 +110,11 @@ impl Covers {
                     self.bytes += bytes;
                     self.slots.insert(url, Slot::Ready { tex, bytes, last_used: self.frame });
                 }
-                Done::Failed(url) => {
-                    self.slots.insert(url, Slot::Failed);
+                Done::Unreached(url) => {
+                    self.slots.insert(url, Slot::Failed { retry_at: Some(Instant::now() + RETRY_AFTER) });
+                }
+                Done::Unreadable(url) => {
+                    self.slots.insert(url, Slot::Failed { retry_at: None });
                 }
             }
         }
@@ -106,13 +128,13 @@ impl Covers {
             .slots
             .iter()
             .filter_map(|(k, s)| match s {
-                Slot::Ready { last_used, bytes, .. } if *last_used + 2 < self.frame => Some((*last_used, k.clone(), *bytes)),
+                Slot::Ready { last_used, bytes, .. } if *last_used + KEEP_FRAMES < self.frame => Some((*last_used, k.clone(), *bytes)),
                 _ => None,
             })
             .collect();
         ready.sort_unstable();
         for (_, url, bytes) in ready {
-            if self.bytes <= BUDGET_BYTES * 3 / 4 {
+            if self.bytes <= EVICT_TO {
                 break;
             }
             self.slots.remove(&url);
@@ -126,6 +148,10 @@ impl Covers {
             Some(Slot::Ready { tex, last_used, .. }) => {
                 *last_used = self.frame;
                 Some(tex.id())
+            }
+            Some(Slot::Failed { retry_at: Some(at) }) if Instant::now() >= *at => {
+                self.slots.remove(url);
+                self.get(url)
             }
             Some(_) => None,
             None => {
@@ -156,10 +182,14 @@ fn worker(queue: Queue, tx: Sender<Done>, agent: ureq::Agent, ctx: egui::Context
                 if let Some(u) = q.pop_front() {
                     break u;
                 }
-                q = cvar.wait(q).unwrap();
+                q = cvar.wait(q).unwrap_or_else(std::sync::PoisonError::into_inner);
             }
         };
-        let result = fetch(&agent, &url).map(|img| Done::Image(url.clone(), img)).unwrap_or(Done::Failed(url));
+        let result = match fetch(&agent, &url) {
+            Fetched::Image(img) => Done::Image(url, img),
+            Fetched::Unreached => Done::Unreached(url),
+            Fetched::Unreadable => Done::Unreadable(url),
+        };
         if tx.send(result).is_err() {
             return;
         }
@@ -167,12 +197,23 @@ fn worker(queue: Queue, tx: Sender<Done>, agent: ureq::Agent, ctx: egui::Context
     }
 }
 
-fn fetch(agent: &ureq::Agent, url: &str) -> Option<ColorImage> {
+enum Fetched {
+    Image(ColorImage),
+    Unreached,
+    Unreadable,
+}
+
+fn fetch(agent: &ureq::Agent, url: &str) -> Fetched {
     if url.is_empty() {
-        return None;
+        return Fetched::Unreadable;
     }
-    let bytes = agent.get(url).call().ok()?.into_body().read_to_vec().ok()?;
-    decode(&bytes)
+    let bytes = match agent.get(url).call().and_then(|r| r.into_body().read_to_vec()) {
+        Ok(bytes) => bytes,
+        // Gone for good: no use asking again.
+        Err(ureq::Error::StatusCode(404 | 410)) => return Fetched::Unreadable,
+        Err(_) => return Fetched::Unreached,
+    };
+    decode(&bytes).map_or(Fetched::Unreadable, Fetched::Image)
 }
 
 /// JPEG (Deezer, most servers), PNG or WebP (music servers), by their signature.
@@ -235,6 +276,41 @@ fn image_from(pixels: &[u8], size: [usize; 2]) -> Option<ColorImage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A cache that fetches nothing (no workers), with `slots`.
+    fn cache(ctx: &egui::Context) -> Covers {
+        Covers { done_tx: None, ..Covers::new(ctx) }
+    }
+
+    #[test]
+    fn a_cover_not_reached_is_asked_for_again_later_and_a_broken_one_never() {
+        let mut c = cache(&egui::Context::default());
+        let past = Instant::now() - Duration::from_secs(1);
+        c.slots.insert("later".into(), Slot::Failed { retry_at: Some(Instant::now() + RETRY_AFTER) });
+        c.slots.insert("again".into(), Slot::Failed { retry_at: Some(past) });
+        c.slots.insert("broken".into(), Slot::Failed { retry_at: None });
+        for url in ["later", "again", "broken"] {
+            assert!(c.get(url).is_none());
+        }
+        assert!(matches!(c.slots["again"], Slot::Loading), "its time came: asked for");
+        assert!(matches!(c.slots["later"], Slot::Failed { .. }) && matches!(c.slots["broken"], Slot::Failed { .. }));
+    }
+
+    #[test]
+    fn the_covers_used_longest_ago_go_first() {
+        let ctx = egui::Context::default();
+        let mut c = cache(&ctx);
+        let third = BUDGET_BYTES / 3 + 1;
+        for (i, url) in ["old", "middle", "new"].into_iter().enumerate() {
+            let tex = ctx.load_texture(url, ColorImage::new([1, 1], vec![egui::Color32::BLACK]), TextureOptions::LINEAR);
+            c.slots.insert(url.into(), Slot::Ready { tex, bytes: third, last_used: i as u64 });
+        }
+        c.bytes = 3 * third;
+        c.frame = 10;
+        c.evict();
+        assert!(c.bytes <= EVICT_TO);
+        assert!(!c.slots.contains_key("old") && c.slots.contains_key("new"));
+    }
 
     /// A 2×1 RGB PNG: one red, one green pixel.
     fn png_bytes() -> Vec<u8> {

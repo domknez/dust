@@ -41,6 +41,8 @@
   are asked for off the window's thread
 - Shortcuts read the way macOS writes them (⇧⌘S rather than ⌘⇧S)
 - A list's header switches its buttons to icons before they run out of room
+- Covers that didn't load because the network was down load once it's back,
+  instead of staying blank until dust restarts
 
 ## 0.31.1 (2026-11-18)
 
