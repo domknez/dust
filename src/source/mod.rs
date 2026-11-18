@@ -189,6 +189,16 @@ pub trait Source: Send + Sync {
     fn resolve_link(&self, _pasted: &str) -> Result<Link> {
         Err(unsupported("Links"))
     }
+    /// The track a link (in a playlist file) names, told from the link alone:
+    /// None for anything but one of this source's track links.
+    fn track_id(&self, _link: &str) -> Option<TrackId> {
+        None
+    }
+    /// The playable tracks among `ids`, in their order; gone or unplayable ones
+    /// left out.
+    fn tracks(&self, _ids: &[TrackId]) -> Result<Vec<Track>> {
+        Err(unsupported("Tracks by id"))
+    }
     /// An artist's albums, singles and EPs with the day each came out, for the
     /// new release check.
     fn releases(&self, _artist: &str) -> Result<Vec<Release>> {

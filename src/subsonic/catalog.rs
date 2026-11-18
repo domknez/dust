@@ -31,6 +31,9 @@ const ARTIST_MIX: &str = "artist:";
 const RADIO_GENRES: usize = 12;
 /// A genre needs this many songs to get its own Radio station.
 const RADIO_MIN_SONGS: u64 = 10;
+/// Song ids per playlist change: they travel in the address, and servers refuse
+/// long ones.
+const SONGS_PER_CALL: usize = 100;
 
 impl Subsonic {
     /// Home: the Radio panel with the library's genres, then shelves of albums
@@ -296,22 +299,40 @@ impl Subsonic {
     /// A new playlist holding `tracks`; its id, if the server says (servers before
     /// API 1.14 don't return the new playlist).
     pub fn create_playlist(&self, title: &str, tracks: &[TrackId]) -> Result<Option<PlaylistId>> {
+        let (first, rest) = tracks.split_at(tracks.len().min(SONGS_PER_CALL));
         let mut params = vec![("name", title)];
-        params.extend(tracks.iter().map(|id| ("songId", id.as_str())));
+        params.extend(first.iter().map(|id| ("songId", id.as_str())));
         let r = self.call("createPlaylist", &params)?;
-        let id = text(&r["playlist"]["id"]);
-        Ok((!id.is_empty()).then(|| PlaylistId::new(id)))
+        let id = match text(&r["playlist"]["id"]) {
+            id if !id.is_empty() => PlaylistId::new(id),
+            _ if rest.is_empty() => return Ok(None),
+            // Servers before API 1.14 answer without the playlist: tell it among the
+            // account's, to put the rest on it.
+            _ => made_playlist(&self.playlists()?, title, first.len()).ok_or_else(|| {
+                Error::Other(format!(
+                    "Made {title} with the first {} tracks, but the server didn't say which playlist it is, so the rest couldn't go on",
+                    first.len()
+                ))
+            })?,
+        };
+        self.append(&id, rest).map_err(|e| Error::Other(format!("Made {title}, but not every track got on it: {e}")))?;
+        Ok(Some(id))
+    }
+
+    /// Put `tracks` at the end of the playlist, [`SONGS_PER_CALL`] at a time.
+    fn append(&self, playlist: &PlaylistId, tracks: &[TrackId]) -> Result<()> {
+        for batch in tracks.chunks(SONGS_PER_CALL) {
+            let mut params = vec![("playlistId", playlist.as_str())];
+            params.extend(batch.iter().map(|id| ("songIdToAdd", id.as_str())));
+            self.call("updatePlaylist", &params)?;
+        }
+        Ok(())
     }
 
     /// Add the tracks that aren't on the playlist yet; returns how many were added.
     pub fn add_to_playlist(&self, playlist: &PlaylistId, tracks: &[TrackId]) -> Result<usize> {
         let new = crate::source::not_yet_on(self.playlist(playlist)?.into_iter().map(|t| t.id), tracks);
-        if new.is_empty() {
-            return Ok(0);
-        }
-        let mut params = vec![("playlistId", playlist.as_str())];
-        params.extend(new.iter().map(|id| ("songIdToAdd", id.as_str())));
-        self.call("updatePlaylist", &params)?;
+        self.append(playlist, &new)?;
         Ok(new.len())
     }
 
@@ -388,6 +409,14 @@ fn radio_stations(genres: &Value) -> Vec<Item> {
         .collect()
 }
 
+/// The playlist just made as `title` with `count` songs, among the account's;
+/// None unless exactly one fits (a guess could fill someone else's list).
+fn made_playlist(playlists: &[Playlist], title: &str, count: usize) -> Option<PlaylistId> {
+    let mut fits = playlists.iter().filter(|p| p.owned && p.title == title && usize::try_from(p.count) == Ok(count));
+    let made = fits.next()?;
+    fits.next().is_none().then(|| made.id.clone())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,6 +426,23 @@ mod tests {
         let playlist = [Track::test(1), Track::test(2), Track::test(1), Track::test(3)];
         assert_eq!(positions_of(&playlist, &[TrackId::from(1)]), ["0", "2"]);
         assert!(positions_of(&playlist, &[TrackId::from(9)]).is_empty());
+    }
+
+    #[test]
+    fn a_new_playlist_the_server_didnt_name_is_told_only_when_sure() {
+        let list = |id: &str, title: &str, count: u32, owned: bool| Playlist {
+            id: PlaylistId::new(id),
+            title: title.into(),
+            count,
+            owned,
+            private: false,
+            picture: None,
+        };
+        let mine = [list("1", "Road trip", 40, true), list("2", "Road trip", 100, true), list("3", "Road trip", 100, false)];
+        assert_eq!(made_playlist(&mine, "Road trip", 100), Some(PlaylistId::new("2")), "not one followed");
+        let twice = [list("1", "Road trip", 100, true), list("2", "Road trip", 100, true)];
+        assert_eq!(made_playlist(&twice, "Road trip", 100), None, "no guessing");
+        assert_eq!(made_playlist(&mine, "Other", 100), None);
     }
 
     #[test]

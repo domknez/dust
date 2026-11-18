@@ -136,6 +136,8 @@ pub struct App {
     pub(super) history_view: super::views::HistoryView,
     /// New releases looked for, of the source in use.
     pub(super) releases: super::release_watch::Watch,
+    /// A playlist being imported from a file.
+    pub(super) importing: super::import::Importing,
     /// The command palette, while it's open.
     pub(super) palette: Option<super::palette::Palette>,
     /// The player's state `logic` read, for the frame drawn right after it.
@@ -227,6 +229,7 @@ impl App {
             stats_view: Default::default(),
             history_view: Default::default(),
             releases: Default::default(),
+            importing: Default::default(),
             palette: None,
             status: None,
             sync: SyncState::new(sync_dir),
@@ -522,6 +525,7 @@ impl App {
         self.poll_playlist_edits(ctx, &mut failed);
         let link = self.browse.poll(&self.library.playlists, &mut failed);
         self.poll_quick_play(ctx, &mut failed);
+        self.poll_import(&mut failed);
         // Each error is shown with what failed to load; an expired session also
         // ends it, and then what else arrived belongs to the old one.
         for error in &failed {
@@ -671,6 +675,7 @@ impl eframe::App for App {
             self.apply(&ctx, acts);
             return;
         }
+        self.dropped_files(&ctx);
         // What `logic` saw just before this frame.
         let st = self.status.take().unwrap_or_else(|| self.player.status());
         super::widgets::offer_crate(&ctx, self.prefs.crate_on);
@@ -712,6 +717,7 @@ impl eframe::App for App {
             .response
             .rect;
         self.toasts.show(&ctx, page);
+        self.import_dialog(&ctx, &mut acts);
         self.playlist_dialog(&ctx, &mut acts);
         self.settings_window(&ctx, &mut acts);
         self.server_dialog(&ctx, &mut acts);

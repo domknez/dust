@@ -72,6 +72,8 @@ pub enum Action {
     NewPlaylist(Vec<Track>),
     /// Ask before renaming or deleting an own playlist.
     PlaylistDialog(Dialog),
+    /// Ask for a playlist file to import.
+    ImportPlaylist,
 
     // Crate
     /// Save to the Crate; the text says where it was found.
@@ -254,6 +256,7 @@ impl App {
             Action::EditPlaylist(edit) => self.edit_playlist(edit),
             Action::NewPlaylist(tracks) => self.new_playlist(tracks),
             Action::PlaylistDialog(dialog) => self.library.editing.dialog = Some(dialog),
+            Action::ImportPlaylist => self.open_import(),
             Action::TogglePanel => self.toggle_side_panel(),
             Action::ToggleLyrics => self.toggle_lyrics(),
             Action::ShowPanel(panel) => self.show_side_panel(panel),

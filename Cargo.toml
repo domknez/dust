@@ -35,6 +35,7 @@ image-webp = "0.2"
 thiserror = "2"
 # Local days and times in the play history.
 jiff = "0.2"
+unicode-normalization = "0.1.26"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }

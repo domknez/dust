@@ -5,7 +5,7 @@
 use super::images::art;
 use super::parse::{picture, text};
 use super::{Deezer, Error, Result};
-use crate::model::{Link, PlaylistId};
+use crate::model::{Link, PlaylistId, TrackId};
 use serde_json::{Value, json};
 use std::time::Duration;
 use ureq::ResponseExt;
@@ -24,6 +24,15 @@ pub fn is_link(text: &str) -> bool {
     let host = t.trim_start_matches("https://").trim_start_matches("http://").trim_start_matches("www.");
     !t.contains(char::is_whitespace)
         && (host.starts_with("deezer.com/") || host.starts_with("link.deezer.com/") || host.starts_with("deezer.page.link/"))
+}
+
+/// The track a full `deezer.com/track/<id>` link names. Short links need the
+/// network to follow, so they give None, as does anything but a track.
+pub fn track_id(link: &str) -> Option<TrackId> {
+    match parse(link).filter(|_| is_link(link))? {
+        (Kind::Track, id) => Some(TrackId::new(id)),
+        _ => None,
+    }
 }
 
 /// `(kind, id)` from a full deezer.com URL: the first `album|artist|playlist|track`
@@ -117,5 +126,13 @@ mod tests {
         assert_eq!(parse("https://www.deezer.com/track/3135556"), Some((Kind::Track, "3135556".into())));
         assert_eq!(parse("https://www.deezer.com/en/profile/123"), None);
         assert_eq!(parse("https://www.deezer.com/album/abc"), None);
+    }
+
+    #[test]
+    fn only_full_track_links_name_a_track() {
+        assert_eq!(track_id(" https://www.deezer.com/en/track/3135556?utm_source=x "), Some(TrackId::new("3135556")));
+        assert_eq!(track_id("https://www.deezer.com/album/1100293142"), None);
+        assert_eq!(track_id("https://link.deezer.com/s/31abcd"), None, "short links need the network");
+        assert_eq!(track_id("https://example.com/track/1"), None);
     }
 }

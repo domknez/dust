@@ -16,7 +16,7 @@
 //!   the play history are kept, synced through a folder, backed up daily
 //! - [`release_watch`]: new releases from the artists followed and listened to
 //! - [`palette`]: the command palette (⌘K)
-//! - [`playlist_file`]: lists saved as CSV or M3U
+//! - [`playlist_file`]: lists saved as CSV or M3U; [`import`]: playlists read from files
 //! - [`load`]: background loads, each keeping its result or error
 //! - [`toasts`]: short messages in the corner about things that happened off the page
 //! - [`state`], [`format`], [`files`], [`covers`]: supporting pieces
@@ -29,6 +29,7 @@ mod crate_store;
 mod files;
 mod format;
 mod history;
+mod import;
 mod library;
 mod likes;
 mod load;

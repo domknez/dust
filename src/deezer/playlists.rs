@@ -22,7 +22,10 @@ impl Deezer {
     /// A new playlist holding `tracks` (in order); returns its id.
     pub fn create_playlist(&self, title: &str, private: bool, tracks: &[TrackId]) -> Result<PlaylistId> {
         let status = if private { PRIVATE } else { PUBLIC };
-        let r = self.call("playlist.create", json!({"title": title, "description": "", "status": status, "songs": songs(tracks)}))?;
+        let r = self.call(
+            "playlist.create",
+            json!({"title": title, "description": "", "status": status, "songs": songs(&crate::source::not_yet_on([], tracks))}),
+        )?;
         Some(parse::number(&r)).filter(|&id| id != 0).map(PlaylistId::from).ok_or_else(|| api("playlist.create: no id in reply"))
     }
 
