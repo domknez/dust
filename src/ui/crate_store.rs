@@ -426,23 +426,11 @@ fn unix_now() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{DeezerSong, Origin, TrackId};
+    use crate::model::{DeezerSong, Origin};
     use std::path::{Path, PathBuf};
 
     fn track(id: u64) -> Track {
-        Track {
-            id: TrackId::from(id),
-            title: format!("Song {id}"),
-            artist: "A".into(),
-            artists: vec![],
-            album: "Album".into(),
-            album_id: "1".into(),
-            duration: 200,
-            art: None,
-            available: true,
-            available_from: String::new(),
-            origin: Origin::Deezer(DeezerSong { token: "t".into(), fallback: None }),
-        }
+        Track { origin: Origin::Deezer(DeezerSong { token: "t".into(), fallback: None }), ..Track::test(id) }
     }
 
     fn dir(name: &str) -> PathBuf {

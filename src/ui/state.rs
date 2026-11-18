@@ -225,7 +225,6 @@ impl PlayMode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{DeezerSong, Origin, TrackId};
 
     fn item(kind: ItemKind, id: &str) -> Item {
         Item { kind, id: id.into(), title: "T".into(), subtitle: "S".into(), picture: None }
@@ -234,17 +233,13 @@ mod tests {
     #[test]
     fn album_of_track() {
         let track = Track {
-            id: TrackId::from(1),
             title: "One More Time".into(),
             artist: "Daft Punk".into(),
-            artists: Vec::new(),
             album: "Discovery".into(),
             album_id: "302127".into(),
             duration: 320,
             art: Art::new("cover/abc"),
-            available: true,
-            available_from: String::new(),
-            origin: Origin::Deezer(DeezerSong::default()),
+            ..Track::test(1)
         };
         let coll = Coll::album_of(&track).unwrap();
         assert_eq!(
@@ -258,17 +253,13 @@ mod tests {
     #[test]
     fn only_playable_tracks_are_queued() {
         let t = |id: u64, available| Track {
-            id: TrackId::from(id),
             title: String::new(),
             artist: String::new(),
-            artists: Vec::new(),
             album: String::new(),
             album_id: String::new(),
             duration: 1,
-            art: None,
             available,
-            available_from: String::new(),
-            origin: Origin::Deezer(DeezerSong::default()),
+            ..Track::test(id)
         };
         let tracks = vec![t(1, true), t(2, false), t(3, false), t(4, true)];
         let ids = |(q, i): (Vec<Track>, usize)| (q.iter().map(|t| t.id.to_string()).collect::<Vec<_>>(), i);

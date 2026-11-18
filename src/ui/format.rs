@@ -63,7 +63,6 @@ pub fn thousands(n: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{DeezerSong, Origin};
 
     #[test]
     fn release_dates_read_naturally() {
@@ -107,17 +106,12 @@ mod tests {
         assert_eq!(mmss(245.3), "4:05");
         assert_eq!(mmss(-3.0), "0:00");
         let t = |d| Track {
-            id: 1.into(),
             title: String::new(),
             artist: String::new(),
-            artists: Vec::new(),
             album: String::new(),
             album_id: String::new(),
             duration: d,
-            art: None,
-            available: true,
-            available_from: String::new(),
-            origin: Origin::Deezer(DeezerSong::default()),
+            ..Track::test(1)
         };
         assert_eq!(total_clock(&[t(100), t(3012)]), "51:52");
         assert_eq!(total_clock(&[t(3600), t(123)]), "1:02:03");

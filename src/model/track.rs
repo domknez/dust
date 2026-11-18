@@ -46,6 +46,27 @@ impl Track {
     }
 }
 
+#[cfg(test)]
+impl Track {
+    /// A Deezer song for tests: "Song `id`" by "A" on "Album" (id "1"), 200 s,
+    /// available. Tests change what they look at: `Track { title, ..Track::test(1) }`.
+    pub fn test(id: u64) -> Track {
+        Track {
+            id: TrackId::from(id),
+            title: format!("Song {id}"),
+            artist: "A".into(),
+            artists: Vec::new(),
+            album: "Album".into(),
+            album_id: "1".into(),
+            duration: 200,
+            art: None,
+            available: true,
+            available_from: String::new(),
+            origin: Origin::Deezer(DeezerSong::default()),
+        }
+    }
+}
+
 /// Where a track plays from: what only its source reads, kept apart from what
 /// every track has.
 #[derive(Clone, Debug, PartialEq)]

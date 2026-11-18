@@ -201,17 +201,12 @@ mod tests {
 
     fn track(id: u64) -> Track {
         Track {
-            id: TrackId::from(id),
-            title: format!("Song {id}"),
             artist: "A, B".into(),
             artists: vec![ArtistRef { id: "27".into(), name: "A".into() }],
-            album: "Album".into(),
             album_id: "302127".into(),
-            duration: 200,
             art: Art::new("cover/md5"),
-            available: true,
-            available_from: String::new(),
             origin: Origin::Deezer(DeezerSong { token: "tok".into(), fallback: Some((9, "tok2".into())) }),
+            ..Track::test(id)
         }
     }
 

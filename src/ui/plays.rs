@@ -294,19 +294,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     fn track(id: u64) -> Track {
-        Track {
-            id: TrackId::from(id),
-            title: format!("Song {id}"),
-            artist: "A".into(),
-            artists: vec![],
-            album: "Album".into(),
-            album_id: "1".into(),
-            duration: 200,
-            art: None,
-            available: true,
-            available_from: String::new(),
-            origin: Origin::Deezer(DeezerSong { token: String::new(), fallback: None }),
-        }
+        Track::test(id)
     }
 
     fn play(source: &str, id: u64) -> Play {

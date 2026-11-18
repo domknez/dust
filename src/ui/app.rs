@@ -752,7 +752,7 @@ fn log_repaint_causes(ctx: &egui::Context) {
 #[cfg(test)]
 pub(super) mod testing {
     use super::*;
-    use crate::model::{DeezerSong, Origin};
+
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc::Receiver;
@@ -811,19 +811,7 @@ pub(super) mod testing {
     }
 
     pub fn track(id: u64, available: bool) -> Track {
-        Track {
-            id: id.into(),
-            title: format!("Song {id}"),
-            artist: String::new(),
-            artists: Vec::new(),
-            album: String::new(),
-            album_id: String::new(),
-            duration: 180,
-            art: None,
-            available,
-            available_from: String::new(),
-            origin: Origin::Deezer(DeezerSong::default()),
-        }
+        Track { artist: String::new(), album: String::new(), album_id: String::new(), duration: 180, available, ..Track::test(id) }
     }
 
     /// The numbers of tracks made by [`track`].

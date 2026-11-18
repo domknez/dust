@@ -192,22 +192,15 @@ fn empty_state(ui: &mut Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{DeezerSong, Origin, Track, TrackId};
+    use crate::model::{DeezerSong, Origin, Track};
     use crate::player::Flow;
 
     fn play(id: u64, at: u64, album: &str, flow: Option<&str>) -> Play {
         let track = Track {
-            id: TrackId::from(id),
-            title: format!("Song {id}"),
-            artist: "A".into(),
-            artists: vec![],
             album: format!("Album {album}"),
             album_id: album.into(),
-            duration: 200,
-            art: None,
-            available: true,
-            available_from: String::new(),
             origin: Origin::Deezer(DeezerSong { token: "t".into(), fallback: None }),
+            ..Track::test(id)
         };
         let flow = flow.map(|m| Flow { mood: Some(m.to_string()).filter(|m| !m.is_empty()) });
         Play { source: "deezer".into(), at, heard_secs: 100, skipped: false, flow, track }

@@ -251,21 +251,15 @@ fn index_after_move(current: usize, from: usize, to: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{DeezerSong, Origin};
 
     fn t(id: u64) -> Track {
         Track {
-            id: TrackId::from(id),
             title: id.to_string(),
             artist: String::new(),
-            artists: Vec::new(),
             album: String::new(),
             album_id: String::new(),
             duration: 1,
-            art: None,
-            available: true,
-            available_from: String::new(),
-            origin: Origin::Deezer(DeezerSong::default()),
+            ..Track::test(id)
         }
     }
 

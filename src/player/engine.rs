@@ -917,7 +917,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{DeezerSong, Format, Listen, Origin, TrackId};
+    use crate::model::{Format, Listen, Origin, TrackId};
     use crate::player::library::Library;
     use std::sync::mpsc::{Sender, channel};
 
@@ -928,17 +928,12 @@ mod tests {
 
     fn track(id: u64, secs: u32) -> Track {
         Track {
-            id: TrackId::from(id),
             title: format!("t{id}"),
             artist: String::new(),
-            artists: Vec::new(),
             album: String::new(),
             album_id: String::new(),
             duration: secs,
-            art: None,
-            available: true,
-            available_from: String::new(),
-            origin: Origin::Deezer(DeezerSong::default()),
+            ..Track::test(id)
         }
     }
 

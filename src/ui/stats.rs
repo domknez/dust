@@ -355,7 +355,7 @@ pub fn duration(secs: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ArtistRef, DeezerSong, Origin, TrackId};
+    use crate::model::{ArtistRef, TrackId};
 
     fn zone() -> when::Zone {
         when::Zone::UTC
@@ -366,17 +366,11 @@ mod tests {
 
     fn track(id: u64, artist: &str, album: &str) -> Track {
         Track {
-            id: TrackId::from(id),
-            title: format!("Song {id}"),
             artist: artist.into(),
             artists: vec![ArtistRef { id: format!("a-{artist}"), name: artist.into() }],
             album: album.into(),
             album_id: format!("al-{album}"),
-            duration: 200,
-            art: None,
-            available: true,
-            available_from: String::new(),
-            origin: Origin::Deezer(DeezerSong { token: String::new(), fallback: None }),
+            ..Track::test(id)
         }
     }
 
