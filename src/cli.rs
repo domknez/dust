@@ -53,6 +53,23 @@ pub enum Command {
         quality: Quality,
         start: f64,
     },
+    /// A diagnostic asked for wrongly: what's wrong with it.
+    Invalid(String),
+}
+
+/// The next argument as a `T`, which `what` must be.
+fn required<T: std::str::FromStr>(args: &mut impl Iterator<Item = String>, what: &str) -> Result<T, String> {
+    let arg = args.next().ok_or_else(|| format!("missing {what}"))?;
+    arg.parse().map_err(|_| format!("{what} {arg:?} isn't valid"))
+}
+
+/// The next argument as a `T` if there is one; `default` without. One that's
+/// there but wrong is an error, not the default.
+fn optional<T: std::str::FromStr>(args: &mut impl Iterator<Item = String>, what: &str, default: T) -> Result<T, String> {
+    match args.next() {
+        None => Ok(default),
+        Some(arg) => arg.parse().map_err(|_| format!("{what} {arg:?} isn't valid")),
+    }
 }
 
 impl Command {
@@ -75,15 +92,22 @@ impl Command {
             "--debug-artist" => Command::DebugArtist(args.next().unwrap_or_default()),
             "--debug-search" => Command::DebugSearch(args.collect::<Vec<_>>().join(" ")),
             "--debug-tracks" => Command::DebugTracks { kind: args.next().unwrap_or_default(), id: args.next().unwrap_or_default() },
-            "--debug-stream" => Command::DebugStream {
-                playlist: args.next().and_then(|a| a.parse().ok()).unwrap_or(0),
-                count: args.next().and_then(|a| a.parse().ok()).unwrap_or(10),
-            },
-            "--debug-decode" => Command::DebugDecode {
-                playlist: args.next().and_then(|a| a.parse().ok()).unwrap_or(0),
-                quality: args.next().and_then(|q| Quality::from_key(&q)).unwrap_or(Quality::Mp3_320),
-                start: args.next().and_then(|a| a.parse().ok()).unwrap_or(0.0),
-            },
+            "--debug-stream" => {
+                let mut stream =
+                    || Ok(Command::DebugStream { playlist: required(&mut args, "playlist id")?, count: optional(&mut args, "count", 10)? });
+                stream().unwrap_or_else(Command::Invalid)
+            }
+            "--debug-decode" => {
+                let mut decode = || {
+                    let playlist = required(&mut args, "playlist id")?;
+                    let quality = match args.next() {
+                        None => Quality::Mp3_320,
+                        Some(q) => Quality::from_key(&q).ok_or(format!("quality {q:?} isn't one of mp3_128, mp3_320, flac"))?,
+                    };
+                    Ok(Command::DebugDecode { playlist, quality, start: optional(&mut args, "start", 0.0)? })
+                };
+                decode().unwrap_or_else(Command::Invalid)
+            }
             _ => return None,
         };
         Some(cmd)
@@ -110,6 +134,10 @@ impl Command {
             Command::DebugTracks { kind, id } => debug_tracks(&logged_in(), &kind, &id),
             Command::DebugStream { playlist, count } => debug_stream(&logged_in(), playlist, count),
             Command::DebugDecode { playlist, quality, start } => debug_decode(&logged_in(), playlist, quality, start),
+            Command::Invalid(problem) => {
+                eprintln!("dust: {problem}");
+                std::process::exit(2);
+            }
         }
     }
 }
@@ -218,24 +246,25 @@ fn find_speaker(target: &str) -> Device {
 }
 
 fn debug_home(client: &Deezer) {
-    print_sections(&client.home().expect("home"));
+    print_sections(&client.home().expect("home"), 8);
 }
 
 fn debug_page(client: &Deezer, id: &str) {
     match client.page(id) {
         Ok(page) => {
             println!("# {}", page.title);
-            print_sections(&page.sections);
+            print_sections(&page.sections, 8);
         }
         Err(e) => println!("error: {e}"),
     }
 }
 
-fn print_sections(sections: &[Section]) {
+/// Each section's title, size and first `shown` cards.
+fn print_sections(sections: &[Section], shown: usize) {
     for sec in sections {
         let grid = if sec.grid { ", grid" } else { "" };
         println!("\n## {} ({} items{grid}) more={:?}", sec.title, sec.items.len(), sec.more);
-        for it in sec.items.iter().take(8) {
+        for it in sec.items.iter().take(shown) {
             println!("  - {:?}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
         }
     }
@@ -245,12 +274,7 @@ fn debug_search(client: &Deezer, query: &str) {
     let results = client.search(query).expect("search");
     println!("{} tracks", results.tracks.len());
     results.tracks.iter().take(3).for_each(|t| println!("  {} – {}", t.artist, t.title));
-    for sec in results.sections {
-        println!("\n## {} ({} items)", sec.title, sec.items.len());
-        for it in sec.items.iter().take(4) {
-            println!("  - {:?}:{} | {} | {} | pic={:?}", it.kind, it.id, it.title, it.subtitle, it.picture);
-        }
-    }
+    print_sections(&results.sections, 4);
 }
 
 fn debug_artist(client: &Deezer, id: &str) {
@@ -261,12 +285,7 @@ fn debug_artist(client: &Deezer, id: &str) {
         .iter()
         .take(3)
         .for_each(|t| println!("  {} – {} {:?}", t.artist, t.title, t.artists.iter().map(|a| &a.id).collect::<Vec<_>>()));
-    for sec in page.sections {
-        println!("\n## {} ({} items)", sec.title, sec.items.len());
-        for it in sec.items.iter().take(4) {
-            println!("  - {:?}:{} | {} | {}", it.kind, it.id, it.title, it.subtitle);
-        }
-    }
+    print_sections(&page.sections, 4);
 }
 
 fn debug_api(client: &Deezer, method: &str, body: &str) {
@@ -355,5 +374,27 @@ fn debug_decode(client: &Deezer, playlist: u64, quality: Quality, start: f64) {
             samples.len()
         );
         return;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Option<Command> {
+        Command::parse(args.iter().map(|a| a.to_string()))
+    }
+
+    #[test]
+    fn diagnostics_say_what_is_wrong_with_their_arguments() {
+        assert!(parse(&[]).is_none(), "no arguments: the app");
+        assert!(matches!(parse(&["--debug-stream", "42"]), Some(Command::DebugStream { playlist: 42, count: 10 })));
+        assert!(matches!(parse(&["--debug-stream"]), Some(Command::Invalid(p)) if p == "missing playlist id"));
+        assert!(matches!(parse(&["--debug-stream", "42", "many"]), Some(Command::Invalid(_))), "not quietly 10");
+        assert!(matches!(
+            parse(&["--debug-decode", "7", "flac", "30"]),
+            Some(Command::DebugDecode { playlist: 7, quality: Quality::Flac, start: 30.0 })
+        ));
+        assert!(matches!(parse(&["--debug-decode", "7", "best"]), Some(Command::Invalid(_))));
     }
 }

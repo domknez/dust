@@ -28,10 +28,16 @@ impl Deezer {
             "ls": [],
             "ts_listen": listen.started_unix,
             "is_shuffle": false,
-            "stream_id": listen.stream_id,
+            "stream_id": stream_uuid(),
         });
         self.call("log.listen", json!({"params": params})).map(drop)
     }
+}
+
+/// A random RFC 4122 v4 id, as Deezer's clients send for each stream.
+fn stream_uuid() -> String {
+    let h = format!("{:016x}{:016x}", fastrand::u64(..), fastrand::u64(..));
+    format!("{}-{}-4{}-a{}-{}", &h[..8], &h[8..12], &h[13..16], &h[17..20], &h[20..32])
 }
 
 /// Deezer's name for the format a listen was streamed in.
@@ -40,5 +46,20 @@ fn api_name(format: Format) -> &'static str {
         Format::Flac => "FLAC",
         Format::Mp3(128) | Format::Podcast | Format::File => "MP3_128",
         Format::Mp3(_) => "MP3_320",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stream_uuid;
+
+    #[test]
+    fn stream_ids_are_version_4_uuids() {
+        let id = stream_uuid();
+        let parts: Vec<&str> = id.split('-').collect();
+        assert_eq!(parts.iter().map(|p| p.len()).collect::<Vec<_>>(), [8, 4, 4, 4, 12], "{id}");
+        assert!(parts[2].starts_with('4') && parts[3].starts_with('a'), "{id}");
+        assert!(id.chars().all(|c| c == '-' || c.is_ascii_hexdigit()));
+        assert_ne!(id, stream_uuid());
     }
 }

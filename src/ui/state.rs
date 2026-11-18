@@ -89,8 +89,24 @@ pub enum CollSource {
     History(crate::ui::stats::Smart),
 }
 
+/// Getting a list's tracks, made ready to run in the background.
+pub type Fetch = Box<dyn FnOnce() -> crate::model::Result<Vec<Track>> + Send>;
+
 impl CollSource {
-    pub fn fetch(&self, client: &dyn Source) -> crate::model::Result<Vec<Track>> {
+    /// How to get the tracks: from `client`, or (a list made from the play
+    /// history) worked out now by `history`.
+    pub fn fetcher(self, client: crate::source::Shared, history: impl FnOnce(crate::ui::stats::Smart) -> Vec<Track>) -> Fetch {
+        match self {
+            CollSource::History(which) => {
+                let tracks = history(which);
+                Box::new(move || Ok(tracks))
+            }
+            source => Box::new(move || source.fetch(&*client)),
+        }
+    }
+
+    /// From the source; a history list has nothing to fetch (see [`CollSource::fetcher`]).
+    fn fetch(&self, client: &dyn Source) -> crate::model::Result<Vec<Track>> {
         match self {
             CollSource::Playlist(id) => client.playlist(id),
             CollSource::Album(id) => client.album(id),
@@ -99,7 +115,7 @@ impl CollSource {
             CollSource::Mix(id) => client.mix(id),
             CollSource::ArtistMix(id) => client.artist_mix(id),
             CollSource::Show(id) => client.show_episodes(id),
-            CollSource::History(_) => Err(crate::model::Error::Other("made from the play history".into())),
+            CollSource::History(_) => Ok(Vec::new()),
         }
     }
 }

@@ -326,12 +326,11 @@ impl App {
 
     /// A page with a track list: empty it and load the new one.
     fn load_list(&mut self, client: Shared, view: View) {
-        // A list made from the play history is worked out here and now.
-        let history = match &view {
-            View::Collection(coll) => match coll.source {
-                CollSource::History(which) => Some(self.history_list(which)),
-                _ => None,
-            },
+        // The tracks of a collection other than an album (whose page says more).
+        let fetch = match &view {
+            View::Collection(coll) if !matches!(coll.source, CollSource::Album(_)) => {
+                Some(coll.source.clone().fetcher(client.clone(), |which| self.history_list(which)))
+            }
             _ => None,
         };
         let browse = &mut self.browse;
@@ -360,16 +359,13 @@ impl App {
                 browse.search_load.start(&self.jobs, move || client.search(&query));
             }
             View::Loved => browse.tracks_load.start(&self.jobs, move || client.loved().map(|t| (t, None))),
-            View::Collection(_) if history.is_some() => {
-                let tracks = history.unwrap_or_default();
-                browse.tracks_load.start(&self.jobs, move || Ok((tracks, None)));
-            }
-            View::Collection(coll) => {
-                browse.tracks_load.start(&self.jobs, move || match &coll.source {
-                    CollSource::Album(id) => client.album_page(id).map(|(t, info)| (t, Some(info))),
-                    source => source.fetch(&*client).map(|t| (t, None)),
-                });
-            }
+            View::Collection(coll) => match (fetch, coll.source) {
+                (Some(fetch), _) => browse.tracks_load.start(&self.jobs, move || fetch().map(|t| (t, None))),
+                (None, CollSource::Album(id)) => {
+                    browse.tracks_load.start(&self.jobs, move || client.album_page(&id).map(|(t, info)| (t, Some(info))))
+                }
+                (None, _) => {}
+            },
         }
     }
 
@@ -423,12 +419,8 @@ impl App {
     /// Fetch a collection and play/queue it without opening it.
     pub(super) fn play_source(&mut self, source: CollSource, mode: PlayMode) {
         let Some(client) = self.client.clone() else { return };
-        if let CollSource::History(which) = source {
-            let tracks = self.history_list(which);
-            self.browse.quick_play.start(&self.jobs, move || Ok((tracks, mode)));
-            return;
-        }
-        self.browse.quick_play.start(&self.jobs, move || source.fetch(&*client).map(|t| (t, mode)));
+        let fetch = source.fetcher(client, |which| self.history_list(which));
+        self.browse.quick_play.start(&self.jobs, move || fetch().map(|t| (t, mode)));
     }
 
     // ------------------------------------------------------------ settings

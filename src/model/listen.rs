@@ -11,6 +11,4 @@ pub struct Listen {
     pub listened_secs: u64,
     /// Ended before the track did (skip/seek), as opposed to playing through.
     pub skipped: bool,
-    /// Identifies this listen to the source (a random UUID).
-    pub stream_id: String,
 }

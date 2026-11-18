@@ -45,14 +45,7 @@ impl ListenTracker {
         flow: Option<Flow>,
     ) {
         let track_secs = track.duration;
-        let listen = Listen {
-            song_id: song_id.clone(),
-            format,
-            started_unix: crate::clock::unix_now(),
-            listened_secs: 0,
-            skipped: false,
-            stream_id: stream_uuid(),
-        };
+        let listen = Listen { song_id: song_id.clone(), format, started_unix: crate::clock::unix_now(), listened_secs: 0, skipped: false };
         if self.enabled
             && let Some(library) = library
         {
@@ -104,10 +97,4 @@ impl ListenTracker {
         }
         Some(played)
     }
-}
-
-/// Random RFC 4122 v4-shaped id, as Deezer's clients send per stream.
-fn stream_uuid() -> String {
-    let h = format!("{:016x}{:016x}", fastrand::u64(..), fastrand::u64(..));
-    format!("{}-{}-4{}-a{}-{}", &h[..8], &h[8..12], &h[13..16], &h[17..20], &h[20..32])
 }
