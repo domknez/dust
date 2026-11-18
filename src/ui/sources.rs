@@ -237,8 +237,7 @@ impl App {
         self.library = Library::default();
         self.browse = Browse::default();
         self.lyrics = Default::default();
-        self.crate_radio = Load::default();
-        self.crate_about = Load::default();
+        self.crates.forget_jobs();
     }
 
     /// What the source in use offers (everything while none is).
@@ -469,9 +468,9 @@ mod tests {
         let mut t = TestApp::new("");
         t.app.source_ready(deezer());
         t.app.play_crate();
-        assert!(t.app.crate_radio.is_loading());
+        assert!(t.app.crates.radio.is_loading());
         t.update(Action::SwitchSource(navidrome()));
-        assert!(!t.app.crate_radio.is_loading(), "its tracks are Deezer's");
+        assert!(!t.app.crates.radio.is_loading(), "its tracks are Deezer's");
     }
 
     #[test]

@@ -22,7 +22,7 @@ mod sleep_timer;
 mod stats_view;
 mod sync_settings;
 
-pub use crate_view::{CrateView, Filter};
+pub use crate_view::{Crates, Filter};
 pub use lyrics::LyricsState;
 pub use play_history::HistoryView;
 pub use settings::{Section, reveal_log};

@@ -129,19 +129,13 @@ pub struct App {
     pub(super) side_tab: SidePanel,
     /// Every track heard, kept on this computer.
     pub(super) plays: Plays,
-    /// Things to check out later, kept on this computer.
-    pub(super) crate_box: Crate,
-    pub(super) crate_view: super::views::CrateView,
+    /// Things to check out later, kept on this computer, and what's being done
+    /// with them.
+    pub(super) crates: super::views::Crates,
     pub(super) stats_view: super::views::StatsView,
     pub(super) history_view: super::views::HistoryView,
     /// New releases looked for, of the source in use.
     pub(super) releases: super::release_watch::Watch,
-    /// The Crate's new tracks being put together to play.
-    pub(super) crate_radio: super::load::Load<Vec<crate::model::Track>>,
-    /// What the Crate's albums saved without it are (type, year, tracks), being
-    /// looked up; and the entries looked up this run, found or not.
-    pub(super) crate_about: super::load::Load<Vec<(String, super::crate_store::About)>>,
-    pub(super) crate_about_tried: std::collections::HashSet<String>,
     /// The command palette, while it's open.
     pub(super) palette: Option<super::palette::Palette>,
     /// The player's state `logic` read, for the frame drawn right after it.
@@ -215,7 +209,7 @@ impl App {
         player.send(Cmd::Repeat(prefs.repeat));
         let sync_dir = prefs.sync_folder.as_ref().filter(|_| !prefs.device.is_empty()).map(|f| SyncDir::new(f, &prefs.device));
         let plays = Plays::load(Log::new("history", queues.dir(), sync_dir.as_ref()));
-        let crate_box = Crate::load(Log::new("crate", queues.dir(), sync_dir.as_ref()));
+        let store = Crate::load(Log::new("crate", queues.dir(), sync_dir.as_ref()));
         Self {
             player,
             jobs,
@@ -229,14 +223,10 @@ impl App {
             side_panel: None,
             side_tab: SidePanel::Queue,
             plays,
-            crate_box,
-            crate_view: Default::default(),
+            crates: super::views::Crates::new(store),
             stats_view: Default::default(),
             history_view: Default::default(),
             releases: Default::default(),
-            crate_radio: Default::default(),
-            crate_about: Default::default(),
-            crate_about_tried: Default::default(),
             palette: None,
             status: None,
             sync: SyncState::new(sync_dir),

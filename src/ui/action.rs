@@ -226,7 +226,7 @@ impl App {
             Action::TrackMenu(tracks, choice) => self.track_menu_choice(ctx, tracks, choice),
             Action::SaveToCrate(thing, from) => self.save_to_crate(ctx, thing, from),
             Action::CrateNote(note) => self.crate_note(note),
-            Action::Crate(change) => self.crate_box.change(change),
+            Action::Crate(change) => self.crates.store.change(change),
             Action::OpenCrate(entry, filter) => self.open_crate(entry, filter),
             Action::PlayCrate => self.play_crate(),
             Action::SearchFor(query) => self.search_for(query),
@@ -336,16 +336,16 @@ mod tests {
         let save = || Action::SaveToCrate(Thing::Track(track(1, true)), "Flow · chill".into());
         t.update(save());
         t.update(save());
-        let entries = t.app.crate_box.entries().to_vec();
+        let entries = t.app.crates.store.entries().to_vec();
         assert_eq!(entries.len(), 1);
         assert_eq!((entries[0].source.as_str(), entries[0].from.as_str()), ("deezer", "Flow · chill"));
         t.update(Action::Crate(Change::Heard { id: entries[0].id.clone(), heard: true }));
-        assert_eq!(t.app.crate_box.new_count(), 0);
+        assert_eq!(t.app.crates.store.new_count(), 0);
         t.update(save());
-        assert_eq!((t.app.crate_box.entries().len(), t.app.crate_box.new_count()), (1, 1), "saved again: new again");
+        assert_eq!((t.app.crates.store.entries().len(), t.app.crates.store.new_count()), (1, 1), "saved again: new again");
         t.update(Action::CrateNote("  ".into()));
         t.update(Action::CrateNote("Elder, from Ana".into()));
-        assert_eq!(t.app.crate_box.entries()[0].title(), "Elder, from Ana", "newest first");
+        assert_eq!(t.app.crates.store.entries()[0].title(), "Elder, from Ana", "newest first");
     }
 
     #[test]

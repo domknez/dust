@@ -33,16 +33,16 @@ impl App {
         }
         self.sync.checked = Some(std::time::Instant::now());
         self.backup_if_due();
-        let backups = self.crate_box.log().backups_dir();
+        let backups = self.crates.store.log().backups_dir();
         let count = |dir: &Path| Crate::load(Log::new("crate", Some(dir), None)).entries().len();
         self.sync.seen.refresh(self.sync.dir.as_ref(), backups.as_deref(), count);
         if let Some(dir) = self.sync.dir.clone() {
             if dir.dir.is_dir() {
-                self.crate_box.log().fetch_from_icloud();
+                self.crates.store.log().fetch_from_icloud();
                 self.plays.log().fetch_from_icloud();
-                let stamp: Vec<_> = self.crate_box.log().stamp().into_iter().chain(self.plays.log().stamp()).collect();
+                let stamp: Vec<_> = self.crates.store.log().stamp().into_iter().chain(self.plays.log().stamp()).collect();
                 if stamp != self.sync.stamp {
-                    self.crate_box.reload();
+                    self.crates.store.reload();
                     self.plays.reload();
                     self.sync.stamp = stamp;
                 }
@@ -61,7 +61,7 @@ impl App {
         if self.sync.backed_up.as_deref() == Some(today.as_str()) {
             return;
         }
-        let Some(root) = self.crate_box.log().backups_dir() else { return };
+        let Some(root) = self.crates.store.log().backups_dir() else { return };
         let day = root.join(&today);
         if !day.is_dir() && !self.write_backup(&day) {
             return;
@@ -72,7 +72,7 @@ impl App {
 
     /// The Crate and the history as they are now, into `dir`.
     fn write_backup(&self, dir: &Path) -> bool {
-        sync::write_lines(&dir.join("crate.jsonl"), &self.crate_box.lines())
+        sync::write_lines(&dir.join("crate.jsonl"), &self.crates.store.lines())
             && sync::write_lines(&dir.join("history.jsonl"), &self.plays.lines())
     }
 
@@ -94,7 +94,7 @@ impl App {
             }
             None => None,
         };
-        self.crate_box.move_to(Log::new("crate", local.as_deref(), sync_dir.as_ref()));
+        self.crates.store.move_to(Log::new("crate", local.as_deref(), sync_dir.as_ref()));
         self.plays.move_to(Log::new("history", local.as_deref(), sync_dir.as_ref()));
         let (backed_up, seen) = (self.sync.backed_up.take(), std::mem::take(&mut self.sync.seen));
         self.sync = SyncState { backed_up, seen, ..SyncState::new(sync_dir) };
@@ -106,7 +106,7 @@ impl App {
     }
 
     pub(in crate::ui) fn export_crate(&mut self, ctx: &egui::Context, export: Export) {
-        let entries = self.crate_box.entries();
+        let entries = self.crates.store.entries();
         match export {
             Export::Markdown => {
                 ctx.copy_text(markdown(entries));
@@ -135,12 +135,12 @@ impl App {
         let backup_crate = Crate::load(Log::new("crate", Some(&dir), None));
         let backup_plays = Plays::load(Log::new("history", Some(&dir), None));
         let now = jiff::Zoned::now().strftime("%Y-%m-%d before restoring %H.%M").to_string();
-        let saved = self.crate_box.log().backups_dir().is_some_and(|root| self.write_backup(&root.join(now)));
+        let saved = self.crates.store.log().backups_dir().is_some_and(|root| self.write_backup(&root.join(now)));
         if !saved {
             self.toasts.error(ctx, "Nothing restored: what's there now couldn't be backed up first");
             return;
         }
-        self.crate_box.restore(&backup_crate);
+        self.crates.store.restore(&backup_crate);
         self.plays.restore(&backup_plays);
         // The backup just made shows in the list.
         self.sync.check_soon();
@@ -252,7 +252,7 @@ impl App {
             ui.label(RichText::new(used).font(ty::SMALL.font()).color(p.dim));
             let counts = format!(
                 "{} in Crate · {} in history",
-                thousands(self.crate_box.entries().len() as u64),
+                thousands(self.crates.store.entries().len() as u64),
                 thousands(self.plays.len() as u64)
             );
             ui.label(RichText::new(counts).font(ty::META.font()).color(p.faint));
@@ -369,10 +369,10 @@ mod tests {
         let mut t = crate::ui::app::testing::TestApp::new("");
         let ctx = egui::Context::default();
         t.app.crate_note("keep me".into());
-        let root = t.app.crate_box.log().backups_dir().unwrap();
+        let root = t.app.crates.store.log().backups_dir().unwrap();
         std::fs::create_dir_all(root.parent().unwrap()).unwrap();
         std::fs::write(&root, "a file where the backups go").unwrap();
         t.app.restore_backup(&ctx, root.join("empty-backup"));
-        assert_eq!(t.app.crate_box.entries().len(), 1, "the Crate is as it was");
+        assert_eq!(t.app.crates.store.entries().len(), 1, "the Crate is as it was");
     }
 }

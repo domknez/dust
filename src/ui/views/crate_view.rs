@@ -6,7 +6,8 @@ use crate::model::{Likeable, Track};
 use crate::player::{Cmd, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
-use crate::ui::crate_store::{About, Change, Entry, Thing};
+use crate::ui::crate_store::{About, Change, Crate, Entry, Thing};
+use crate::ui::load::Load;
 use crate::ui::plays::{flow_label, when};
 use crate::ui::state::{ArtistView, Coll, CollSource, PlayMode, View};
 use crate::ui::style::icons::{self, Icon};
@@ -16,6 +17,7 @@ use eframe::egui::{
     self, Align2, CornerRadius, Key, KeyboardShortcut, Modifiers, PopupCloseBehavior, Rect, RectAlign, RichText, Sense, Ui, UiBuilder,
     Vec2, pos2, vec2,
 };
+use std::collections::HashSet;
 
 /// Saves the track playing to the Crate.
 const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::S);
@@ -48,6 +50,31 @@ impl Filter {
             Filter::Heard => entry.heard,
             Filter::Kind(kind) => entry.thing.kind() == kind,
         }
+    }
+}
+
+/// The Crate, what's shown of it, and what's being done with it in the
+/// background.
+pub struct Crates {
+    pub store: Crate,
+    pub view: CrateView,
+    /// Its new tracks being put together to play.
+    pub radio: Load<Vec<Track>>,
+    /// What its albums saved without it are (type, year, tracks), being looked
+    /// up; and the entries looked up this run, found or not.
+    pub about: Load<Vec<(String, About)>>,
+    pub about_tried: HashSet<String>,
+}
+
+impl Crates {
+    pub fn new(store: Crate) -> Self {
+        Crates { store, view: CrateView::default(), radio: Load::default(), about: Load::default(), about_tried: HashSet::new() }
+    }
+
+    /// Drop what's being done for the source left: its results belong to it.
+    pub fn forget_jobs(&mut self) {
+        self.radio = Load::default();
+        self.about = Load::default();
     }
 }
 
@@ -99,14 +126,14 @@ impl App {
     pub(in crate::ui) fn save_to_crate(&mut self, ctx: &egui::Context, thing: Thing, from: String) {
         let Some(client) = &self.client else { return };
         let source = client.id().key;
-        let message = match self.crate_box.find(source, &thing).map(|e| (e.id.clone(), e.heard)) {
+        let message = match self.crates.store.find(source, &thing).map(|e| (e.id.clone(), e.heard)) {
             Some((id, true)) => {
-                self.crate_box.change(Change::Heard { id, heard: false });
+                self.crates.store.change(Change::Heard { id, heard: false });
                 "Back in your Crate as new"
             }
             Some(_) => "Already in your Crate",
             None => {
-                self.crate_box.add(source, thing, &from, "");
+                self.crates.store.add(source, thing, &from, "");
                 "Saved to your Crate"
             }
         };
@@ -115,21 +142,21 @@ impl App {
 
     pub(in crate::ui) fn crate_note(&mut self, note: String) {
         if !note.trim().is_empty() {
-            self.crate_box.add("", Thing::Note, "", &note);
+            self.crates.store.add("", Thing::Note, "", &note);
         }
     }
 
     /// New entries of the source in use that can be played (not notes).
     pub(in crate::ui) fn crate_playable(&self) -> usize {
         let source = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
-        self.crate_box.entries().iter().filter(|e| !e.heard && e.source == source && e.thing != Thing::Note).count()
+        self.crates.store.entries().iter().filter(|e| !e.heard && e.source == source && e.thing != Thing::Note).count()
     }
 
     /// New tracks, albums and artists of the source in use, oldest saved first.
     fn new_to_play(&self) -> Vec<Thing> {
         let source = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
         let mut fresh: Vec<&Entry> =
-            self.crate_box.entries().iter().filter(|e| !e.heard && e.source == source && e.thing != Thing::Note).collect();
+            self.crates.store.entries().iter().filter(|e| !e.heard && e.source == source && e.thing != Thing::Note).collect();
         fresh.sort_by_key(|e| e.saved);
         fresh.into_iter().map(|e| e.thing.clone()).collect()
     }
@@ -139,7 +166,7 @@ impl App {
     pub(in crate::ui) fn play_crate(&mut self) {
         let Some(client) = self.client.clone() else { return };
         let things = self.new_to_play();
-        self.crate_radio.start(&self.jobs, move || {
+        self.crates.radio.start(&self.jobs, move || {
             let mut tracks: Vec<Track> = Vec::new();
             for thing in things {
                 let more = match thing {
@@ -164,7 +191,7 @@ impl App {
 
     /// Start what [`App::play_crate`] put together, once it's ready.
     pub(in crate::ui) fn crate_radio_tick(&mut self, ctx: &egui::Context) {
-        match self.crate_radio.poll_take() {
+        match self.crates.radio.poll_take() {
             Some(Ok(tracks)) => {
                 let n = tracks.len();
                 self.player.send(Cmd::Play(tracks, 0));
@@ -178,21 +205,22 @@ impl App {
     /// Look up what the Crate's albums saved without it are (an EP? how many
     /// tracks?) in the background, a batch at a time, and keep it.
     pub(in crate::ui) fn crate_about_tick(&mut self) {
-        if let Some(found) = self.crate_about.poll_take() {
+        if let Some(found) = self.crates.about.poll_take() {
             for (id, about) in found.unwrap_or_default() {
-                self.crate_box.set_about(&id, about);
+                self.crates.store.set_about(&id, about);
             }
         }
-        if !self.prefs.crate_on || self.crate_about.is_loading() {
+        if !self.prefs.crate_on || self.crates.about.is_loading() {
             return;
         }
         let Some(client) = self.client.clone() else { return };
         let source = client.id().key;
         let wanted: Vec<(String, String, About)> = self
-            .crate_box
+            .crates
+            .store
             .entries()
             .iter()
-            .filter(|e| e.source == source && !self.crate_about_tried.contains(&e.id))
+            .filter(|e| e.source == source && !self.crates.about_tried.contains(&e.id))
             .filter_map(|e| match &e.thing {
                 Thing::Album { id, about, .. } if about.unknown() => Some((e.id.clone(), id.clone(), about.clone())),
                 _ => None,
@@ -202,8 +230,8 @@ impl App {
         if wanted.is_empty() {
             return;
         }
-        self.crate_about_tried.extend(wanted.iter().map(|(entry, ..)| entry.clone()));
-        self.crate_about.start(&self.jobs, move || {
+        self.crates.about_tried.extend(wanted.iter().map(|(entry, ..)| entry.clone()));
+        self.crates.about.start(&self.jobs, move || {
             let mut found = Vec::new();
             for (k, (entry, album, known)) in wanted.into_iter().enumerate() {
                 if k > 0 {
@@ -220,12 +248,12 @@ impl App {
     /// Open the Crate page, showing `entry` (or the filter's first).
     pub(in crate::ui) fn open_crate(&mut self, entry: Option<String>, filter: Option<Filter>) {
         if let Some(filter) = filter {
-            self.crate_view.filter = filter;
+            self.crates.view.filter = filter;
         }
         if entry.is_some() {
-            self.crate_view.filter = Filter::All;
-            self.crate_view.selected = entry;
-            self.crate_view.open = true;
+            self.crates.view.filter = Filter::All;
+            self.crates.view.selected = entry;
+            self.crates.view.open = true;
         }
         self.open_view(View::Crate);
     }
@@ -244,12 +272,12 @@ impl App {
         ui.add_space(4.0);
         self.save_playing_row(ui, st, acts);
         ui.add_space(8.0);
-        if let Some(note) = jot_field(ui, "crate-tab-jot", &mut self.crate_view.tab_jot) {
+        if let Some(note) = jot_field(ui, "crate-tab-jot", &mut self.crates.view.tab_jot) {
             acts.push(Action::CrateNote(note));
         }
         ui.add_space(14.0);
-        let fresh: Vec<Entry> = self.crate_box.entries().iter().filter(|e| !e.heard).cloned().collect();
-        let heard = self.crate_box.entries().len() - fresh.len();
+        let fresh: Vec<Entry> = self.crates.store.entries().iter().filter(|e| !e.heard).cloned().collect();
+        let heard = self.crates.store.entries().len() - fresh.len();
         let p = colors();
         let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
         text_left(ui.painter(), pos2(row.left() + 4.0, row.center().y), &format!("NEW · {}", fresh.len()), ty::OVERLINE, p.faint, 120.0);
@@ -320,7 +348,7 @@ impl App {
         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 54.0), Sense::click());
         let track = st.track.as_ref().filter(|t| !t.is_episode());
         let source = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
-        let saved = track.and_then(|t| self.crate_box.find(source, &Thing::Track(t.clone()))).is_some_and(|e| !e.heard);
+        let saved = track.and_then(|t| self.crates.store.find(source, &Thing::Track(t.clone()))).is_some_and(|e| !e.heard);
         let enabled = track.is_some() && !saved;
         let corner = CornerRadius::same(radius::CONTROL);
         ui.painter().rect_filled(rect, corner, if enabled && resp.hovered() { p.raised } else { p.surface });
@@ -358,7 +386,7 @@ impl App {
         ui.add_space(14.0);
         ui.horizontal(|ui| {
             ui.set_max_width(680.0);
-            let typed = !self.crate_view.jot.trim().is_empty();
+            let typed = !self.crates.view.jot.trim().is_empty();
             let playable = self.crate_playable();
             // Room for the button beside the field (Save while typing, else Play), a
             // shorter Play when the field would get too narrow.
@@ -373,7 +401,7 @@ impl App {
             } else {
                 0.0
             };
-            let jot = &mut self.crate_view.jot;
+            let jot = &mut self.crates.view.jot;
             let field = ui.available_width() - button - ui.spacing().item_spacing.x;
             let mut save = jot_field_sized(ui, "crate-page-jot", jot, field);
             if typed && widgets::pill(ui, "Save", None, true).clicked() {
@@ -393,14 +421,14 @@ impl App {
         self.filter_chips(ui);
         ui.add_space(12.0);
 
-        let filter = self.crate_view.filter;
-        let shown: Vec<Entry> = self.crate_box.entries().iter().filter(|e| filter.keeps(e)).cloned().collect();
-        if self.crate_view.selected.as_ref().is_none_or(|id| !shown.iter().any(|e| e.id == *id)) {
-            self.crate_view.selected = shown.first().map(|e| e.id.clone());
+        let filter = self.crates.view.filter;
+        let shown: Vec<Entry> = self.crates.store.entries().iter().filter(|e| filter.keeps(e)).cloned().collect();
+        if self.crates.view.selected.as_ref().is_none_or(|id| !shown.iter().any(|e| e.id == *id)) {
+            self.crates.view.selected = shown.first().map(|e| e.id.clone());
         }
         if shown.is_empty() {
             ui.add_space(30.0);
-            let (title, hint) = if self.crate_box.entries().is_empty() {
+            let (title, hint) = if self.crates.store.entries().is_empty() {
                 ("Your Crate is empty", format!("Save what's playing with {SAVE_KEYS}, or right-click a track → Save to Crate"))
             } else {
                 ("Nothing here", "Try another filter".to_string())
@@ -414,12 +442,12 @@ impl App {
         let current = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
         // Too narrow for both: the list, or the entry picked with a way back.
         if one_column(area.width()) {
-            let entry = self.crate_view.selected.as_ref().and_then(|id| self.crate_box.get(id)).cloned();
-            match entry.filter(|_| self.crate_view.open) {
+            let entry = self.crates.view.selected.as_ref().and_then(|id| self.crates.store.get(id)).cloned();
+            match entry.filter(|_| self.crates.view.open) {
                 Some(entry) => {
                     egui::ScrollArea::vertical().id_salt("crate-detail").auto_shrink([false, false]).show(ui, |ui| {
                         if ui.link(RichText::new("‹ Back to the list").font(ty::SMALL.font())).clicked() {
-                            self.crate_view.open = false;
+                            self.crates.view.open = false;
                         }
                         ui.add_space(12.0);
                         self.entry_detail(ui, &entry, current, acts);
@@ -436,7 +464,7 @@ impl App {
         let list = Rect::from_min_max(area.min, pos2(area.right() - detail_width - 24.0, area.bottom()));
         let detail = Rect::from_min_max(pos2(list.right() + 24.0, area.top()), area.max);
         ui.scope_builder(UiBuilder::new().max_rect(list), |ui| self.crate_list(ui, &shown, current, acts));
-        let entry = self.crate_view.selected.as_ref().and_then(|id| self.crate_box.get(id)).cloned();
+        let entry = self.crates.view.selected.as_ref().and_then(|id| self.crates.store.get(id)).cloned();
         if let Some(entry) = entry {
             ui.scope_builder(UiBuilder::new().max_rect(detail), |ui| {
                 egui::ScrollArea::vertical().id_salt("crate-detail").auto_shrink([false, false]).show(ui, |ui| {
@@ -456,7 +484,7 @@ impl App {
                 if !ui.is_rect_visible(rect) {
                     continue;
                 }
-                let selected = self.crate_view.selected.as_ref() == Some(&entry.id);
+                let selected = self.crates.view.selected.as_ref() == Some(&entry.id);
                 if selected || resp.hovered() {
                     let fill = if selected { p.raised } else { p.hover };
                     ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), fill);
@@ -466,8 +494,8 @@ impl App {
                 status_line(ui, status, entry);
                 acts.extend(entry_menu(&resp, entry));
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                    self.crate_view.selected = Some(entry.id.clone());
-                    self.crate_view.open = true;
+                    self.crates.view.selected = Some(entry.id.clone());
+                    self.crates.view.open = true;
                 }
             }
         });
@@ -475,7 +503,7 @@ impl App {
 
     /// All · New · Heard, then the kinds there are, each with its count.
     fn filter_chips(&mut self, ui: &mut Ui) {
-        let entries = self.crate_box.entries();
+        let entries = self.crates.store.entries();
         let count = |f: Filter| entries.iter().filter(|e| f.keeps(e)).count();
         let mut chips = vec![("All", Filter::All), ("New", Filter::New), ("Heard", Filter::Heard)];
         for (label, kind) in [("Tracks", "track"), ("Albums", "album"), ("Artists", "artist"), ("Notes", "note")] {
@@ -490,7 +518,7 @@ impl App {
                 let text = format!("{label}  {}", count(filter));
                 let galley = ui.painter().layout_no_wrap(text.clone(), ty::SMALL.font(), p.text);
                 let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 24.0, 30.0), Sense::click());
-                let on = self.crate_view.filter == filter;
+                let on = self.crates.view.filter == filter;
                 let corner = CornerRadius::same(15);
                 if on {
                     ui.painter().rect_filled(rect, corner, p.text);
@@ -502,8 +530,8 @@ impl App {
                 }
                 ui.painter().text(rect.center(), Align2::CENTER_CENTER, text, ty::SMALL.font(), if on { p.bg } else { p.text });
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                    self.crate_view.filter = filter;
-                    self.crate_view.open = false;
+                    self.crates.view.filter = filter;
+                    self.crates.view.open = false;
                 }
             }
         });
@@ -633,11 +661,11 @@ impl App {
     fn note_field(&mut self, ui: &mut Ui, entry: &Entry, acts: &mut Actions) {
         let p = colors();
         ui.label(RichText::new("NOTE").font(ty::OVERLINE.font()).color(p.faint));
-        let note = &mut self.crate_view.note;
+        let note = &mut self.crates.view.note;
         if note.as_ref().is_none_or(|(id, _)| *id != entry.id) {
             // Another entry was picked while its note was being typed: keep it.
             if let Some((id, text)) = note.take()
-                && self.crate_box.get(&id).is_some_and(|e| e.note != text.trim())
+                && self.crates.store.get(&id).is_some_and(|e| e.note != text.trim())
             {
                 acts.push(Action::Crate(Change::Note { id, note: text.trim().to_string() }));
             }
@@ -781,16 +809,16 @@ mod tests {
     fn the_entry_menu_marks_heard_and_removes() {
         let mut t = TestApp::new("");
         t.app.source_ready(deezer());
-        let id = t.app.crate_box.add("deezer", Thing::Note, "", "that Turkish psych band");
-        let entry = t.app.crate_box.get(&id).cloned().expect("saved");
+        let id = t.app.crates.store.add("deezer", Thing::Note, "", "that Turkish psych band");
+        let entry = t.app.crates.store.get(&id).cloned().expect("saved");
         assert!(!entry.heard);
 
         t.update(menu_change(widgets::CrateMenu::Heard(true), &entry));
-        assert!(t.app.crate_box.get(&id).is_some_and(|e| e.heard), "marked heard");
+        assert!(t.app.crates.store.get(&id).is_some_and(|e| e.heard), "marked heard");
         t.update(menu_change(widgets::CrateMenu::Heard(false), &entry));
-        assert!(t.app.crate_box.get(&id).is_some_and(|e| !e.heard), "new again");
+        assert!(t.app.crates.store.get(&id).is_some_and(|e| !e.heard), "new again");
         t.update(menu_change(widgets::CrateMenu::Remove, &entry));
-        assert!(t.app.crate_box.get(&id).is_none(), "removed");
+        assert!(t.app.crates.store.get(&id).is_none(), "removed");
     }
 
     fn album(id: &str, about: About) -> Thing {
@@ -802,17 +830,17 @@ mod tests {
         let mut t = TestApp::new("");
         t.app.source_ready(deezer());
         let known = About { kind: "EP".into(), year: "2026".into(), tracks: 5 };
-        t.app.crate_box.add("deezer", album("1", known), "", "");
+        t.app.crates.store.add("deezer", album("1", known), "", "");
         let new_release = About { kind: "Single".into(), year: "2026".into(), tracks: 0 };
-        let wanted = t.app.crate_box.add("deezer", album("2", new_release), "New release · 6 Nov", "");
-        t.app.crate_box.add("navidrome", album("3", About::default()), "", "");
-        t.app.crate_box.add("deezer", Thing::Note, "", "a note");
+        let wanted = t.app.crates.store.add("deezer", album("2", new_release), "New release · 6 Nov", "");
+        t.app.crates.store.add("navidrome", album("3", About::default()), "", "");
+        t.app.crates.store.add("deezer", Thing::Note, "", "a note");
         let waiting = t.jobs.waiting();
 
         t.app.crate_about_tick();
         assert_eq!(t.jobs.waiting(), waiting + 1, "one look for the batch");
-        assert_eq!(t.app.crate_about_tried.iter().collect::<Vec<_>>(), [&wanted], "only the unknown album of this source");
-        t.app.crate_about = Default::default();
+        assert_eq!(t.app.crates.about_tried.iter().collect::<Vec<_>>(), [&wanted], "only the unknown album of this source");
+        t.app.crates.about = Default::default();
         t.app.crate_about_tick();
         assert_eq!(t.jobs.waiting(), waiting + 1, "not looked up again this run");
     }
@@ -836,9 +864,9 @@ mod tests {
     fn opening_an_entry_from_the_panel_shows_it_on_a_narrow_page() {
         let mut t = TestApp::new("");
         t.app.source_ready(deezer());
-        let id = t.app.crate_box.add("deezer", Thing::Note, "", "a note");
+        let id = t.app.crates.store.add("deezer", Thing::Note, "", "a note");
         t.update(Action::OpenCrate(Some(id.clone()), None));
-        assert_eq!(t.app.crate_view.selected.as_deref(), Some(id.as_str()));
-        assert!(t.app.crate_view.open, "the entry, not the list");
+        assert_eq!(t.app.crates.view.selected.as_deref(), Some(id.as_str()));
+        assert!(t.app.crates.view.open, "the entry, not the list");
     }
 }

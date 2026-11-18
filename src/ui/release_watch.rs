@@ -190,7 +190,7 @@ impl crate::ui::app::App {
             let kind = album.release.as_ref().map(|r| r.kind.label().to_string()).unwrap_or_default();
             let about = About { kind, year: f.release.date.get(..4).unwrap_or_default().to_string(), tracks: 0 };
             let thing = Thing::Album { id: album.id, title: album.title, artist: f.artist.clone(), picture: album.picture, about };
-            if self.crate_box.find(source, &thing).is_some() {
+            if self.crates.store.find(source, &thing).is_some() {
                 continue;
             }
             let day = f.release.date.parse::<Date>().map(|d| d.strftime("%-d %b").to_string()).unwrap_or_default();
@@ -198,7 +198,7 @@ impl crate::ui::app::App {
                 Thing::Album { title, .. } => title.clone(),
                 _ => String::new(),
             };
-            self.crate_box.add(source, thing, &format!("New release · {day}"), "");
+            self.crates.store.add(source, thing, &format!("New release · {day}"), "");
             added.push((f.artist, title));
         }
         let message = match added.as_slice() {
