@@ -11,7 +11,6 @@ const CONTEXT_MENU_WIDTH: f32 = 190.0;
 /// Playlists used last, offered on top of "Add to playlist".
 const RECENT: usize = 3;
 /// The shortcut that adds what's playing to the playlist used last, as menus show it.
-pub const ADD_TO_RECENT_KEYS: &str = if cfg!(target_os = "macos") { "⌘D" } else { "Ctrl+D" };
 
 /// The playlists "Add to playlist" offers: the account's own ones of `all`, those
 /// tracks were added to last (`recent`, the latest first) on top.
@@ -302,7 +301,10 @@ pub fn playlist_picker(ui: &mut Ui, playlists: Playlists, filter: Option<egui::I
             for (i, pl) in recent.into_iter().enumerate() {
                 let mut row = menu_row(ui, None, &pl.title, None, false, p.text);
                 if i == 0 {
-                    row = row.on_hover_text(format!("{ADD_TO_RECENT_KEYS} adds what's playing here"));
+                    row = row.on_hover_text(format!(
+                        "{} adds what's playing here",
+                        crate::ui::shortcuts::label(&crate::ui::shortcuts::ADD_TO_RECENT)
+                    ));
                 }
                 if row.clicked() {
                     pick = Some(TrackMenu::AddTo(pl.clone()));

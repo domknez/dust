@@ -8,18 +8,14 @@ use crate::player::{Cmd, Output, State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::format::mmss;
+use crate::ui::shortcuts;
 use crate::ui::state::Coll;
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
-use eframe::egui::{
-    self, CornerRadius, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, Ui, UiBuilder, Vec2, ViewportCommand, WindowLevel, pos2, vec2,
-};
+use eframe::egui::{self, CornerRadius, Rect, Sense, Stroke, Ui, UiBuilder, Vec2, ViewportCommand, WindowLevel, pos2, vec2};
 
 /// The mini player shortcut, as menus show it.
-pub(in crate::ui) const MINI_PLAYER_KEYS: &str = if cfg!(target_os = "macos") { "⌘⇧M" } else { "Ctrl+Shift+M" };
-const FULL_WINDOW_HINT: &str = if cfg!(target_os = "macos") { "Full window (⌘⇧M)" } else { "Full window (Ctrl+Shift+M)" };
-const TOGGLE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), egui::Key::M);
 
 const PAD: f32 = 10.0;
 /// Controls width: previous, play/pause, next.
@@ -58,7 +54,7 @@ impl App {
 
     /// ⌘⇧M / Ctrl+Shift+M switches modes.
     pub(in crate::ui) fn mini_player_shortcut(&self, ctx: &egui::Context, acts: &mut Actions) {
-        if ctx.input_mut(|i| i.consume_shortcut(&TOGGLE_SHORTCUT)) {
+        if ctx.input_mut(|i| i.consume_shortcut(&shortcuts::MINI_PLAYER)) {
             acts.push(Action::ToggleMiniPlayer);
         }
     }
@@ -81,7 +77,10 @@ impl App {
         if !compact {
             let expand = Rect::from_center_size(pos2(right - 14.0, cy), Vec2::splat(28.0));
             ui.scope_builder(UiBuilder::new().max_rect(expand), |ui| {
-                if widgets::icon_button(ui, Icon::Expand, 14.0, p.dim).on_hover_text(FULL_WINDOW_HINT).clicked() {
+                if widgets::icon_button(ui, Icon::Expand, 14.0, p.dim)
+                    .on_hover_text(format!("Full window ({})", shortcuts::label(&shortcuts::MINI_PLAYER)))
+                    .clicked()
+                {
                     acts.push(Action::ToggleMiniPlayer);
                 }
             });

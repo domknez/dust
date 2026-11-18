@@ -36,6 +36,7 @@ mod playlist_edit;
 mod plays;
 mod release_watch;
 mod selection;
+mod shortcuts;
 mod sources;
 mod state;
 mod stats;

@@ -3,11 +3,12 @@
 use crate::player::Status;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
+use crate::ui::shortcuts;
 use crate::ui::state::View;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets;
-use eframe::egui::{self, CornerRadius, Key, KeyboardShortcut, Modifiers, Rect, Sense, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, CornerRadius, Key, Rect, Sense, Ui, Vec2, pos2, vec2};
 
 impl App {
     pub(in crate::ui) fn content(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
@@ -52,7 +53,7 @@ impl App {
     /// ‹ › next to the search field; dimmed when there's nowhere to go.
     fn history_buttons(&self, ui: &mut Ui, acts: &mut Actions) {
         let p = colors();
-        let shortcut = if cfg!(target_os = "macos") { ("⌘←", "⌘→") } else { ("Alt+←", "Alt+→") };
+        let shortcut = (shortcuts::label(&shortcuts::BACK), shortcuts::label(&shortcuts::FORWARD));
         ui.spacing_mut().item_spacing.x = 2.0;
         for (icon, enabled, hint, back) in [
             (Icon::ChevronLeft, self.browse.history.can_go_back(), format!("Back ({})", shortcut.0), true),
@@ -90,7 +91,7 @@ impl App {
         // The shortcut, as a key cap, while the field is idle.
         let mut right = rect.right() - 12.0;
         if !focused && self.browse.search.is_empty() {
-            let keys = if cfg!(target_os = "macos") { "⌘F" } else { "Ctrl+F" };
+            let keys = shortcuts::label(&shortcuts::SEARCH);
             let width = ui.painter().layout_no_wrap(keys.to_string(), ty::META.font(), p.dim).size().x + 10.0;
             let cap = Rect::from_center_size(pos2(rect.right() - 10.0 - width / 2.0, rect.center().y), vec2(width, 20.0));
             ui.painter().rect_stroke(cap, CornerRadius::same(radius::THUMB), egui::Stroke::new(1.0, p.border), egui::StrokeKind::Inside);
@@ -107,7 +108,7 @@ impl App {
         if pill.hovered() || edit.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
         }
-        if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::F))) {
+        if ui.input_mut(|i| i.consume_shortcut(&shortcuts::SEARCH)) {
             edit.request_focus();
         }
         if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {

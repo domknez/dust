@@ -8,14 +8,13 @@ use crate::player::{Cmd, Repeat, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::{App, SidePanel};
 use crate::ui::crate_store::Thing;
+use crate::ui::shortcuts;
 use crate::ui::state::{Coll, View};
 use crate::ui::style::{colors, radius, typography as ty};
 use crate::ui::views::SleepChoice;
 use crate::ui::widgets::{self, TrackMenu, text_left};
-use eframe::egui::{self, Align2, CornerRadius, Key, KeyboardShortcut, Modifiers, Rect, Sense, vec2};
+use eframe::egui::{self, Align2, CornerRadius, Key, Rect, Sense, vec2};
 
-const SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::K);
-pub const KEYS: &str = if cfg!(target_os = "macos") { "⌘K" } else { "Ctrl+K" };
 /// Rows shown at once.
 const SHOWN: usize = 9;
 const ROW: f32 = 38.0;
@@ -84,14 +83,10 @@ pub fn ranked<'a>(commands: &'a [Command], query: &str) -> Vec<&'a Command> {
     hits.into_iter().map(|(_, _, c)| c).collect()
 }
 
-fn command_keys(digit: &str) -> String {
-    if cfg!(target_os = "macos") { format!("⌘{digit}") } else { format!("Ctrl+{digit}") }
-}
-
 impl App {
     /// ⌘K opens the palette, or closes it.
     pub(in crate::ui) fn palette_shortcut(&mut self, ctx: &egui::Context) {
-        if ctx.input_mut(|i| i.consume_shortcut(&SHORTCUT)) {
+        if ctx.input_mut(|i| i.consume_shortcut(&shortcuts::PALETTE)) {
             self.palette = match self.palette {
                 Some(_) => None,
                 None => Some(self.new_palette()),
@@ -121,22 +116,18 @@ impl App {
             all.extend(playing_commands(self, track, features.track_mix));
         }
         // Pages: Home, the ones turned on, the Crate.
-        all.push(Command::new("Page", "Home", || vec![Action::Open(View::Home)]).keys(&command_keys("1")));
+        all.push(Command::new("Page", "Home", || vec![Action::Open(View::Home)]).keys(&shortcuts::label(&shortcuts::page(Key::Num1))));
         for page in self.pages_on() {
             let command = Command::new("Page", page.label(), move || vec![Action::Open(page.view())]);
             all.push(match page.key_code() {
-                Some(key) => command.keys(&command_keys(key.symbol_or_name())),
+                Some(key) => command.keys(&shortcuts::label(&shortcuts::page(key))),
                 None => command,
             });
         }
         all.push(Command::new("Page", "Crate", || vec![Action::Open(View::Crate)]));
-        all.push(Command::new("Page", "Search", || vec![Action::OpenSearch]).keys(if cfg!(target_os = "macos") {
-            "⌘F"
-        } else {
-            "Ctrl+F"
-        }));
+        all.push(Command::new("Page", "Search", || vec![Action::OpenSearch]).keys(&shortcuts::label(&shortcuts::SEARCH)));
         all.push(Command::new("Page", "Lyrics", || vec![Action::ToggleLyrics]));
-        all.push(Command::new("Window", "Settings", || vec![Action::ShowSettings(true)]).keys(&command_keys(",")));
+        all.push(Command::new("Window", "Settings", || vec![Action::ShowSettings(true)]).keys(&shortcuts::label(&shortcuts::SETTINGS)));
         all.push(Command::new("Window", "Mini player", || vec![Action::ToggleMiniPlayer]));
         all.push(Command::new("Window", "Show the queue", || vec![Action::ShowPanel(Some(SidePanel::Queue))]));
         all.push(Command::new("Window", "Show the play history", || vec![Action::ShowPanel(Some(SidePanel::History))]));
@@ -324,7 +315,7 @@ fn playing_commands(app: &App, track: &Track, mix: bool) -> Vec<Command> {
         Command::new("Playing", format!("Save “{}” to the Crate", track.title), move || {
             vec![Action::SaveToCrate(Thing::Track(t.clone()), "Command".into())]
         })
-        .keys(if cfg!(target_os = "macos") { "⌘⇧S" } else { "Ctrl+Shift+S" }),
+        .keys(&shortcuts::label(&shortcuts::SAVE_TO_CRATE)),
     );
     if mix {
         let t = track.clone();

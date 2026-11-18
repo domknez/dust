@@ -4,7 +4,7 @@
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
 use crate::ui::state::View;
-use eframe::egui::{self, Key, KeyboardShortcut, Modifiers, PointerButton};
+use eframe::egui::{self, PointerButton};
 
 /// Pages kept in each direction.
 const DEPTH: usize = 50;
@@ -68,8 +68,6 @@ fn pop_allowed(visits: &mut Vec<Visit>, allowed: impl Fn(&Visit) -> bool) -> Opt
     None
 }
 
-const NAV_MODIFIER: Modifiers = if cfg!(target_os = "macos") { Modifiers::COMMAND } else { Modifiers::ALT };
-
 impl App {
     /// The page on screen now, as a history entry.
     pub(in crate::ui) fn current_visit(&self) -> Visit {
@@ -110,8 +108,8 @@ impl App {
         let (mut back, mut forward) =
             ctx.input(|i| (i.pointer.button_pressed(PointerButton::Extra1), i.pointer.button_pressed(PointerButton::Extra2)));
         if !ctx.egui_wants_keyboard_input() {
-            back |= ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(NAV_MODIFIER, Key::ArrowLeft)));
-            forward |= ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(NAV_MODIFIER, Key::ArrowRight)));
+            back |= ctx.input_mut(|i| i.consume_shortcut(&crate::ui::shortcuts::BACK));
+            forward |= ctx.input_mut(|i| i.consume_shortcut(&crate::ui::shortcuts::FORWARD));
         }
         if back {
             acts.push(Action::Back);

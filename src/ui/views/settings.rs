@@ -9,11 +9,8 @@ use crate::ui::style::icons::Icon;
 use crate::ui::style::{Appearance, colors, typography as ty};
 use crate::ui::switches::{Page, Switch};
 use crate::ui::widgets;
-use eframe::egui::{self, Key, KeyboardShortcut, Modifiers, RichText, Ui, vec2};
+use eframe::egui::{self, RichText, Ui, vec2};
 
-/// ⌘, on macOS; Ctrl+, on Windows and Linux (as in most apps there).
-const SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Comma);
-pub(in crate::ui) const SETTINGS_HINT: &str = if cfg!(target_os = "macos") { "⌘," } else { "Ctrl+," };
 const WIDTH: f32 = 640.0;
 /// The list of sections.
 const NAV_WIDTH: f32 = 168.0;
@@ -59,7 +56,7 @@ impl Section {
 impl App {
     /// Open (or close) Settings on its shortcut.
     pub(in crate::ui) fn settings_shortcut(&self, ctx: &egui::Context, acts: &mut Actions) {
-        if ctx.input_mut(|i| i.consume_shortcut(&SHORTCUT)) {
+        if ctx.input_mut(|i| i.consume_shortcut(&crate::ui::shortcuts::SETTINGS)) {
             acts.push(Action::ShowSettings(!self.show_settings));
         }
     }

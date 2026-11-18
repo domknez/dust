@@ -9,19 +9,17 @@ use crate::ui::app::App;
 use crate::ui::crate_store::{About, Change, Crate, Entry, Thing};
 use crate::ui::load::Load;
 use crate::ui::plays::{flow_label, when};
+use crate::ui::shortcuts;
 use crate::ui::state::{ArtistView, Coll, CollSource, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
 use eframe::egui::{
-    self, Align2, CornerRadius, Key, KeyboardShortcut, Modifiers, PopupCloseBehavior, Rect, RectAlign, RichText, Sense, Ui, UiBuilder,
-    Vec2, pos2, vec2,
+    self, Align2, CornerRadius, Key, PopupCloseBehavior, Rect, RectAlign, RichText, Sense, Ui, UiBuilder, Vec2, pos2, vec2,
 };
 use std::collections::HashSet;
 
 /// Saves the track playing to the Crate.
-const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::S);
-const SAVE_KEYS: &str = if cfg!(target_os = "macos") { "⌘⇧S" } else { "Ctrl+Shift+S" };
 const JOT_HINT: &str = "Jot down a name, a link or a note";
 const ROW: f32 = 56.0;
 /// Tracks played from each new album or artist.
@@ -110,7 +108,7 @@ fn about_from(known: About, tracks: usize, info: crate::model::AlbumInfo) -> Abo
 impl App {
     /// ⌘⇧S / Ctrl+Shift+S: the track playing goes into the Crate.
     pub(in crate::ui) fn crate_shortcut(&self, ctx: &egui::Context, st: &Status, acts: &mut Actions) {
-        if ctx.input_mut(|i| i.consume_shortcut(&SAVE_SHORTCUT)) {
+        if ctx.input_mut(|i| i.consume_shortcut(&shortcuts::SAVE_TO_CRATE)) {
             acts.extend(self.save_playing(st));
         }
     }
@@ -299,7 +297,11 @@ impl App {
         let current = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             if fresh.is_empty() {
-                widgets::empty_panel(ui, "Nothing new to check out", &format!("{SAVE_KEYS} saves what's playing"));
+                widgets::empty_panel(
+                    ui,
+                    "Nothing new to check out",
+                    &format!("{} saves what's playing", shortcuts::label(&shortcuts::SAVE_TO_CRATE)),
+                );
             }
             for entry in &fresh {
                 let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
@@ -364,7 +366,13 @@ impl App {
         );
         let line = track.map_or_else(|| "Nothing playing".to_string(), |t| format!("{} · {}", t.title, t.artist));
         text_left(ui.painter(), pos2(x, rect.center().y + 10.0), &line, ty::SMALL, p.dim, width);
-        ui.painter().text(pos2(rect.right() - 12.0, rect.center().y), Align2::RIGHT_CENTER, SAVE_KEYS, ty::META.font(), p.faint);
+        ui.painter().text(
+            pos2(rect.right() - 12.0, rect.center().y),
+            Align2::RIGHT_CENTER,
+            shortcuts::label(&shortcuts::SAVE_TO_CRATE),
+            ty::META.font(),
+            p.faint,
+        );
         if enabled && resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
             acts.extend(self.save_playing(st));
         }
@@ -424,7 +432,13 @@ impl App {
         if shown.is_empty() {
             ui.add_space(30.0);
             let (title, hint) = if self.crates.store.entries().is_empty() {
-                ("Your Crate is empty", format!("Save what's playing with {SAVE_KEYS}, or right-click a track → Save to Crate"))
+                (
+                    "Your Crate is empty",
+                    format!(
+                        "Save what's playing with {}, or right-click a track → Save to Crate",
+                        shortcuts::label(&shortcuts::SAVE_TO_CRATE)
+                    ),
+                )
             } else {
                 ("Nothing here", "Try another filter".to_string())
             };

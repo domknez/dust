@@ -1,10 +1,10 @@
 //! The account popover: who is logged in where, switching between the music
 //! sources (or connecting one), Settings, log out.
 
-use super::settings::SETTINGS_HINT;
 use super::sidebar::avatar;
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
+use crate::ui::shortcuts;
 use crate::ui::sources::MENU;
 use crate::ui::style::icons::Icon;
 use crate::ui::style::{colors, typography as ty};
@@ -23,11 +23,11 @@ impl App {
             widgets::divider(ui);
             self.source_rows(ui, acts);
             widgets::divider(ui);
-            if widgets::shortcut_row(ui, Icon::Search, "Commands…", crate::ui::palette::KEYS).clicked() {
+            if widgets::shortcut_row(ui, Icon::Search, "Commands…", &shortcuts::label(&shortcuts::PALETTE)).clicked() {
                 acts.push(Action::OpenPalette);
                 ui.close();
             }
-            if widgets::shortcut_row(ui, Icon::Settings, "Settings…", SETTINGS_HINT).clicked() {
+            if widgets::shortcut_row(ui, Icon::Settings, "Settings…", &shortcuts::label(&shortcuts::SETTINGS)).clicked() {
                 acts.push(Action::ShowSettings(true));
                 ui.close();
             }

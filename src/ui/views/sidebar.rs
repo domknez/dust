@@ -2,16 +2,16 @@
 
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
+use crate::ui::shortcuts;
 use crate::ui::state::{Coll, CollSource, View};
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::switches::Page;
 use crate::ui::widgets::{self, text_left};
-use eframe::egui::{self, Align2, CornerRadius, Key, KeyboardShortcut, Modifiers, Rect, Sense, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, Align2, CornerRadius, Key, Rect, Sense, Ui, Vec2, pos2, vec2};
 
 /// Height kept free below the playlist list for the account card.
 const FOOTER: f32 = 56.0;
-const SEARCH_KEYS: &str = if cfg!(target_os = "macos") { "⌘F" } else { "Ctrl+F" };
 /// Height of the fade between the playlist list and the account card.
 const FADE: f32 = 28.0;
 
@@ -36,16 +36,17 @@ impl App {
 
     fn navigation(&self, ui: &mut Ui, acts: &mut Actions) {
         ui.spacing_mut().item_spacing.y = 1.0;
-        if widgets::sidebar_item(ui, "Home", Some(&shortcut(Key::Num1)), self.browse.view == View::Home).clicked() {
+        if widgets::sidebar_item(ui, "Home", Some(&shortcuts::label(&shortcuts::page(Key::Num1))), self.browse.view == View::Home).clicked()
+        {
             acts.push(Action::Open(View::Home));
         }
-        if widgets::sidebar_item(ui, "Search", Some(SEARCH_KEYS), self.browse.view == View::Search).clicked() {
+        if widgets::sidebar_item(ui, "Search", Some(&shortcuts::label(&shortcuts::SEARCH)), self.browse.view == View::Search).clicked() {
             acts.push(Action::OpenSearch);
         }
         let pages = self.pages_on();
         let item = |ui: &mut Ui, page: Page, acts: &mut Actions| {
             let view = page.view();
-            let keys = page.key_code().map(shortcut);
+            let keys = page.key_code().map(|key| shortcuts::label(&shortcuts::page(key)));
             if widgets::sidebar_item(ui, page.label(), keys.as_deref(), self.browse.view == view).clicked() {
                 acts.push(Action::Open(view));
             }
@@ -176,18 +177,11 @@ impl App {
     pub(in crate::ui) fn nav_shortcuts(&self, ctx: &egui::Context, acts: &mut Actions) {
         let pages =
             std::iter::once((Key::Num1, View::Home)).chain(self.pages_on().into_iter().filter_map(|p| Some((p.key_code()?, p.view()))));
-        let pressed =
-            pages.into_iter().find(|(key, _)| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, *key))));
+        let pressed = pages.into_iter().find(|(key, _)| ctx.input_mut(|i| i.consume_shortcut(&shortcuts::page(*key))));
         if let Some((_, view)) = pressed {
             acts.push(Action::Open(view));
         }
     }
-}
-
-/// "⌘1" on macOS, "Ctrl+1" elsewhere.
-fn shortcut(key: Key) -> String {
-    let digit = key.symbol_or_name();
-    if cfg!(target_os = "macos") { format!("⌘{digit}") } else { format!("Ctrl+{digit}") }
 }
 
 /// Disclosure chevron: pointing right when folded (`open` 0), down when open (1);
@@ -215,13 +209,7 @@ fn initials(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Key, initials, shortcut};
-
-    #[test]
-    fn number_shortcuts_read_like_the_platform() {
-        let expected = if cfg!(target_os = "macos") { "⌘3" } else { "Ctrl+3" };
-        assert_eq!(shortcut(Key::Num3), expected);
-    }
+    use super::initials;
 
     #[test]
     fn initials_of_names() {

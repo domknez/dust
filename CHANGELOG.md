@@ -39,6 +39,7 @@
   the Listening page and the command palette no longer reread files or the
   whole history on every frame; restoring a backup is quick; iCloud downloads
   are asked for off the window's thread
+- Shortcuts read the way macOS writes them (⇧⌘S rather than ⌘⇧S)
 
 ## 0.31.1 (2026-11-18)
 

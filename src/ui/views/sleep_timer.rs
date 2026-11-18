@@ -1,10 +1,10 @@
 //! The player bar's ⋯ menu: the mini player and the sleep timer (a countdown ring,
 //! the time left and the choices), plus the timer's countdown chip next to it.
 
-use super::mini_player::MINI_PLAYER_KEYS;
 use crate::player::{SLEEP_FADE, Sleep, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
+use crate::ui::shortcuts;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
@@ -55,7 +55,7 @@ impl App {
         popup.close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             ui.set_width(MENU_WIDTH);
             ui.spacing_mut().item_spacing.y = 2.0;
-            if widgets::shortcut_row(ui, Icon::MiniPlayer, "Mini player", MINI_PLAYER_KEYS).clicked() {
+            if widgets::shortcut_row(ui, Icon::MiniPlayer, "Mini player", &shortcuts::label(&shortcuts::MINI_PLAYER)).clicked() {
                 acts.push(Action::ToggleMiniPlayer);
                 ui.close();
             }

@@ -24,7 +24,6 @@ const TRANSPORT_WIDTH: f32 = 204.0;
 /// Room for "12:34" on each side of the progress bar.
 const TIME_WIDTH: f32 = 40.0;
 /// Adds what's playing to the playlist used last.
-const ADD_TO_RECENT: egui::KeyboardShortcut = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::D);
 /// Progress refresh while playing.
 pub(in crate::ui) const TICK: Duration = Duration::from_millis(500);
 
@@ -188,16 +187,20 @@ impl App {
     /// ⌘D / Ctrl+D: the track playing goes into the playlist tracks were added to
     /// last.
     pub(in crate::ui) fn add_to_recent_shortcut(&mut self, ctx: &egui::Context, st: &Status, acts: &mut Actions) {
-        if !ctx.input_mut(|i| i.consume_shortcut(&ADD_TO_RECENT)) {
+        if !ctx.input_mut(|i| i.consume_shortcut(&crate::ui::shortcuts::ADD_TO_RECENT)) {
             return;
         }
         let Some(track) = st.track.as_ref().filter(|t| !t.is_episode()) else { return };
         let recent = self.prefs.recent_playlists.iter().find_map(|id| self.library.playlists.iter().find(|p| p.owned && p.id == *id));
         match recent {
             Some(playlist) => acts.push(Action::TrackMenu(vec![track.clone()], TrackMenu::AddTo(playlist.clone()))),
-            None => {
-                self.toasts.info(ctx, format!("{} adds to the playlist you used last. Pick one with + first", widgets::ADD_TO_RECENT_KEYS))
-            }
+            None => self.toasts.info(
+                ctx,
+                format!(
+                    "{} adds to the playlist you used last. Pick one with + first",
+                    crate::ui::shortcuts::label(&crate::ui::shortcuts::ADD_TO_RECENT)
+                ),
+            ),
         }
     }
 
