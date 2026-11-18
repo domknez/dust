@@ -61,10 +61,9 @@ impl Watch {
 
     fn save(&self) {
         let Some(file) = &self.file else { return };
-        if let Some(dir) = file.parent() {
-            let _ = std::fs::create_dir_all(dir);
+        if let Err(e) = crate::atomic_file::write(file, json!({ "checked": self.checked, "seen": self.seen }).to_string()) {
+            log_warn!("could not save the releases seen to {}: {e}", file.display());
         }
-        let _ = std::fs::write(file, json!({ "checked": self.checked, "seen": self.seen }).to_string());
     }
 
     /// Time for another look.

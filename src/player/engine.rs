@@ -451,8 +451,9 @@ impl Engine {
         // Podcast episodes aren't songs: Deezer's listen reports (history, Flow,
         // Last.fm) are for its catalogue only.
         let Some(stream) = self.stream.as_ref().filter(|_| !track.is_episode()) else { return };
+        let Some(source) = self.source else { return };
         let flow = self.queue.flow.clone();
-        self.listens.start(self.library.as_deref(), stream.song_id(), stream.format(), track, flow);
+        self.listens.start(self.library.as_deref(), source, stream.song_id(), stream.format(), track, flow);
     }
 
     /// The current listen is over: report it, and hand it to the UI's play history.
@@ -995,10 +996,12 @@ mod tests {
         fn set_volume(&mut self, _: f32) {}
     }
 
-    /// An engine on these outputs whose preloads run inline, as soon as started.
+    /// An engine on these outputs, playing from Deezer, whose preloads run inline,
+    /// as soon as started.
     fn with_outputs(rx: Receiver<Cmd>, status: Arc<Mutex<Status>>, volume: f32, make_sink: SinkFactory) -> Engine {
         let mut e = Engine::with_outputs(rx, status, egui::Context::default(), volume, make_sink);
         e.spawn = Box::new(|job| job());
+        e.source = Some(crate::deezer::ID);
         e
     }
 
@@ -1509,6 +1512,16 @@ mod tests {
         assert_eq!(shape, [(1, 10, true, false), (3, 40, false, false)], "2 wasn't heard; 3 was heard past half");
     }
 
+    #[test]
+    fn a_listen_cut_by_a_source_switch_is_credited_to_its_own_source() {
+        let (mut e, library, _tx) = engine(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 60)], 0));
+        e.listens.heard(Duration::from_secs(20));
+        e.set_source(crate::subsonic::ID, library);
+        let played = std::mem::take(&mut e.status.lock().unwrap().played);
+        assert_eq!(played.iter().map(|p| p.source).collect::<Vec<_>>(), [crate::deezer::ID.key]);
+    }
+
     // ------------------------------------------------------------ preloading
 
     /// A sink with a buffer the test plays out by hand. A fake track's one frame per
@@ -1557,6 +1570,7 @@ mod tests {
         let jobs = Jobs::default();
         let queued = jobs.clone();
         e.spawn = Box::new(move |job| queued.borrow_mut().push(job));
+        e.source = Some(crate::deezer::ID);
         let library = Arc::new(library);
         e.library = Some(library.clone());
         (e, library, buffer, jobs)

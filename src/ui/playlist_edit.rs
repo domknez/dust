@@ -48,12 +48,20 @@ pub struct Done {
 #[derive(Default)]
 pub struct PlaylistEditing {
     pub dialog: Option<Dialog>,
-    task: Load<Done>,
+    /// Edits sent and not back yet, oldest first: each keeps its own result.
+    tasks: Vec<Load<Done>>,
 }
 
 impl PlaylistEditing {
     pub fn busy(&self) -> bool {
-        self.task.is_loading()
+        self.tasks.iter().any(Load::is_loading)
+    }
+
+    /// The edits that came back since the last call, oldest first.
+    fn finished(&mut self) -> Vec<Result<Done, Error>> {
+        let done = self.tasks.iter_mut().filter_map(Load::poll_take).collect();
+        self.tasks.retain(Load::is_loading);
+        done
     }
 }
 
@@ -97,7 +105,9 @@ impl App {
         if let Edit::Add { playlist, .. } = &edit {
             self.prefs.used_playlist(playlist.id.clone());
         }
-        self.library.editing.task.start(&self.jobs, move || run(&*client, edit));
+        let mut task = Load::default();
+        task.start(&self.jobs, move || run(&*client, edit));
+        self.library.editing.tasks.push(task);
     }
 
     /// What "Add to playlist" offers: the account's playlists, those used last first.
@@ -110,20 +120,28 @@ impl App {
         self.library.editing.dialog = Some(Dialog::Create { title: String::new(), private: false, tracks });
     }
 
-    /// Collect a finished edit: toast, refreshed sidebar, reloaded page.
-    pub(in crate::ui) fn poll_playlist_edits(&mut self, ctx: &egui::Context) {
-        let Some(result) = self.library.editing.task.poll_take() else { return };
-        let done = match result {
-            Ok(done) => done,
-            Err(e) => {
-                self.toasts.error(ctx, format!("Couldn't change the playlist: {e}"));
-                return;
-            }
-        };
-        self.toasts.info(ctx, done.message);
+    /// Collect the finished edits: toast, refreshed sidebar, reloaded page. An
+    /// expired session goes to `failed`, to end it.
+    pub(in crate::ui) fn poll_playlist_edits(&mut self, ctx: &egui::Context, failed: &mut Vec<Error>) {
+        let results = self.library.editing.finished();
+        if results.is_empty() {
+            return;
+        }
+        // Even a failed edit may have changed some of it.
         if let Some(client) = self.client.clone() {
             self.library.playlists_load.start(&self.jobs, move || client.playlists());
         }
+        for result in results {
+            match result {
+                Ok(done) => self.edit_done(ctx, done),
+                Err(e) if e.is_session_expired() => failed.push(e),
+                Err(e) => self.toasts.error(ctx, format!("Couldn't change the playlist: {e}")),
+            }
+        }
+    }
+
+    fn edit_done(&mut self, ctx: &egui::Context, done: Done) {
+        self.toasts.info(ctx, done.message);
         let showing = matches!(&self.browse.view, View::Collection(c) if done.playlist.as_ref().is_some_and(|id| matches!(&c.source, CollSource::Playlist(p) if p == id)));
         if showing && done.deleted {
             self.open_view(View::Playlists);
@@ -196,5 +214,24 @@ impl App {
             None if !close => self.library.editing.dialog = Some(dialog),
             None => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::app::testing::{TestApp, deezer};
+
+    #[test]
+    fn edits_sent_together_each_come_back() {
+        let mut t = TestApp::new("");
+        t.app.source_ready(deezer());
+        t.app.edit_playlist(Edit::Remove { playlist: 5.into(), tracks: vec![1.into()] });
+        t.app.edit_playlist(Edit::Remove { playlist: 6.into(), tracks: vec![2.into()] });
+        assert_eq!(t.app.library.editing.tasks.len(), 2, "the second doesn't drop the first");
+        t.jobs.run_held();
+        let finished = t.app.library.editing.finished();
+        assert_eq!(finished.len(), 2);
+        assert!(!t.app.library.editing.busy());
     }
 }

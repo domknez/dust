@@ -222,6 +222,8 @@ impl App {
         match self.sources.first() {
             Some(other) => self.switch_source(other),
             None => {
+                // Its tracks keep no source to play from, or to be credited to.
+                self.player.send(Cmd::Pause);
                 self.save_queue_now(id);
                 self.client = None;
                 self.clear_content();
@@ -235,6 +237,8 @@ impl App {
         self.library = Library::default();
         self.browse = Browse::default();
         self.lyrics = Default::default();
+        self.crate_radio = Load::default();
+        self.crate_about = Load::default();
     }
 
     /// What the source in use offers (everything while none is).
@@ -453,9 +457,21 @@ mod tests {
         t.update(Action::LogOut);
         assert_eq!(in_use(&t), Some("Navidrome"));
         assert!(t.app.sources.get(deezer::ID).is_none() && t.app.sources.get(subsonic::ID).is_some());
+        t.sent();
         t.update(Action::LogOut);
         assert_eq!(in_use(&t), None, "the login screen");
         assert!(t.app.sources.first().is_none());
+        assert!(matches!(t.sent().as_slice(), [Cmd::Pause]), "nothing left to play from");
+    }
+
+    #[test]
+    fn a_crate_being_put_together_stays_with_its_source() {
+        let mut t = TestApp::new("");
+        t.app.source_ready(deezer());
+        t.app.play_crate();
+        assert!(t.app.crate_radio.is_loading());
+        t.update(Action::SwitchSource(navidrome()));
+        assert!(!t.app.crate_radio.is_loading(), "its tracks are Deezer's");
     }
 
     #[test]

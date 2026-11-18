@@ -131,9 +131,11 @@ impl App {
     pub(in crate::ui) fn restore_backup(&mut self, ctx: &egui::Context, dir: PathBuf) {
         let backup_crate = Crate::load(Log::new("crate", Some(&dir), None));
         let backup_plays = Plays::load(Log::new("history", Some(&dir), None));
-        if let Some(root) = self.crate_box.log().backups_dir() {
-            let now = jiff::Zoned::now().strftime("%Y-%m-%d before restoring %H.%M").to_string();
-            self.write_backup(&root.join(now));
+        let now = jiff::Zoned::now().strftime("%Y-%m-%d before restoring %H.%M").to_string();
+        let saved = self.crate_box.log().backups_dir().is_some_and(|root| self.write_backup(&root.join(now)));
+        if !saved {
+            self.toasts.error(ctx, "Nothing restored: what's there now couldn't be backed up first");
+            return;
         }
         self.crate_box.restore(&backup_crate);
         self.plays.restore(&backup_plays);
@@ -363,5 +365,17 @@ mod tests {
         assert_eq!(text, "# Crate\n\n## New\n\n- that Turkish psych band\n- **Wild God** by Nick Cave (album): start with Joy\n");
         assert_eq!(expand_home("/tmp"), Some(PathBuf::from("/tmp")));
         assert_eq!(expand_home(""), None);
+    }
+
+    #[test]
+    fn nothing_is_restored_unless_what_is_there_is_backed_up_first() {
+        let mut t = crate::ui::app::testing::TestApp::new("");
+        let ctx = egui::Context::default();
+        t.app.crate_note("keep me".into());
+        let root = t.app.crate_box.log().backups_dir().unwrap();
+        std::fs::create_dir_all(root.parent().unwrap()).unwrap();
+        std::fs::write(&root, "a file where the backups go").unwrap();
+        t.app.restore_backup(&ctx, root.join("empty-backup"));
+        assert_eq!(t.app.crate_box.entries().len(), 1, "the Crate is as it was");
     }
 }

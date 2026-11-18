@@ -233,7 +233,14 @@ mod tests {
     }
 
     fn heard(id: u64) -> crate::player::Played {
-        crate::player::Played { track: track(id, true), started_unix: 1_000_000, heard_secs: 200, skipped: false, flow: None }
+        crate::player::Played {
+            source: "deezer",
+            track: track(id, true),
+            started_unix: 1_000_000,
+            heard_secs: 200,
+            skipped: false,
+            flow: None,
+        }
     }
 
     /// The palette's labels, with `playing` playing.

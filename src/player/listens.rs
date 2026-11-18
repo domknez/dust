@@ -6,12 +6,14 @@
 use super::library::Library;
 use super::{Flow, Played};
 use crate::model::{Format, Listen, Track, TrackId};
+use crate::source::SourceId;
 use std::time::Duration;
 
 /// A listen that played to within this many seconds of the end isn't a skip.
 const SKIP_TOLERANCE_SECS: u64 = 3;
 
 struct Current {
+    source: &'static str,
     listen: Listen,
     heard: Duration,
     track_secs: u32,
@@ -31,9 +33,17 @@ impl ListenTracker {
         Self { enabled: true, current: None }
     }
 
-    /// A new track started: report the start and begin counting. `flow`: the
-    /// endless Flow it came from, if any.
-    pub fn start(&mut self, library: Option<&dyn Library>, song_id: TrackId, format: Format, track: &Track, flow: Option<Flow>) {
+    /// A new track of `source` started: report the start and begin counting.
+    /// `flow`: the endless Flow it came from, if any.
+    pub fn start(
+        &mut self,
+        library: Option<&dyn Library>,
+        source: SourceId,
+        song_id: TrackId,
+        format: Format,
+        track: &Track,
+        flow: Option<Flow>,
+    ) {
         let track_secs = track.duration;
         let listen = Listen {
             song_id: song_id.clone(),
@@ -48,7 +58,8 @@ impl ListenTracker {
         {
             library.report_listen_start(song_id);
         }
-        self.current = Some(Current { listen, heard: Duration::ZERO, track_secs, seeked: false, track: track.clone(), flow });
+        self.current =
+            Some(Current { source: source.key, listen, heard: Duration::ZERO, track_secs, seeked: false, track: track.clone(), flow });
     }
 
     /// Audio played for `elapsed`.
@@ -75,6 +86,7 @@ impl ListenTracker {
         let track_secs = current.track_secs as u64;
         let ended_early = secs + SKIP_TOLERANCE_SECS < track_secs;
         let played = Played {
+            source: current.source,
             track: current.track,
             started_unix: current.listen.started_unix,
             heard_secs: secs,

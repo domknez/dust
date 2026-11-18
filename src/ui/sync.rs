@@ -160,12 +160,8 @@ impl Log {
 /// Write `lines` to `file` (via a temporary file and a rename, so a crash can't
 /// leave half of it).
 pub fn write_lines(file: &Path, lines: &[String]) -> bool {
-    if let Some(dir) = file.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
     let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
-    let tmp = file.with_extension("jsonl.tmp");
-    match std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, file)) {
+    match crate::atomic_file::write(file, text) {
         Ok(()) => true,
         Err(e) => {
             log_warn!("could not write {}: {e}", file.display());

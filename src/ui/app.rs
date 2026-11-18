@@ -78,11 +78,12 @@ impl App {
     /// history turned off).
     pub(super) fn record_plays(&mut self) {
         let played = self.player.take_played();
-        let Some(client) = self.client.as_ref().filter(|_| self.prefs.history_on) else { return };
-        let source = client.id().key;
+        if !self.prefs.history_on {
+            return;
+        }
         let any = !played.is_empty();
         for played in played {
-            self.plays.record(Play::new(source, played));
+            self.plays.record(Play::new(played));
         }
         if any && self.prefs.flow_new_only {
             self.send_skip_heard();
@@ -521,9 +522,9 @@ impl App {
     fn poll_loads(&mut self, ctx: &egui::Context) {
         self.poll_login();
         self.poll_sources();
-        self.poll_likes(ctx);
-        self.poll_playlist_edits(ctx);
         let mut failed = self.library.poll();
+        self.poll_likes(ctx, &mut failed);
+        self.poll_playlist_edits(ctx, &mut failed);
         let link = self.browse.poll(&self.library.playlists, &mut failed);
         self.poll_quick_play(ctx, &mut failed);
         // Each error is shown with what failed to load; an expired session also
@@ -887,9 +888,15 @@ mod tests {
         let mut t = logged_in();
         let now = jiff::Timestamp::now().as_second() as u64;
         for (ago, id) in [(300, 1), (200, 1), (100, 2)] {
-            let played =
-                crate::player::Played { track: track(id, true), started_unix: now - ago, heard_secs: 200, skipped: false, flow: None };
-            t.app.plays.record(Play::new("deezer", played));
+            let played = crate::player::Played {
+                source: "deezer",
+                track: track(id, true),
+                started_unix: now - ago,
+                heard_secs: 200,
+                skipped: false,
+                flow: None,
+            };
+            t.app.plays.record(Play::new(played));
         }
         t.update(Action::OpenCollection(Coll::history(Smart::OnRepeat)));
         t.jobs.run_held();

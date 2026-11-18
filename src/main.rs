@@ -7,6 +7,7 @@
 
 #[macro_use]
 mod log;
+mod atomic_file;
 mod cli;
 mod credentials;
 mod deezer;

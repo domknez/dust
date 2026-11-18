@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Logins: a keychain that can't be read for a moment no longer leads to the other
+  source's login being dropped on the next save
+- Crate and history: a backup is restored only once what's there now is backed up;
+  plays and Crate changes made while the sync folder is out of reach are kept and
+  written once it's back; settings are saved so a crash can't leave them half written
+- History: a track playing when you switch source or log out is credited to the
+  source it played from; logging out of the last source pauses playback
+- Back and Forward skip pages turned off in Settings since
+- Playlists: edits made one after another each report back; an expired session
+  while editing a playlist or a like goes to the login screen
+
 ## 0.31.1 (2026-11-18)
 
 - Listening: the cards of lists made from your history grow to fit their

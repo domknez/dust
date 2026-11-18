@@ -145,6 +145,9 @@ pub enum State {
 /// heard, and the Flow it came from.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Played {
+    /// The source it played from ([`SourceId::key`]), stamped when it started, so a
+    /// listen that ends after a switch is still credited to the right one.
+    pub source: &'static str,
     pub track: Track,
     pub started_unix: u64,
     pub heard_secs: u64,

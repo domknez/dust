@@ -42,14 +42,19 @@ impl App {
     }
 
     /// Collect toggle results: confirm them, or undo the ones the source refused.
-    pub(in crate::ui) fn poll_likes(&mut self, ctx: &egui::Context) {
+    /// An expired session goes to `failed`, to end it.
+    pub(in crate::ui) fn poll_likes(&mut self, ctx: &egui::Context, failed: &mut Vec<Error>) {
         loop {
             match self.library.likes.done.try_recv() {
                 Ok((what, liked, Err(e))) => {
-                    log_warn!("like {what:?}: {e}");
                     self.library.likes.likes.set(&what, !liked);
                     self.like_changed(&what);
-                    self.toasts.error(ctx, format!("Couldn't update your likes: {e}"));
+                    if e.is_session_expired() {
+                        failed.push(e);
+                    } else {
+                        log_warn!("like {what:?}: {e}");
+                        self.toasts.error(ctx, format!("Couldn't update your likes: {e}"));
+                    }
                 }
                 Ok((what, liked, Ok(()))) => self.toasts.info(ctx, done_message(&what, liked)),
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => return,

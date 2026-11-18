@@ -54,13 +54,7 @@ impl QueueFiles {
             let _ = std::fs::remove_file(&path);
             return;
         }
-        let text = encode(st).to_string();
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        // Write then rename, so a crash mid-write can't leave a broken file.
-        let tmp = path.with_extension("json.tmp");
-        if let Err(e) = std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, &path)) {
+        if let Err(e) = crate::atomic_file::write(&path, encode(st).to_string()) {
             log_warn!("could not save the queue to {}: {e}", path.display());
         }
     }

@@ -230,6 +230,9 @@ pub struct Crate {
     log: Log,
     /// Lines in this computer's file.
     lines: usize,
+    /// A change that couldn't be written (the sync folder unreachable): the file
+    /// is written afresh before it is read again, so the change isn't lost.
+    unsaved: bool,
 }
 
 impl Crate {
@@ -246,8 +249,15 @@ impl Crate {
         store
     }
 
-    /// Read the log again (another computer changed it).
+    /// Read the log again (another computer changed it). Changes not yet written
+    /// are written first; while they can't be, what's here is kept as it is.
     pub fn reload(&mut self) {
+        if self.unsaved {
+            self.rewrite();
+            if self.unsaved {
+                return;
+            }
+        }
         *self = Crate::load(std::mem::take(&mut self.log));
     }
 
@@ -314,10 +324,12 @@ impl Crate {
         let at = unix_now();
         let line = change.encode(at).to_string();
         self.apply(at, change);
-        if self.lines + 1 > self.entries.len() + self.removed.len() + SLACK {
+        if self.unsaved || self.lines + 1 > self.entries.len() + self.removed.len() + SLACK {
             self.rewrite();
         } else if self.log.append(&line) {
             self.lines += 1;
+        } else {
+            self.unsaved = true;
         }
     }
 
@@ -372,7 +384,8 @@ impl Crate {
 
     /// Write this computer's file afresh.
     fn rewrite(&mut self) {
-        if self.log.rewrite(&self.lines()) {
+        self.unsaved = !self.log.rewrite(&self.lines());
+        if !self.unsaved {
             self.lines = self.entries.len() + self.removed.len();
         }
     }
@@ -471,6 +484,21 @@ mod tests {
         assert_eq!((saved.title(), saved.source.as_str()), ("that Turkish psych band", ""));
         assert_eq!(again.new_count(), 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn changes_made_while_the_sync_folder_is_away_are_kept() {
+        use crate::ui::sync::SyncDir;
+        let root = dir("away");
+        let mut c = Crate::load(Log::new("crate", None, Some(&SyncDir::new(&root, "Air-0001"))));
+        let id = c.add("deezer", Thing::Track(track(1)), "", "");
+        c.reload();
+        assert!(c.get(&id).is_some(), "a reload while it can't be written keeps it");
+        std::fs::create_dir_all(&root).unwrap();
+        c.reload();
+        assert!(c.get(&id).is_some(), "and writes it once the folder is back");
+        assert!(Crate::load(c.log().clone()).get(&id).is_some());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

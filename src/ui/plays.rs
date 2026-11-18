@@ -32,9 +32,9 @@ pub struct Play {
 }
 
 impl Play {
-    pub fn new(source: &str, played: Played) -> Self {
+    pub fn new(played: Played) -> Self {
         Play {
-            source: source.to_string(),
+            source: played.source.to_string(),
             at: played.started_unix,
             heard_secs: played.heard_secs,
             skipped: played.skipped,
@@ -86,6 +86,9 @@ pub struct Plays {
     log: Log,
     /// Lines in this computer's file, to know when to compact it.
     lines: usize,
+    /// A play that couldn't be written (the sync folder unreachable): the file is
+    /// written afresh before it is read again, so the play isn't lost.
+    unsaved: bool,
 }
 
 impl Plays {
@@ -102,11 +105,18 @@ impl Plays {
         let lines = log.own_lines();
         let heard = plays.iter().map(|p| p.track.id.clone()).collect();
         let albums = plays.iter().filter(|p| !p.track.album_id.is_empty()).map(|p| p.track.album_id.clone()).collect();
-        Plays { plays, heard, albums, log, lines }
+        Plays { plays, heard, albums, log, lines, unsaved: false }
     }
 
-    /// Read the log again (another computer added to it).
+    /// Read the log again (another computer added to it). Plays not yet written
+    /// are written first; while they can't be, what's here is kept as it is.
     pub fn reload(&mut self) {
+        if self.unsaved {
+            self.rewrite();
+            if self.unsaved {
+                return;
+            }
+        }
         *self = Plays::load(std::mem::take(&mut self.log));
     }
 
@@ -129,10 +139,12 @@ impl Plays {
         if self.plays.len() > KEEP {
             self.plays.remove(0);
         }
-        if self.lines + 1 >= COMPACT_AT {
+        if self.unsaved || self.lines + 1 >= COMPACT_AT {
             self.rewrite();
         } else if self.log.append(&line) {
             self.lines += 1;
+        } else {
+            self.unsaved = true;
         }
     }
 
@@ -143,7 +155,8 @@ impl Plays {
 
     /// Write this computer's file afresh with what's kept.
     fn rewrite(&mut self) {
-        if self.log.rewrite(&self.lines()) {
+        self.unsaved = !self.log.rewrite(&self.lines());
+        if !self.unsaved {
             self.lines = self.plays.len();
         }
     }
@@ -341,6 +354,21 @@ mod tests {
         air.rewrite();
         imac.reload();
         assert_eq!(imac.len(), 3, "a play in two files is one play");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plays_made_while_the_sync_folder_is_away_are_kept() {
+        use crate::ui::sync::SyncDir;
+        let root = dir("away");
+        let mut plays = Plays::load(Log::new("history", None, Some(&SyncDir::new(&root, "Air-0001"))));
+        plays.record(play("deezer", 1));
+        plays.reload();
+        assert_eq!(plays.len(), 1, "a reload while it can't be written keeps it");
+        std::fs::create_dir_all(&root).unwrap();
+        plays.reload();
+        assert_eq!(plays.len(), 1, "and writes it once the folder is back");
+        assert_eq!(Plays::load(plays.log().clone()).len(), 1);
         let _ = std::fs::remove_dir_all(&root);
     }
 

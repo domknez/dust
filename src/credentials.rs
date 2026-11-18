@@ -45,7 +45,10 @@ impl Logins {
     /// Every login in the item; fields that aren't text (`null` for a login 0.19
     /// didn't have) are none.
     fn from_json(text: &str) -> Logins {
-        let v: serde_json::Value = serde_json::from_str(text).unwrap_or_default();
+        let v: serde_json::Value = serde_json::from_str(text).unwrap_or_else(|e| {
+            log_warn!("the stored logins aren't readable ({e}); starting without them");
+            serde_json::Value::Null
+        });
         let logins = v.as_object().into_iter().flatten().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())));
         Logins(logins.collect())
     }
@@ -59,20 +62,31 @@ fn entry_for(account: &str) -> Option<keyring_core::Entry> {
     keyring_core::Entry::new(SERVICE, account).ok()
 }
 
-/// Run `f` on the logins, reading them from the keychain the first time.
-fn with_logins<R>(f: impl FnOnce(&mut Logins) -> R) -> R {
-    let mut logins = LOGINS.lock().unwrap_or_else(|e| e.into_inner());
-    f(logins.get_or_insert_with(read))
+/// Run `f` on the logins, reading them from the keychain the first time. None
+/// while the keychain can't be read: nothing is cached then, so the next call
+/// tries again, and nothing can be written over logins that weren't seen.
+fn with_logins<R>(f: impl FnOnce(&mut Logins) -> R) -> Option<R> {
+    let mut slot = LOGINS.lock().unwrap_or_else(|e| e.into_inner());
+    cached(&mut slot, read).map(f)
 }
 
-fn read() -> Logins {
-    let Some(entry) = entry_for(ACCOUNT) else { return Logins::default() };
+/// The logins in `slot`, filled by `read` when empty; a failed read leaves it empty.
+fn cached(slot: &mut Option<Logins>, read: impl FnOnce() -> Option<Logins>) -> Option<&mut Logins> {
+    if slot.is_none() {
+        *slot = read();
+    }
+    slot.as_mut()
+}
+
+/// The logins in the keychain, or None when it can't be read.
+fn read() -> Option<Logins> {
+    let entry = entry_for(ACCOUNT)?;
     match entry.get_password() {
-        Ok(text) => Logins::from_json(&text),
-        Err(keyring_core::Error::NoEntry) => migrate(),
+        Ok(text) => Some(Logins::from_json(&text)),
+        Err(keyring_core::Error::NoEntry) => Some(migrate()),
         Err(e) => {
             log_warn!("could not read logins from the keychain: {e}");
-            Logins::default()
+            None
         }
     }
 }
@@ -105,18 +119,21 @@ fn write(logins: &Logins) {
 /// Change the logins and save them (only if they changed: every write to the
 /// keychain may ask for access again).
 fn update(f: impl FnOnce(&mut Logins)) {
-    with_logins(|logins| {
+    let saved = with_logins(|logins| {
         let before = logins.clone();
         f(logins);
         if *logins != before {
             write(logins);
         }
     });
+    if saved.is_none() {
+        log_warn!("login not saved: the keychain couldn't be read, and writing now would drop the other logins");
+    }
 }
 
 /// The stored login of `source`, if any.
 pub fn load(source: SourceId) -> Option<String> {
-    with_logins(|l| l.0.get(source.login_key).cloned())
+    with_logins(|l| l.0.get(source.login_key).cloned()).flatten()
 }
 
 pub fn save(source: SourceId, secret: &str) {
@@ -144,6 +161,16 @@ mod tests {
         let both = logins(&[("arl", "abc"), ("server", r#"{"url":"http://nas"}"#)]);
         assert_eq!(Logins::from_json(&both.to_json()), both);
         assert_eq!(Logins::from_json("not json"), Logins::default());
+    }
+
+    #[test]
+    fn a_failed_read_is_not_cached() {
+        let mut slot = None;
+        assert!(cached(&mut slot, || None).is_none(), "nothing to work on");
+        assert!(slot.is_none(), "so a save can't write over logins it never saw");
+        let read = cached(&mut slot, || Some(logins(&[("arl", "abc")]))).cloned();
+        assert_eq!(read, Some(logins(&[("arl", "abc")])), "the next call reads again");
+        assert_eq!(cached(&mut slot, || panic!("read once")).cloned(), read, "and keeps it");
     }
 
     #[test]

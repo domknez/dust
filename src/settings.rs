@@ -128,10 +128,7 @@ impl Prefs {
             return;
         }
         let Some(p) = &self.file else { return };
-        if let Some(dir) = p.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        if let Err(e) = std::fs::write(p, merge(&read(p), &changed)) {
+        if let Err(e) = crate::atomic_file::write(p, merge(&read(p), &changed)) {
             log_warn!("could not save settings to {}: {e}", p.display());
         }
     }
