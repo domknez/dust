@@ -7,6 +7,28 @@ use eframe::egui::{self, Color32, CornerRadius, Rect, Response, Sense, Ui, Vec2,
 
 const PILL_HEIGHT: f32 = 40.0;
 const FIELD_HEIGHT: f32 = 38.0;
+/// A filter chip: its height, and the room either side of its label.
+const CHIP_HEIGHT: f32 = 30.0;
+const CHIP_PADDING: f32 = 12.0;
+
+/// A filter chip, filled while `on`, outlined otherwise: one of a row of choices
+/// (a period, a filter).
+pub fn chip(ui: &mut Ui, label: &str, on: bool) -> Response {
+    let p = colors();
+    let galley = ui.painter().layout_no_wrap(label.to_string(), ty::SMALL.font(), p.text);
+    let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 2.0 * CHIP_PADDING, CHIP_HEIGHT), Sense::click());
+    let corner = CornerRadius::same((CHIP_HEIGHT / 2.0) as u8);
+    if on {
+        ui.painter().rect_filled(rect, corner, p.text);
+    } else {
+        if resp.hovered() {
+            ui.painter().rect_filled(rect, corner, p.hover);
+        }
+        ui.painter().rect_stroke(rect, corner, egui::Stroke::new(1.0, p.border), egui::StrokeKind::Inside);
+    }
+    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, label, ty::SMALL.font(), if on { p.bg } else { p.text });
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
 
 /// Icon-only button; brightens on hover.
 pub fn icon_button(ui: &mut Ui, icon: Icon, size: f32, color: Color32) -> Response {

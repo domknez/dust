@@ -5,6 +5,7 @@ mod art;
 mod cards;
 mod controls;
 mod decor;
+mod empty;
 mod grid;
 mod load_state;
 mod menu;
@@ -15,9 +16,10 @@ mod track_table;
 pub use art::{cover, tile};
 pub use cards::{CardClick, FlowPick, card, channel_card, flow_panel, play_knob, queue_row};
 pub use controls::{
-    heart_at, icon_button, icon_pill, pill, pill_fit, pill_width, play_button, segmented, tag, text_field, thin_slider, wave_slider,
+    chip, heart_at, icon_button, icon_pill, pill, pill_fit, pill_width, play_button, segmented, tag, text_field, thin_slider, wave_slider,
 };
 pub use decor::{equalizer, fade_to, wordmark};
+pub use empty::{empty_panel, empty_state};
 pub use grid::{Grid, GridColumns};
 pub use load_state::load_state;
 pub use menu::{

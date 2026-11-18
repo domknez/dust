@@ -9,7 +9,7 @@ use crate::ui::state::for_playlist;
 use crate::ui::style::icons::{self, Icon};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, text_left};
-use eframe::egui::{self, CornerRadius, Rect, RichText, Sense, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, CornerRadius, Rect, Sense, Ui, Vec2, pos2, vec2};
 
 impl App {
     pub(in crate::ui) fn queue_panel(&mut self, ui: &mut Ui, st: &Status, acts: &mut Actions) {
@@ -26,7 +26,7 @@ impl App {
             ui.add_space(18.0);
         }
         if !has_current && upcoming == 0 {
-            empty_state(ui);
+            widgets::empty_panel(ui, "Your queue is empty", "Right-click a track or card → Add to queue");
             return;
         }
         if has_current {
@@ -189,13 +189,4 @@ fn text_button(ui: &Ui, at: egui::Pos2, label: &str, icon: Option<Icon>, right: 
     }
     ui.painter().galley(pos2(left + icon_width, at.y - galley.size().y / 2.0), galley, color);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
-}
-
-fn empty_state(ui: &mut Ui) {
-    ui.add_space(40.0);
-    ui.vertical_centered(|ui| {
-        ui.label(RichText::new("Your queue is empty").color(colors().dim).font(ty::TITLE.font()));
-        ui.add_space(4.0);
-        ui.label(RichText::new("Right-click a track or card → Add to queue").color(colors().faint).font(ty::SMALL.font()));
-    });
 }

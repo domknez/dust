@@ -78,10 +78,8 @@ impl App {
             ui.add_space(18.0);
             if st.plays + st.skipped == 0 {
                 ui.add_space(20.0);
-                ui.label(RichText::new("Nothing heard yet").color(p.dim).font(ty::TITLE.font()));
-                ui.add_space(4.0);
                 let hint = format!("Play something; what you hear {} adds up here.", self.stats_view.period.phrase());
-                ui.label(RichText::new(hint).color(p.faint).font(ty::SMALL.font()));
+                widgets::empty_state(ui, "Nothing heard yet", &hint);
                 return;
             }
             tiles(ui, &st, self.stats_view.period);
@@ -130,25 +128,10 @@ impl App {
     }
 
     fn period_chips(&mut self, ui: &mut Ui) {
-        let p = colors();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             for period in Period::ALL {
-                let label = period.label();
-                let galley = ui.painter().layout_no_wrap(label.to_string(), ty::SMALL.font(), p.text);
-                let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 24.0, 30.0), Sense::click());
-                let on = self.stats_view.period == period;
-                let corner = CornerRadius::same(15);
-                if on {
-                    ui.painter().rect_filled(rect, corner, p.text);
-                } else {
-                    if resp.hovered() {
-                        ui.painter().rect_filled(rect, corner, p.hover);
-                    }
-                    ui.painter().rect_stroke(rect, corner, egui::Stroke::new(1.0, p.border), egui::StrokeKind::Inside);
-                }
-                ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, ty::SMALL.font(), if on { p.bg } else { p.text });
-                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                if widgets::chip(ui, period.label(), self.stats_view.period == period).clicked() {
                     self.stats_view.period = period;
                 }
             }

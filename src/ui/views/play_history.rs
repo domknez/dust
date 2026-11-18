@@ -58,7 +58,7 @@ impl App {
         }
         let (key, lines) = cache.take().expect("just made");
         if lines.is_empty() {
-            empty_state(ui);
+            widgets::empty_panel(ui, "Nothing heard yet", "Tracks you listen to show up here");
             self.history_view.lines = Some((key, lines));
             return;
         }
@@ -178,15 +178,6 @@ fn from(play: &Play, newer: Option<&Play>, older: Option<&Play>, radio: bool) ->
     let album = &play.track.album_id;
     let same = |other: Option<&Play>| other.is_some_and(|o| o.flow.is_none() && !album.is_empty() && o.track.album_id == *album);
     (same(newer) || same(older)).then(|| format!("Album · {}", play.track.album))
-}
-
-fn empty_state(ui: &mut Ui) {
-    ui.add_space(40.0);
-    ui.vertical_centered(|ui| {
-        ui.label(RichText::new("Nothing heard yet").color(colors().dim).font(ty::TITLE.font()));
-        ui.add_space(4.0);
-        ui.label(RichText::new("Tracks you listen to show up here").color(colors().faint).font(ty::SMALL.font()));
-    });
 }
 
 #[cfg(test)]

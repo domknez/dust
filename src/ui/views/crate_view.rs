@@ -299,12 +299,7 @@ impl App {
         let current = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             if fresh.is_empty() {
-                ui.add_space(24.0);
-                ui.vertical_centered(|ui| {
-                    ui.label(RichText::new("Nothing new to check out").color(p.dim).font(ty::TITLE.font()));
-                    ui.add_space(4.0);
-                    ui.label(RichText::new(format!("{SAVE_KEYS} saves what's playing")).color(p.faint).font(ty::SMALL.font()));
-                });
+                widgets::empty_panel(ui, "Nothing new to check out", &format!("{SAVE_KEYS} saves what's playing"));
             }
             for entry in &fresh {
                 let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
@@ -433,9 +428,7 @@ impl App {
             } else {
                 ("Nothing here", "Try another filter".to_string())
             };
-            ui.label(RichText::new(title).color(p.dim).font(ty::TITLE.font()));
-            ui.add_space(4.0);
-            ui.label(RichText::new(hint).color(p.faint).font(ty::SMALL.font()));
+            widgets::empty_state(ui, title, &hint);
             return;
         }
         let area = ui.available_rect_before_wrap();
@@ -511,25 +504,11 @@ impl App {
                 chips.push((label, Filter::Kind(kind)));
             }
         }
-        let p = colors();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             for (label, filter) in chips {
-                let text = format!("{label}  {}", count(filter));
-                let galley = ui.painter().layout_no_wrap(text.clone(), ty::SMALL.font(), p.text);
-                let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 24.0, 30.0), Sense::click());
                 let on = self.crates.view.filter == filter;
-                let corner = CornerRadius::same(15);
-                if on {
-                    ui.painter().rect_filled(rect, corner, p.text);
-                } else {
-                    if resp.hovered() {
-                        ui.painter().rect_filled(rect, corner, p.hover);
-                    }
-                    ui.painter().rect_stroke(rect, corner, egui::Stroke::new(1.0, p.border), egui::StrokeKind::Inside);
-                }
-                ui.painter().text(rect.center(), Align2::CENTER_CENTER, text, ty::SMALL.font(), if on { p.bg } else { p.text });
-                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                if widgets::chip(ui, &format!("{label}  {}", count(filter)), on).clicked() {
                     self.crates.view.filter = filter;
                     self.crates.view.open = false;
                 }
