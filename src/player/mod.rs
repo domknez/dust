@@ -226,7 +226,7 @@ impl PlayerHandle {
 
     #[cfg(test)]
     pub fn set_status(&self, change: impl FnOnce(&mut Status)) {
-        change(&mut self.status.lock().unwrap());
+        change(&mut self.status.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
     }
 
     /// The tracks heard since the last call, oldest first.

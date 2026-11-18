@@ -163,14 +163,12 @@ impl Queue {
 
     /// Append tracks not already queued (Flow batches overlap). Returns whether any were added.
     pub fn extend_unique(&mut self, tracks: Vec<Track>) -> bool {
+        let mut queued: HashSet<TrackId> = self.tracks.iter().map(|t| t.id.clone()).collect();
         let before = self.tracks.len();
-        for t in tracks {
-            if !self.tracks.iter().any(|q| q.id == t.id) {
-                self.tracks.push(t);
-            }
-        }
-        self.dirty = true;
-        self.tracks.len() > before
+        self.tracks.extend(tracks.into_iter().filter(|t| queued.insert(t.id.clone())));
+        let added = self.tracks.len() > before;
+        self.dirty |= added;
+        added
     }
 
     pub fn remove(&mut self, i: usize) -> Removed {
@@ -291,6 +289,17 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn adding_only_queued_tracks_changes_nothing() {
+        let mut q = Queue::default();
+        q.replace(vec![t(1), t(2)], 0);
+        let _ = q.take_snapshot();
+        assert!(!q.extend_unique(vec![t(2), t(1)]));
+        assert!(q.take_snapshot().is_none(), "no new queue to show or save");
+        assert!(q.extend_unique(vec![t(2), t(3), t(3)]));
+        assert_eq!(ids(&q), [1, 2, 3]);
     }
 
     #[test]

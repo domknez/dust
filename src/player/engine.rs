@@ -371,7 +371,7 @@ impl Engine {
         self.stream = None;
         self.pending.clear();
         self.playing = true;
-        self.status.lock().unwrap().error = None;
+        lock(&self.status).error = None;
         self.publish(true);
         self.ensure_sink();
         log_debug!("start track at {at:.1} s on {} (flush)", self.output.name());
@@ -470,7 +470,7 @@ impl Engine {
     /// The current listen is over: report it, and hand it to the UI's play history.
     fn finish_listen(&mut self) {
         if let Some(played) = self.listens.finish(self.library.as_deref()) {
-            self.status.lock().unwrap().played.push(played);
+            lock(&self.status).played.push(played);
         }
     }
 
@@ -832,7 +832,7 @@ impl Engine {
         self.last_publish = Instant::now();
         let position = self.restored_at.unwrap_or_else(|| self.shown_position());
         let restored = self.restored_at.is_some();
-        let mut st = self.status.lock().unwrap();
+        let mut st = lock(&self.status);
         st.position = position;
         st.track = match &self.handoff {
             Some(h) => Some(h.track.clone()),
@@ -874,9 +874,15 @@ impl Engine {
 
     fn error(&mut self, e: String) {
         log_error!("{e}");
-        self.status.lock().unwrap().error = Some(e);
+        lock(&self.status).error = Some(e);
         self.ctx.request_repaint();
     }
+}
+
+/// The status shared with the UI, also after a thread panicked holding it (each
+/// change to it is whole).
+fn lock(status: &Mutex<Status>) -> std::sync::MutexGuard<'_, Status> {
+    status.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(test)]

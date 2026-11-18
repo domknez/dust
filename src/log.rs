@@ -121,7 +121,7 @@ pub fn write(level: Level, args: std::fmt::Arguments) {
         && let Some(file) = FILE.get()
     {
         let line = format!("{} {t:9.3} [{name}] {}: {args}\n", utc_now(), thread_name());
-        let _ = file.lock().unwrap().write_all(line.as_bytes());
+        let _ = file.lock().unwrap_or_else(std::sync::PoisonError::into_inner).write_all(line.as_bytes());
     }
 }
 

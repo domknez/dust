@@ -54,7 +54,7 @@ pub struct PtpPeer {
 
 impl Drop for PtpPeer {
     fn drop(&mut self) {
-        let mut peers = self.master.peers.lock().unwrap();
+        let mut peers = self.master.peers.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(i) = peers.iter().position(|(ip, _)| *ip == self.ip) {
             peers[i].1 -= 1;
             if peers[i].1 == 0 {
@@ -73,7 +73,7 @@ impl PtpPeer {
 /// Shared master, started on first use.
 pub fn join(ip: IpAddr) -> Result<PtpPeer, String> {
     static MASTER: Mutex<Weak<PtpMaster>> = Mutex::new(Weak::new());
-    let mut slot = MASTER.lock().unwrap();
+    let mut slot = MASTER.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let master = match slot.upgrade() {
         Some(m) => m,
         None => {
@@ -83,7 +83,7 @@ pub fn join(ip: IpAddr) -> Result<PtpPeer, String> {
         }
     };
     {
-        let mut peers = master.peers.lock().unwrap();
+        let mut peers = master.peers.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         match peers.iter_mut().find(|(p, _)| *p == ip) {
             Some((_, n)) => *n += 1,
             None => peers.push((ip, 1)),
@@ -143,7 +143,7 @@ impl PtpMaster {
     }
 
     fn send_round(&self, seq: u16, announce: bool) {
-        let peers: Vec<IpAddr> = self.peers.lock().unwrap().iter().map(|(ip, _)| *ip).collect();
+        let peers: Vec<IpAddr> = self.peers.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().map(|(ip, _)| *ip).collect();
         if announce {
             let a = self.announce(seq);
             let s = self.signaling(seq);

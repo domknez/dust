@@ -9,7 +9,7 @@ use super::pairing::{Encryptor, hkdf32};
 use crate::output::airplay::dacp::{self, Remote};
 use crate::output::airplay::volume;
 use chacha20poly1305::aead::{AeadInOut, KeyInit};
-use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce, Tag};
+use chacha20poly1305::{ChaCha20Poly1305, Key, Tag};
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
 
@@ -84,16 +84,18 @@ impl Frames {
     }
 }
 
+/// `frame` (its text, then a 16-byte tag) decrypted; None if it's too short or
+/// doesn't check out.
 fn open(key: &[u8; 32], counter: u64, aad: &[u8], frame: &[u8]) -> Option<Vec<u8>> {
-    let n = frame.len() - 16;
-    let mut nonce = [0u8; 12];
-    nonce[4..].copy_from_slice(&counter.to_le_bytes());
+    let n = frame.len().checked_sub(TAG_LEN)?;
     let tag = Tag::try_from(&frame[n..]).ok()?;
     let mut buf = frame[..n].to_vec();
     let cipher = ChaCha20Poly1305::new(&Key::from(*key));
-    cipher.decrypt_inout_detached(&Nonce::from(nonce), aad, buf.as_mut_slice().into(), &tag).ok()?;
+    cipher.decrypt_inout_detached(&super::pairing::nonce(counter), aad, buf.as_mut_slice().into(), &tag).ok()?;
     Some(buf)
 }
+
+const TAG_LEN: usize = 16;
 
 /// Length of the first complete request (head + Content-Length body) in `buf`.
 fn request_len(buf: &[u8]) -> Option<usize> {
@@ -195,5 +197,6 @@ mod tests {
         let len = [sealed[0], sealed[1]];
         assert_eq!(open(&key, 0, &len, &sealed[2..]).as_deref(), Some(&b"POST /x RTSP/1.0\r\n\r\n"[..]));
         assert!(open(&[8u8; 32], 0, &len, &sealed[2..]).is_none());
+        assert!(open(&key, 0, &len, &sealed[2..10]).is_none(), "shorter than a tag: refused, no panic");
     }
 }

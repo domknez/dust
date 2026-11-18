@@ -31,7 +31,7 @@ impl Jobs {
 
     pub fn run(&self, job: impl FnOnce() + Send + 'static) {
         match &self.held {
-            Some(held) => held.lock().unwrap().push(Box::new(job)),
+            Some(held) => held.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(Box::new(job)),
             None => {
                 let ctx = self.ctx.clone();
                 std::thread::spawn(move || {
@@ -45,13 +45,13 @@ impl Jobs {
     /// How many jobs are waiting.
     #[cfg(test)]
     pub fn waiting(&self) -> usize {
-        self.held.as_ref().map_or(0, |held| held.lock().unwrap().len())
+        self.held.as_ref().map_or(0, |held| held.lock().unwrap_or_else(std::sync::PoisonError::into_inner).len())
     }
 
     /// Run the waiting jobs now, on this thread.
     #[cfg(test)]
     pub fn run_held(&self) {
-        let jobs = std::mem::take(&mut *self.held.as_ref().expect("held jobs").lock().unwrap());
+        let jobs = std::mem::take(&mut *self.held.as_ref().expect("held jobs").lock().unwrap_or_else(std::sync::PoisonError::into_inner));
         jobs.into_iter().for_each(|job| job());
     }
 }

@@ -132,7 +132,7 @@ impl Covers {
                 self.start_workers();
                 self.slots.insert(url.to_string(), Slot::Loading);
                 let (lock, cvar) = &*self.queue;
-                let mut q = lock.lock().unwrap();
+                let mut q = lock.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 q.push_front(url.to_string());
                 // Drop the stalest requests; they are re-requested if still visible.
                 while q.len() > MAX_QUEUE {
@@ -151,7 +151,7 @@ fn worker(queue: Queue, tx: Sender<Done>, agent: ureq::Agent, ctx: egui::Context
     loop {
         let url = {
             let (lock, cvar) = &*queue;
-            let mut q = lock.lock().unwrap();
+            let mut q = lock.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             loop {
                 if let Some(u) = q.pop_front() {
                     break u;

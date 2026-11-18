@@ -155,7 +155,8 @@ pub fn hkdf32(ikm: &[u8], salt: &str, info: &str) -> [u8; 32] {
 
 const BLOCK_MAX: usize = 0x400;
 
-fn nonce(counter: u64) -> Nonce {
+/// The ChaCha20 nonce of frame `counter` on an AirPlay 2 channel.
+pub(super) fn nonce(counter: u64) -> Nonce {
     let mut n = [0u8; 12];
     n[4..].copy_from_slice(&counter.to_le_bytes());
     Nonce::from(n)
@@ -208,7 +209,8 @@ impl<R: Read> DecryptReader<R> {
 impl<R: Read> Read for DecryptReader<R> {
     fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
         let Some((cipher, counter)) = self.cipher.as_mut() else { return self.inner.read(out) };
-        if self.pos == self.plain.len() {
+        // An empty frame isn't the end of the stream: read on to one with data.
+        while self.pos == self.plain.len() {
             let mut len = [0u8; 2];
             match self.inner.read_exact(&mut len) {
                 Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(0),
@@ -296,6 +298,7 @@ mod tests {
         let mut enc = Encryptor::new(&key);
         let msg: Vec<u8> = (0..3000).map(|i| i as u8).collect();
         let mut wire = enc.seal(b"hello");
+        wire.extend(enc.seal(b""));
         wire.extend(enc.seal(&msg));
         let mut r = DecryptReader::new(&wire[..]);
         r.enable(&key);

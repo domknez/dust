@@ -82,7 +82,7 @@ impl Shared {
     }
 
     fn remember(&self, seq: u16, packet: Vec<u8>) {
-        let mut h = self.history.lock().unwrap();
+        let mut h = self.history.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if h.len() == HISTORY {
             h.pop_front();
         }
@@ -114,7 +114,7 @@ pub fn control_loop(sock: UdpSocket, dst: SocketAddr, sh: &Shared) {
         let Ok((n, _)) = sock.recv_from(&mut buf) else { continue };
         let Some((first, count)) = packets::retransmit_request(&buf[..n]) else { continue };
         sh.stats.requested.fetch_add(count as u64, Ordering::Relaxed);
-        let history = sh.history.lock().unwrap();
+        let history = sh.history.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         for seq in (0..count).map(|i| first.wrapping_add(i)) {
             if let Some((_, packet)) = history.iter().find(|(s, _)| *s == seq) {
                 let _ = sock.send_to(&packets::retransmission(seq, packet), dst);

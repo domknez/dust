@@ -47,10 +47,38 @@ impl Deezer {
         let info = StreamInfo {
             song_id: source.song_id.clone(),
             format: source.format,
-            extension: if source.format == Format::Flac { "flac" } else { "mp3" }.into(),
+            extension: match source.format {
+                Format::Flac => "flac".into(),
+                Format::Podcast => podcast_extension(&source.url),
+                Format::Mp3(_) | Format::File => "mp3".into(),
+            },
             any_rate: source.format == Format::Podcast,
             jumps: matches!(source.format, Format::Mp3(_) | Format::Podcast),
         };
         Stream::open(Arc::new(DeezerBytes { client: self.clone(), source }), info, at)
+    }
+}
+
+/// A podcast file's kind, from its address ("…/episode.m4a?x=1" is m4a); mp3,
+/// as most are, when it doesn't say. Only a hint: the decoder looks at the file.
+fn podcast_extension(url: &str) -> String {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let name = path.rsplit('/').next().unwrap_or(path);
+    match name.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase()) {
+        Some(ext) if ["mp3", "m4a", "aac", "mp4", "ogg", "opus", "flac", "wav"].contains(&ext.as_str()) => ext,
+        _ => "mp3".into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::podcast_extension;
+
+    #[test]
+    fn podcast_files_hint_at_their_kind() {
+        assert_eq!(podcast_extension("https://cdn.example/show/ep12.M4A?token=1.mp3"), "m4a");
+        assert_eq!(podcast_extension("https://cdn.example/show/ep12.aac#t=3"), "aac");
+        assert_eq!(podcast_extension("https://cdn.example/stream?id=9"), "mp3", "nothing to go by");
+        assert_eq!(podcast_extension("https://cdn.example.com/dir/"), "mp3");
     }
 }
