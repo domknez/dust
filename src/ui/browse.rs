@@ -133,8 +133,9 @@ fn own_playlists(playlists: &[Playlist], query: &str) -> Option<Section> {
             kind: ItemKind::Playlist,
             id: p.id.to_string(),
             title: p.title.clone(),
-            subtitle: format!("{} tracks", p.count),
+            subtitle: crate::ui::format::count(p.count as usize, "track"),
             picture: p.picture.clone(),
+            release: None,
         })
         .collect();
     (!items.is_empty()).then(|| Section::new("Your playlists", items))

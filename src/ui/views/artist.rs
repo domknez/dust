@@ -4,7 +4,7 @@
 
 use super::collection::header_band;
 use super::home::card_row;
-use crate::model::{Item, Likeable, Section, TrackId};
+use crate::model::{Item, Likeable, ReleaseGroup, Section, TrackId};
 use crate::player::{State, Status};
 use crate::ui::action::{Action, Actions};
 use crate::ui::app::App;
@@ -26,8 +26,9 @@ const TWO_COLUMNS: f32 = 820.0;
 const GAP: f32 = 32.0;
 /// The discography: three columns of covers with title and year under each.
 const RELEASES: Grid = Grid { columns: GridColumns::Fixed(3), gap: 12.0, row_gap: 12.0, text: 30.0 };
-/// Discography section titles (see `deezer::parse::discography`) and their tabs.
-const DISCOGRAPHY: [(&str, &str); 3] = [("Albums", "Albums"), ("Singles & EPs", "Singles"), ("Live & compilations", "Live")];
+/// The discography's sections (see [`crate::model::discography`]) and their tabs.
+const DISCOGRAPHY: [(ReleaseGroup, &str); 3] =
+    [(ReleaseGroup::Albums, "Albums"), (ReleaseGroup::SinglesAndEps, "Singles"), (ReleaseGroup::LiveAndCompilations, "Live")];
 
 impl App {
     pub(in crate::ui) fn artist_view(&mut self, ui: &mut Ui, st: &Status, artist: &ArtistView, acts: &mut Actions) {
@@ -45,8 +46,10 @@ impl App {
                 widgets::load_state(ui, self.browse.artist_page.is_loading(), self.browse.artist_page.error(), None);
                 return;
             };
-            let discography: Vec<(&str, &Section)> =
-                DISCOGRAPHY.iter().filter_map(|(title, tab)| page.sections.iter().find(|s| s.title == *title).map(|s| (*tab, s))).collect();
+            let discography: Vec<(&str, &Section)> = DISCOGRAPHY
+                .iter()
+                .filter_map(|(group, tab)| page.sections.iter().find(|s| s.title == group.title()).map(|s| (*tab, s)))
+                .collect();
 
             // Popular on the left, discography on the right; stacked when narrow.
             let two = width >= TWO_COLUMNS && !page.top.is_empty() && !discography.is_empty();
@@ -121,7 +124,7 @@ impl App {
             }
             // Playlists featuring them, related artists.
             for (i, section) in page.sections.iter().enumerate() {
-                if !DISCOGRAPHY.iter().any(|(title, _)| section.title == *title) {
+                if !DISCOGRAPHY.iter().any(|(group, _)| section.title == group.title()) {
                     card_row(ui, &mut self.covers, ("artist-row", i), section, st, self.prefs.new_only(), acts);
                 }
             }
@@ -153,8 +156,11 @@ impl App {
         let width = art.left() - 24.0 - x;
         let tag = widgets::tag(ui.painter(), pos2(x, head.bottom() - 118.0), "ARTIST");
         if let Some(pg) = page {
-            let releases: usize =
-                DISCOGRAPHY.iter().filter_map(|(title, _)| pg.sections.iter().find(|s| s.title == *title)).map(|s| s.items.len()).sum();
+            let releases: usize = DISCOGRAPHY
+                .iter()
+                .filter_map(|(group, _)| pg.sections.iter().find(|s| s.title == group.title()))
+                .map(|s| s.items.len())
+                .sum();
             // A music server doesn't count fans.
             let meta =
                 if pg.fans > 0 { format!("{} FANS · {releases} RELEASES", thousands(pg.fans)) } else { format!("{releases} RELEASES") };
@@ -264,8 +270,7 @@ fn release(ui: &mut Ui, covers: &mut Covers, item: &Item, acts: &mut Actions) {
         let ring = art.expand(3.0);
         ui.painter().rect_stroke(ring, CornerRadius::same(radius::CONTROL), egui::Stroke::new(1.5, p.accent), egui::StrokeKind::Inside);
     }
-    // "2026 · Album" → "2026".
-    let year = item.subtitle.split(" · ").next().unwrap_or_default();
+    let year = item.release.as_ref().and_then(|r| r.year.as_deref()).unwrap_or_default();
     let year_width = ui.painter().layout_no_wrap(year.to_string(), ty::META.font(), p.dim).size().x;
     let y = art.bottom() + 14.0;
     ui.painter().text(pos2(art.right(), y), Align2::RIGHT_CENTER, year, ty::META.font(), p.dim);
@@ -289,8 +294,7 @@ fn timeline<'a>(discography: &[(&str, &'a Section)]) -> Vec<(String, Vec<&'a Ite
     let mut years: Vec<(String, Vec<&Item>)> = Vec::new();
     for (_, section) in discography {
         for item in &section.items {
-            let year = item.subtitle.split(" · ").next().filter(|y| y.len() == 4 && y.chars().all(|c| c.is_ascii_digit()));
-            let year = year.unwrap_or("").to_string();
+            let year = item.release.as_ref().and_then(|r| r.year.clone()).unwrap_or_default();
             match years.iter_mut().find(|(y, _)| *y == year) {
                 Some((_, items)) => items.push(item),
                 None => years.push((year, vec![item])),
@@ -353,7 +357,7 @@ fn show_timeline(
             ui.painter().text(pos2(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, mark, ty::META.font(), mark_color);
             let x = art.right() + 12.0;
             let width = rect.right() - x - mark_width - 20.0;
-            let kind = item.subtitle.split(" · ").nth(1).unwrap_or_default();
+            let kind = item.release.as_ref().map_or("", |r| r.kind.label());
             let title_color = if was_heard || plays.is_none() { p.text } else { p.dim };
             text_left(ui.painter(), pos2(x, rect.center().y - 7.0), &item.title, ty::BODY.strong(), title_color, width);
             text_left(ui.painter(), pos2(x, rect.center().y + 9.0), kind, ty::CAPTION, p.faint, width);
@@ -382,16 +386,17 @@ fn dashed_ring(painter: &egui::Painter, center: egui::Pos2, radius: f32, color: 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::ItemKind;
+    use crate::model::{ItemKind, ReleaseInfo, ReleaseKind};
 
-    fn item(id: &str, subtitle: &str) -> Item {
-        Item { kind: ItemKind::Album, id: id.into(), title: id.into(), subtitle: subtitle.into(), picture: None }
+    fn item(id: &str, kind: ReleaseKind, year: &str) -> Item {
+        let release = ReleaseInfo::new(kind, year);
+        Item { kind: ItemKind::Album, id: id.into(), title: id.into(), subtitle: release.subtitle(), picture: None, release: Some(release) }
     }
 
     #[test]
     fn the_timeline_goes_by_year_newest_first() {
-        let albums = Section::new("Albums", vec![item("a", "2024 · Album"), item("b", "2019 · Album")]);
-        let singles = Section::new("Singles & EPs", vec![item("c", "2024 · Single"), item("d", "Single")]);
+        let albums = Section::new("Albums", vec![item("a", ReleaseKind::Album, "2024"), item("b", ReleaseKind::Album, "2019")]);
+        let singles = Section::new("Singles & EPs", vec![item("c", ReleaseKind::Single, "2024"), item("d", ReleaseKind::Single, "")]);
         let years = timeline(&[("Albums", &albums), ("Singles", &singles)]);
         let shown: Vec<(&str, Vec<&str>)> =
             years.iter().map(|(y, items)| (y.as_str(), items.iter().map(|i| i.id.as_str()).collect())).collect();

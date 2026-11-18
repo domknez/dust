@@ -186,8 +186,8 @@ impl crate::ui::app::App {
         let mut added = Vec::new();
         for f in found {
             let album = f.release.album;
-            // The card's subtitle is "2026 · EP"; how many tracks is looked up later.
-            let kind = album.subtitle.rsplit(" · ").next().unwrap_or_default().to_string();
+            // How many tracks is looked up later.
+            let kind = album.release.as_ref().map(|r| r.kind.label().to_string()).unwrap_or_default();
             let about = About { kind, year: f.release.date.get(..4).unwrap_or_default().to_string(), tracks: 0 };
             let thing = Thing::Album { id: album.id, title: album.title, artist: f.artist.clone(), picture: album.picture, about };
             if self.crate_box.find(source, &thing).is_some() {
@@ -218,7 +218,14 @@ mod tests {
 
     fn release(id: &str, date: &str) -> Release {
         Release {
-            album: Item { kind: ItemKind::Album, id: id.into(), title: format!("Album {id}"), subtitle: String::new(), picture: None },
+            album: Item {
+                kind: ItemKind::Album,
+                id: id.into(),
+                title: format!("Album {id}"),
+                subtitle: String::new(),
+                picture: None,
+                release: None,
+            },
             date: date.into(),
         }
     }

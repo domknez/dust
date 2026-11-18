@@ -42,14 +42,15 @@ impl ChannelView {
         ChannelView { id: id.into(), title: title.into() }
     }
 
-    /// Genres, moods, charts and new music, as the service picks them.
+    /// Genres, moods, charts and new music, as the service picks them (Deezer's:
+    /// shown only where the source offers them, see [`Features`](crate::source::Features)).
     pub fn explore() -> Self {
-        Self::new("channels/explore", "Explore")
+        Self::new(crate::deezer::EXPLORE_PAGE, "Explore")
     }
 
     /// New albums and playlists, with the ones from artists you like first.
     pub fn new_releases() -> Self {
-        Self::new("channels/new", "New releases")
+        Self::new(crate::deezer::NEW_RELEASES_PAGE, "New releases")
     }
 }
 
@@ -227,7 +228,7 @@ mod tests {
     use super::*;
 
     fn item(kind: ItemKind, id: &str) -> Item {
-        Item { kind, id: id.into(), title: "T".into(), subtitle: "S".into(), picture: None }
+        Item { kind, id: id.into(), title: "T".into(), subtitle: "S".into(), picture: None, release: None }
     }
 
     #[test]

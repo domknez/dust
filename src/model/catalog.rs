@@ -1,6 +1,6 @@
 //! What browsing shows: cards, sections of cards and the pages built from them.
 
-use super::{Art, PlaylistId, Track};
+use super::{Art, PlaylistId, ReleaseInfo, Track};
 
 /// One card on a page (home, search, an artist's page): a playlist, album, artist,
 /// mix, flow, ...
@@ -12,6 +12,9 @@ pub struct Item {
     pub title: String,
     pub subtitle: String,
     pub picture: Option<Art>,
+    /// For a release on an artist's page: its year and kind (the subtitle says
+    /// them too, for showing).
+    pub release: Option<ReleaseInfo>,
 }
 
 /// What a card opens or plays.

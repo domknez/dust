@@ -2,8 +2,8 @@
 
 use super::images::art;
 use crate::model::{
-    AlbumInfo, Art, ArtistPage, ArtistRef, DeezerSong, Episode, Item, ItemKind, Origin, Playlist, PlaylistId, Release, Section, Track,
-    TrackId,
+    AlbumInfo, Art, ArtistPage, ArtistRef, DeezerSong, Episode, Item, ItemKind, Origin, Playlist, PlaylistId, Release, ReleaseGroup,
+    ReleaseInfo, ReleaseKind, Section, Track, TrackId,
 };
 use serde_json::Value;
 
@@ -172,7 +172,7 @@ pub fn card_item(kind: &str, v: &Value) -> Option<Item> {
         return None;
     }
     let (title, subtitle) = english_texts(kind, &id, v, text(title), String::new());
-    Some(Item { kind: item_kind(kind, &id), id, title, subtitle, picture })
+    Some(Item { kind: item_kind(kind, &id), id, title, subtitle, picture, release: None })
 }
 
 /// Most of the artist's other releases an album page lists.
@@ -198,50 +198,37 @@ pub fn album_info(page: &Value) -> AlbumInfo {
             title: text(&v["ALB_TITLE"]),
             subtitle: year(v),
             picture: art("cover", &text(&v["ALB_PICTURE"])),
+            release: None,
         })
         .collect();
     // The page's own data rarely has the type; its entry among the artist's
     // releases does. Neither: unknown.
     let releases = page["ALBUMS"]["data"].as_array().into_iter().flatten();
     let typed = std::iter::once(data).chain(releases.filter(|v| text(&v["ALB_ID"]) == id)).find(|v| !text(&v["TYPE"]).is_empty());
-    let kind = typed.map(|v| release_kind(v).1.to_string()).unwrap_or_default();
+    let kind = typed.map(|v| release_kind(v).label().to_string()).unwrap_or_default();
     AlbumInfo { year: year(data), label: text(&data["LABEL_NAME"]), kind, more }
 }
 
 /// Releases grouped like Deezer's artist page: albums, singles and EPs, then live
 /// albums and compilations, each newest first.
 pub fn discography(data: &Value) -> Vec<Section> {
-    let mut groups: [(&str, Vec<(String, Item)>); 3] =
-        [("Albums", Vec::new()), ("Singles & EPs", Vec::new()), ("Live & compilations", Vec::new())];
-    for (group, release) in dated_releases(data) {
-        groups[group].1.push((release.date, release.album));
-    }
-    groups
-        .into_iter()
-        .filter(|(_, items)| !items.is_empty())
-        .map(|(title, mut dated)| {
-            // ISO dates sort as text; the sort is stable, so ties keep Deezer's order.
-            dated.sort_by(|a, b| b.0.cmp(&a.0));
-            Section::new(title, dated.into_iter().map(|(_, item)| item).collect())
-        })
-        .collect()
+    crate::model::discography(dated_releases(data).into_iter().map(|r| (r.date, r.album)).collect())
 }
 
-/// What kind of release an album is (by its `TYPE` and `SUBTYPES`), and its group
-/// on the artist page: 0 albums, 1 singles and EPs, 2 live albums and compilations.
-fn release_kind(v: &Value) -> (usize, &'static str) {
+/// What kind of release an album is, by its `TYPE` and `SUBTYPES`.
+fn release_kind(v: &Value) -> ReleaseKind {
     let subtypes = &v["SUBTYPES"];
     if subtypes["isLive"].as_bool() == Some(true) {
-        (2, "Live")
+        ReleaseKind::Live
     } else if subtypes["isCompilation"].as_bool() == Some(true) {
-        (2, "Compilation")
+        ReleaseKind::Compilation
     } else {
         // Deezer's types: 0 single, 1 album, 2 compilation, 3 EP, 4 bundle.
         match text(&v["TYPE"]).as_str() {
-            "1" | "4" => (0, "Album"),
-            "2" => (2, "Compilation"),
-            "3" => (1, "EP"),
-            _ => (1, "Single"),
+            "1" | "4" => ReleaseKind::Album,
+            "2" => ReleaseKind::Compilation,
+            "3" => ReleaseKind::Ep,
+            _ => ReleaseKind::Single,
         }
     }
 }
@@ -249,26 +236,26 @@ fn release_kind(v: &Value) -> (usize, &'static str) {
 /// An artist's albums, singles and EPs (not live albums or compilations) with the
 /// day each came out, from `album.getDiscography`.
 pub fn releases(data: &Value) -> Vec<Release> {
-    dated_releases(data).into_iter().filter(|(group, _)| *group < 2).map(|(_, release)| release).collect()
+    dated_releases(data)
+        .into_iter()
+        .filter(|r| r.album.release.as_ref().is_some_and(|i| i.kind.group() < ReleaseGroup::LiveAndCompilations))
+        .collect()
 }
 
-/// Each release with its group: 0 albums, 1 singles and EPs, 2 live albums and
-/// compilations.
-fn dated_releases(data: &Value) -> Vec<(usize, Release)> {
+/// Every release, with the day it came out.
+fn dated_releases(data: &Value) -> Vec<Release> {
     let mut all = Vec::new();
     for v in data.as_array().into_iter().flatten() {
         let id = text(&v["ALB_ID"]);
         if id.is_empty() {
             continue;
         }
-        let (group, kind) = release_kind(v);
         let date = Some(text(&v["ORIGINAL_RELEASE_DATE"])).filter(|d| !d.is_empty()).unwrap_or_else(|| text(&v["PHYSICAL_RELEASE_DATE"]));
-        let subtitle = match date.get(..4) {
-            Some(year) => format!("{year} · {kind}"),
-            None => kind.to_string(),
-        };
+        let release = ReleaseInfo::new(release_kind(v), &date);
         let picture = art("cover", &text(&v["ALB_PICTURE"]));
-        all.push((group, Release { album: Item { kind: ItemKind::Album, id, title: text(&v["ALB_TITLE"]), subtitle, picture }, date }));
+        let album =
+            Item { kind: ItemKind::Album, id, title: text(&v["ALB_TITLE"]), subtitle: release.subtitle(), picture, release: Some(release) };
+        all.push(Release { album, date });
     }
     all
 }
@@ -307,7 +294,7 @@ pub fn item(v: &Value) -> Item {
         ("channel", Some(page)) => (ItemKind::Channel, page),
         _ => (item_kind(&kind, &id), id),
     };
-    Item { kind, id, title, subtitle, picture }
+    Item { kind, id, title, subtitle, picture, release: None }
 }
 
 /// What a card of Deezer's `type` opens. Flow's `default` card is plain Flow, the

@@ -90,8 +90,8 @@ impl Subsonic {
         };
         // Album cards on the album page show just the year.
         let more =
-            more.into_iter().map(|i| Item { subtitle: i.subtitle.split(" · ").next().unwrap_or_default().to_string(), ..i }).collect();
-        let kind = parse::release_kind(album).1.to_string();
+            more.into_iter().map(|i| Item { subtitle: i.release.as_ref().and_then(|r| r.year.clone()).unwrap_or_default(), ..i }).collect();
+        let kind = parse::release_kind(album).label().to_string();
         Ok((tracks, AlbumInfo { year, label, kind, more }))
     }
 
@@ -333,6 +333,7 @@ fn mix_cards(albums: Option<&Value>) -> Vec<Item> {
             title: format!("{} mix", text(&album["artist"])),
             subtitle: "Songs like theirs".into(),
             picture: parse::albums(vec![album]).pop().and_then(|a| a.picture),
+            release: None,
         });
         seen.push(id);
         if seen.len() == 4 {
@@ -357,6 +358,7 @@ fn radio_stations(genres: &Value) -> Vec<Item> {
         title: title.into(),
         subtitle: String::new(),
         picture: None,
+        release: None,
     };
     std::iter::once(station(None, "Everything"))
         .chain(genres.into_iter().take(RADIO_GENRES).map(|(name, _)| station(Some(name), name)))

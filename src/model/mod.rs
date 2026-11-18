@@ -20,6 +20,7 @@ mod listen;
 mod lyrics;
 mod playlist;
 mod quality;
+mod release;
 mod track;
 
 pub use art::{Art, ArtResolver};
@@ -31,6 +32,7 @@ pub use listen::Listen;
 pub use lyrics::{LyricLine, Lyrics};
 pub use playlist::Playlist;
 pub use quality::{Format, Quality};
+pub use release::{ReleaseGroup, ReleaseInfo, ReleaseKind, discography};
 pub use track::{ArtistRef, DeezerSong, Episode, Origin, ServerSong, Track};
 
 pub type Result<T> = std::result::Result<T, Error>;

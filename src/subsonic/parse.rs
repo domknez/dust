@@ -3,7 +3,8 @@
 
 use super::api;
 use crate::model::{
-    Art, ArtistRef, Item, ItemKind, LyricLine, Lyrics, Origin, Playlist, PlaylistId, Result, Section, ServerSong, Track, TrackId,
+    Art, ArtistRef, Item, ItemKind, LyricLine, Lyrics, Origin, Playlist, PlaylistId, ReleaseInfo, ReleaseKind, Result, Section, ServerSong,
+    Track, TrackId,
 };
 use serde_json::Value;
 
@@ -97,6 +98,7 @@ pub fn album_item(v: &Value, subtitle: String) -> Option<Item> {
         title: Some(text(&v["name"])).filter(|n| !n.is_empty()).unwrap_or_else(|| text(&v["title"])),
         subtitle,
         picture: cover(v),
+        release: None,
     })
 }
 
@@ -122,6 +124,7 @@ pub fn artist_item(v: &Value) -> Option<Item> {
             n => format!("{n} albums"),
         },
         picture: cover(v),
+        release: None,
     })
 }
 
@@ -151,46 +154,34 @@ pub fn playlist(v: &Value, user: &str) -> Option<Playlist> {
 }
 
 /// What kind of release an album is: OpenSubsonic's release types, else whether
-/// it's a compilation. Index into `DISCOGRAPHY`, and the label shown under it.
-pub fn release_kind(v: &Value) -> (usize, &'static str) {
+/// it's a compilation.
+pub fn release_kind(v: &Value) -> ReleaseKind {
     let types: Vec<String> = list(v, "releaseTypes").into_iter().map(|t| text(t).to_lowercase()).collect();
     let has = |t: &str| types.iter().any(|x| x == t);
     if has("live") {
-        (2, "Live")
+        ReleaseKind::Live
     } else if has("compilation") || v["isCompilation"] == true {
-        (2, "Compilation")
+        ReleaseKind::Compilation
     } else if has("single") {
-        (1, "Single")
+        ReleaseKind::Single
     } else if has("ep") {
-        (1, "EP")
+        ReleaseKind::Ep
     } else {
-        (0, "Album")
+        ReleaseKind::Album
     }
 }
 
-/// Section titles of an artist's discography, as the artist page expects them.
-pub const DISCOGRAPHY: [&str; 3] = ["Albums", "Singles & EPs", "Live & compilations"];
-
 /// An artist's albums grouped like Deezer's discography, newest first.
 pub fn discography(artist: &Value) -> Vec<Section> {
-    let mut groups: [Vec<(u64, Item)>; 3] = Default::default();
-    for v in list(artist, "album") {
-        let (group, kind) = release_kind(v);
+    let releases = list(artist, "album").into_iter().filter_map(|v| {
         let year = number(&v["year"]);
-        let subtitle = if year > 0 { format!("{year} · {kind}") } else { kind.to_string() };
-        if let Some(item) = album_item(v, subtitle) {
-            groups[group].push((year, item));
-        }
-    }
-    groups
-        .into_iter()
-        .zip(DISCOGRAPHY)
-        .filter(|(items, _)| !items.is_empty())
-        .map(|(mut dated, title)| {
-            dated.sort_by_key(|d| std::cmp::Reverse(d.0));
-            Section::new(title, dated.into_iter().map(|(_, item)| item).collect())
-        })
-        .collect()
+        // Zero-padded, so years sort as text the way dates do.
+        let date = if year > 0 { format!("{year:04}") } else { String::new() };
+        let release = ReleaseInfo::new(release_kind(v), &date);
+        let item = album_item(v, release.subtitle())?;
+        Some((date, Item { release: Some(release), ..item }))
+    });
+    crate::model::discography(releases.collect())
 }
 
 /// Lyrics from OpenSubsonic's `getLyricsBySongId`: synced ones when there are any.
