@@ -187,11 +187,11 @@ impl App {
 
     /// Apply one thing the listener did.
     pub(super) fn update(&mut self, ctx: &egui::Context, action: Action) {
-        // Opening something from the mini player shows it in the full window.
         // Something turned off in Settings (a shortcut, a menu drawn before).
         if !self.allows(&action) {
             return;
         }
+        // Opening something from the mini player shows it in the full window.
         if self.mini_player.is_some() && action.opens_page() {
             self.toggle_mini_player(ctx);
         }

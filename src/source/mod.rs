@@ -7,9 +7,9 @@
 //! - [`KINDS`]: the sources dust knows, in the account menu's order
 //!
 //! A source is used as a [`Shared`] (`Arc<dyn Source>`). What only some sources
-//! have (Flow, Explore, podcasts, track mixes, links, lyrics, playlist editing) has default
-//! methods that say it's unsupported, and is flagged in [`Features`] so the UI can
-//! leave it out.
+//! have (Flow, Explore, podcasts, track mixes, links, private playlists) has
+//! default methods that say it's unsupported, and is flagged in [`Features`] so
+//! the UI can leave it out.
 
 use crate::media::{OpenError, Playback};
 use crate::model::{

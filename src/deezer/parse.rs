@@ -131,7 +131,7 @@ pub fn playlist(v: &Value, me: u64) -> Playlist {
         title: text(&v["TITLE"]),
         count: number(&v["NB_SONG"]) as u32,
         owned: number(&v["PARENT_USER_ID"]) == me,
-        private: number(&v["STATUS"]) == 1,
+        private: number(&v["STATUS"]) == super::playlists::PRIVATE,
         picture: picture(&v["PICTURE_TYPE"], &v["PLAYLIST_PICTURE"]),
     }
 }
@@ -399,10 +399,11 @@ fn month_name(number: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn album_info_has_year_label_and_other_releases() {
-        let page = serde_json::json!({
+        let page = json!({
             "DATA": {"ALB_ID": "1", "ORIGINAL_RELEASE_DATE": "2021-04-30", "LABEL_NAME": "Roadrunner Records"},
             "ALBUMS": {"data": [
                 {"ALB_ID": "1", "ALB_TITLE": "Fortitude", "PHYSICAL_RELEASE_DATE": "2021-04-30", "TYPE": "3", "SUBTYPES": {}},
@@ -414,11 +415,10 @@ mod tests {
         assert_eq!(info.more.len(), 1, "the album itself is left out");
         assert_eq!((info.more[0].title.as_str(), info.more[0].subtitle.as_str()), ("Magma", "2016"));
         assert_eq!(info.more[0].picture, art("cover", "abc"));
-        assert_eq!(album_info(&serde_json::json!({})), AlbumInfo::default());
-        let compilation = serde_json::json!({"DATA": {"ALB_ID": "9", "TYPE": "2"}});
+        assert_eq!(album_info(&json!({})), AlbumInfo::default());
+        let compilation = json!({"DATA": {"ALB_ID": "9", "TYPE": "2"}});
         assert_eq!(album_info(&compilation).kind, "Compilation", "type 2 is a compilation, not a single");
     }
-    use serde_json::json;
 
     fn episode_json(id: &str, published: &str) -> Value {
         json!({

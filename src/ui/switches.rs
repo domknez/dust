@@ -75,7 +75,7 @@ impl Page {
         Page::ALL.into_iter().find(|p| p.view() == *view)
     }
 
-    /// Its ⌘-number (Home is ⌘1); the pages after the Crate have none.
+    /// Its ⌘-number (Home is ⌘1); pages past the numbered ones have none.
     pub fn key_code(self) -> Option<Key> {
         Some(match self {
             Page::Loved => Key::Num2,

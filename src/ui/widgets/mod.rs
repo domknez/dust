@@ -17,7 +17,7 @@ pub use cards::{CardClick, FlowPick, card, channel_card, flow_panel, play_knob, 
 pub use controls::{
     heart_at, icon_button, icon_pill, pill, pill_fit, pill_width, play_button, segmented, tag, text_field, thin_slider, wave_slider,
 };
-pub use decor::{equalizer, fade_to};
+pub use decor::{equalizer, fade_to, wordmark};
 pub use grid::{Grid, GridColumns};
 pub use load_state::load_state;
 pub use menu::{

@@ -263,7 +263,7 @@ impl App {
             let icon = Rect::from_center_size(pos2(area.left() + 5.0, row.center().y), Vec2::splat(9.0));
             icons::paint(ui.painter(), icon, Icon::Play, color);
             ui.painter().text(pos2(area.right(), row.center().y), Align2::RIGHT_CENTER, label, ty::CAPTION.font(), color);
-            let hint = "The new tracks; 3 from each new album and artist. Tick each when you've heard it";
+            let hint = format!("The new tracks; {EACH} from each new album and artist. Tick each when you've heard it");
             if resp.on_hover_text(hint).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                 acts.push(Action::PlayCrate);
             }
@@ -290,7 +290,7 @@ impl App {
                 let tick = Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), Vec2::splat(26.0));
                 entry_row(ui, &mut self.covers, rect.with_max_x(tick.left() - 4.0), entry, current);
                 let over_tick = resp.hover_pos().is_some_and(|pos| tick.contains(pos));
-                tick_box(ui, tick, false, over_tick);
+                tick_box(ui, tick, over_tick);
                 if resp.clicked() {
                     acts.push(if over_tick {
                         Action::Crate(Change::Heard { id: entry.id.clone(), heard: true })
@@ -381,7 +381,7 @@ impl App {
             }
             if !typed && playable > 0 {
                 let pill = widgets::pill(ui, &play, Some(Icon::Play), true);
-                if pill.on_hover_text("The new tracks; 3 from each new album and artist").clicked() {
+                if pill.on_hover_text(format!("The new tracks; {EACH} from each new album and artist")).clicked() {
                     acts.push(Action::PlayCrate);
                 }
             }
@@ -756,19 +756,14 @@ fn one_column(width: f32) -> bool {
     width < NARROW_PAGE
 }
 
-/// A round tick: empty, lit on hover, filled once heard.
-fn tick_box(ui: &Ui, rect: Rect, on: bool, hovered: bool) {
+/// A round tick to mark an entry heard: empty, lit on hover.
+fn tick_box(ui: &Ui, rect: Rect, hovered: bool) {
     let p = colors();
     let center = rect.center();
-    let color = if on || hovered { p.accent } else { p.faint };
-    if on {
-        ui.painter().circle_filled(center, 9.0, p.accent);
-    } else {
-        ui.painter().circle_stroke(center, 9.0, egui::Stroke::new(1.5, color));
-    }
-    if on || hovered {
-        let ink = if on { p.on_accent } else { p.accent };
-        icons::paint(ui.painter(), Rect::from_center_size(center, Vec2::splat(11.0)), Icon::Check, ink);
+    let color = if hovered { p.accent } else { p.faint };
+    ui.painter().circle_stroke(center, 9.0, egui::Stroke::new(1.5, color));
+    if hovered {
+        icons::paint(ui.painter(), Rect::from_center_size(center, Vec2::splat(11.0)), Icon::Check, p.accent);
     }
 }
 

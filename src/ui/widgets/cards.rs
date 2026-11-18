@@ -76,11 +76,6 @@ pub fn play_knob(ui: &Ui, center: egui::Pos2, half: f32) {
 /// Height of [`flow_panel`] and [`now_playing_card`].
 pub const FLOW_PANEL: f32 = 176.0;
 
-/// The Flow panel: title, a lime play button for plain Flow and the moods as a
-/// segmented row (`moods` are (id, label); the playing one is lit). Deezer's genre
-/// Flows ([`GENRE_FLOW`]) get their own row, picked with *moods / genres* next to
-/// the title. Returns plain Flow (None) or a mood's id when one was picked. With
-/// `radio`, it's a music server's Radio and the moods are genres.
 /// What was picked on the Flow panel.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FlowPick {
@@ -90,6 +85,11 @@ pub enum FlowPick {
     NewOnly(bool),
 }
 
+/// The Flow panel: title, a lime play button for plain Flow and the moods as a
+/// segmented row (`moods` are (id, label); the playing one is lit). Deezer's genre
+/// Flows ([`GENRE_FLOW`]) get their own row, picked with *moods / genres* next to
+/// the title. Returns what was picked, if anything. With
+/// `radio`, it's a music server's Radio and the moods are genres.
 pub fn flow_panel(ui: &mut Ui, moods: &[(&str, &str)], playing: Option<&str>, radio: bool, new_only: Option<bool>) -> Option<FlowPick> {
     let (line, name) = if radio { ("radio · endless, from your library", "Radio") } else { ("flow · endless, just for you", "Flow") };
     let p = colors();

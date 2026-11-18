@@ -6,8 +6,9 @@ use crate::model::{Playlist, PlaylistId, TrackId};
 use serde_json::{Value, json};
 
 /// Deezer's playlist visibility (`STATUS`).
+/// A playlist's `STATUS`.
 const PUBLIC: u64 = 0;
-const PRIVATE: u64 = 1;
+pub(super) const PRIVATE: u64 = 1;
 
 fn songs(ids: &[TrackId]) -> Value {
     Value::Array(ids.iter().map(|id| json!([id.as_str(), 0])).collect())

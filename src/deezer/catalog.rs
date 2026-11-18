@@ -5,10 +5,10 @@ use super::{Deezer, Result, parse};
 use crate::model::{
     AlbumInfo, ArtistPage, Item, Likeable, Likes, Page, Playlist, PlaylistId, Release, SearchResults, Section, Track, TrackId,
 };
+use serde_json::json;
 
 /// The home page's name for `page.get`.
 const HOME: &str = "home";
-use serde_json::json;
 
 impl Deezer {
     pub fn search(&self, query: &str) -> Result<SearchResults> {

@@ -120,7 +120,7 @@ impl Queue {
         self.dirty = true;
     }
 
-    /// Start endless Flow with an empty queue (filled by [`Queue::extend_unique`]).
+    /// Start endless Flow with an empty queue (filled by [`Queue::extend_flow`]).
     pub fn start_flow(&mut self, flow: Flow) {
         self.tracks.clear();
         self.index = 0;
@@ -145,7 +145,6 @@ impl Queue {
         self.dirty = true;
     }
 
-    /// Append tracks not already queued (Flow batches overlap). Returns whether any were added.
     /// A batch of Flow: like [`Queue::extend_unique`], leaving out the tracks in
     /// `heard` unless that leaves none (Flow mustn't run dry over it).
     pub fn extend_flow(&mut self, tracks: Vec<Track>, heard: Option<&HashSet<TrackId>>) -> bool {
@@ -159,6 +158,7 @@ impl Queue {
         self.extend_unique(tracks)
     }
 
+    /// Append tracks not already queued (Flow batches overlap). Returns whether any were added.
     pub fn extend_unique(&mut self, tracks: Vec<Track>) -> bool {
         let before = self.tracks.len();
         for t in tracks {

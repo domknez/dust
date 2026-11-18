@@ -462,8 +462,8 @@ impl Engine {
 
     /// Start counting the current stream as a listen of `track`.
     fn start_listen(&mut self, track: &Track) {
-        // Podcast episodes aren't songs: Deezer's listen reports (history, Flow,
-        // Last.fm) are for its catalogue only.
+        // Podcast episodes aren't songs: a source's listen reports (Deezer's
+        // history and Flow, a server's play counts, Last.fm) are for songs only.
         let Some(stream) = self.stream.as_ref().filter(|_| !track.is_episode()) else { return };
         let Some(source) = self.source else { return };
         let flow = self.queue.flow.clone();

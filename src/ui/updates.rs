@@ -57,6 +57,7 @@ impl Updates {
         match &self.state {
             _ if self.checking.is_some() => "Checking…".into(),
             State::Downloading { release, progress, .. } => {
+                // Progress is in thousandths.
                 format!("Downloading dust {}… {}%", release.version, progress.load(Ordering::Relaxed) / 10)
             }
             State::Ready(release, _) => format!("dust {} is ready to install", release.version),

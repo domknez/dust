@@ -20,12 +20,12 @@ impl App {
         if cfg!(target_os = "macos") {
             // In the title bar, right of the window buttons.
             let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), metrics::TOP_INSET), Sense::hover());
-            wordmark(ui, pos2(bar.right() - 6.0, bar.top() + 16.0), Align2::RIGHT_CENTER);
+            widgets::wordmark(ui.painter(), pos2(bar.right() - 6.0, bar.top() + 16.0), Align2::RIGHT_CENTER, ty::WORDMARK);
             ui.add_space(6.0);
         } else {
             ui.add_space(metrics::TOP_INSET);
             let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
-            wordmark(ui, pos2(row.left() + 10.0, row.center().y), Align2::LEFT_CENTER);
+            widgets::wordmark(ui.painter(), pos2(row.left() + 10.0, row.center().y), Align2::LEFT_CENTER, ty::WORDMARK);
             ui.add_space(18.0);
         }
         self.navigation(ui, acts);
@@ -190,7 +190,6 @@ fn shortcut(key: Key) -> String {
     if cfg!(target_os = "macos") { format!("⌘{digit}") } else { format!("Ctrl+{digit}") }
 }
 
-/// `dust_` in mono, the underscore in lime like a cursor.
 /// Disclosure chevron: pointing right when folded (`open` 0), down when open (1);
 /// in between while it turns.
 fn disclosure(painter: &egui::Painter, center: egui::Pos2, size: f32, open: f32, color: egui::Color32) {
@@ -199,17 +198,6 @@ fn disclosure(painter: &egui::Painter, center: egui::Pos2, size: f32, open: f32,
     let turn = |x: f32, y: f32| center + vec2(x * cos - y * sin, x * sin + y * cos) * size;
     let points = vec![turn(-0.2, -0.45), turn(0.25, 0.0), turn(-0.2, 0.45)];
     painter.add(egui::Shape::line(points, egui::Stroke::new(1.4, color)));
-}
-
-fn wordmark(ui: &Ui, at: egui::Pos2, align: Align2) {
-    let p = colors();
-    let word = ui.painter().layout_no_wrap("dust".into(), ty::WORDMARK.font(), p.text);
-    let cursor = ui.painter().layout_no_wrap("_".into(), ty::WORDMARK.font(), p.accent);
-    let size = vec2(word.size().x + cursor.size().x, word.size().y);
-    let rect = align.anchor_size(at, size);
-    let word_width = word.size().x;
-    ui.painter().galley(rect.min, word, p.text);
-    ui.painter().galley(rect.min + vec2(word_width, 0.0), cursor, p.accent);
 }
 
 /// Square lime tile with the name's initials.

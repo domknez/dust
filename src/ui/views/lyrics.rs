@@ -72,7 +72,7 @@ impl App {
     /// Fetch the lyrics of `track` unless they're loaded or loading.
     fn load_lyrics(&mut self, track: &TrackId) {
         let state = &mut self.lyrics;
-        // Shown in the panel; nothing else to do about an error.
+        // Shown on the lyrics page; nothing else to do about an error.
         let _ = state.loaded.poll();
         if state.track.as_ref() == Some(track) {
             return;

@@ -5,7 +5,7 @@ use super::{Deezer, Result, parse};
 use crate::model::{Format, Listen, TrackId};
 use serde_json::json;
 
-/// Client/device identifiers Deezer's web player sends with reports.
+/// The device version Deezer's web player sends with reports.
 const DEVICE_VERSION: &str = "10020230525142740";
 
 impl Deezer {

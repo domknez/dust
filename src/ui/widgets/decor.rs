@@ -1,8 +1,20 @@
-//! Decorative touches: the playing-track equalizer and fades.
+//! Decorative touches: the wordmark, the playing-track equalizer and fades.
 
-use crate::ui::style::colors;
-use eframe::egui::{self, Color32, CornerRadius, Painter, Rect, pos2};
+use crate::ui::style::{colors, typography as ty};
+use eframe::egui::{self, Align2, Color32, CornerRadius, Painter, Pos2, Rect, pos2, vec2};
 use std::time::Duration;
+
+/// `dust_` in `style`'s mono, the underscore in lime like a cursor, placed at `at`
+/// by `align`.
+pub fn wordmark(painter: &Painter, at: Pos2, align: Align2, style: ty::Text) {
+    let p = colors();
+    let word = painter.layout_no_wrap("dust".into(), style.font(), p.text);
+    let cursor = painter.layout_no_wrap("_".into(), style.font(), p.accent);
+    let word_width = word.size().x;
+    let rect = align.anchor_size(at, vec2(word_width + cursor.size().x, word.size().y));
+    painter.galley(rect.min, word, p.text);
+    painter.galley(rect.min + vec2(word_width, 0.0), cursor, p.accent);
+}
 
 /// Three little bars marking the current track; they dance while playing.
 pub fn equalizer(p: &Painter, r: Rect, animated: bool) {
