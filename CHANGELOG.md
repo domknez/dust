@@ -26,6 +26,9 @@
   playing to; replies from a speaker are size-checked; a volume of exactly 0
   reported by a speaker is no longer taken as full volume; a setup that fails
   halfway leaves no threads behind
+- While dust is minimized or hidden: the system's now playing info follows the
+  track, the queue is saved, plays are kept, and sync, backups and update checks
+  carry on (before, all of that waited for the window to be shown again)
 
 ## 0.31.1 (2026-11-18)
 

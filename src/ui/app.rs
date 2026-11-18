@@ -143,6 +143,8 @@ pub struct App {
     pub(super) crate_about_tried: std::collections::HashSet<String>,
     /// The command palette, while it's open.
     pub(super) palette: Option<super::palette::Palette>,
+    /// The player's state `logic` read, for the frame drawn right after it.
+    status: Option<Status>,
     /// Syncing the Crate and history through a folder, and their daily backup.
     pub(super) sync: SyncState,
     /// The Settings window is open.
@@ -234,6 +236,7 @@ impl App {
             crate_about: Default::default(),
             crate_about_tried: Default::default(),
             palette: None,
+            status: None,
             sync: SyncState::new(sync_dir),
             show_settings: false,
             settings_section: Default::default(),
@@ -620,6 +623,32 @@ fn panel_frame(fill: egui::Color32, margin: Margin) -> egui::Frame {
     egui::Frame::new().fill(fill).inner_margin(margin)
 }
 
+impl App {
+    /// [`eframe::App::logic`]: what finished in the background, the player's state
+    /// kept (history, queue, now playing), and the timed checks.
+    pub(super) fn tick(&mut self, ctx: &egui::Context) {
+        self.poll_loads(ctx);
+        self.updates.poll(ctx);
+        if self.client.is_none() {
+            return;
+        }
+        self.record_plays();
+        self.sync_tick(ctx);
+        self.release_tick(ctx);
+        self.crate_radio_tick(ctx);
+        self.crate_about_tick();
+        let st = self.player.status();
+        self.persist_playback(&st);
+        self.save_queue_if_changed(&st);
+        if let Some(np) = &mut self.now_playing {
+            np.update(&self.covers, &st);
+        }
+        // Also in the mini player, so an error doesn't show late, once back.
+        self.toasts.player_error(ctx, st.error.as_deref());
+        self.status = Some(st);
+    }
+}
+
 impl eframe::App for App {
     /// Quitting: a downloaded update installs now, so the next start is the new version.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
@@ -630,13 +659,19 @@ impl eframe::App for App {
         self.updates.apply_on_exit();
     }
 
+    /// Everything but drawing: before each frame, and also while the window is
+    /// hidden or minimized (when something asks for a repaint, as the player does
+    /// on each new track), so the history, the saved queue, the system's
+    /// now-playing info and sync keep up without the window on screen.
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.tick(ctx);
+    }
+
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         log_repaint_causes(&ctx);
         self.sync_appearance(&ctx);
         self.covers.begin_frame();
-        self.poll_loads(&ctx);
-        self.updates.poll(&ctx);
         let mut acts = Actions::default();
         if self.client.is_none() {
             self.login_screen(ui, &mut acts);
@@ -644,21 +679,10 @@ impl eframe::App for App {
             self.apply(&ctx, acts);
             return;
         }
-        self.record_plays();
-        self.sync_tick(&ctx);
-        self.release_tick(&ctx);
-        self.crate_radio_tick(&ctx);
-        self.crate_about_tick();
-        let st = self.player.status();
+        // What `logic` saw just before this frame.
+        let st = self.status.take().unwrap_or_else(|| self.player.status());
         super::widgets::offer_crate(&ctx, self.prefs.crate_on);
         self.shortcuts(&ctx, &st, &mut acts);
-        self.persist_playback(&st);
-        self.save_queue_if_changed(&st);
-        if let Some(np) = &mut self.now_playing {
-            np.update(&self.covers, &st);
-        }
-        // Also in the mini player, so an error doesn't show late, once back.
-        self.toasts.player_error(&ctx, st.error.as_deref());
         let p = colors();
         if self.mini_player.is_some() {
             egui::CentralPanel::default().frame(panel_frame(p.bar, Margin::ZERO)).show(ui, |ui| self.mini_player(ui, &st, &mut acts));
@@ -927,6 +951,22 @@ mod tests {
         }
         t.update(Action::TrackMenu(vec![track(2, false)], TrackMenu::Play(PlayMode::Next)));
         assert!(t.sent().is_empty(), "nothing to play, nothing sent");
+    }
+
+    #[test]
+    fn the_queue_and_history_keep_up_without_a_frame_drawn() {
+        let mut t = TestApp::new("");
+        t.app.source_ready(deezer());
+        let played =
+            crate::player::Played { source: "deezer", track: track(9, true), started_unix: 1, heard_secs: 200, skipped: false, flow: None };
+        t.app.player.set_status(|st| {
+            *st = super::testing::queue(&[1, 2], 1);
+            st.played = vec![played];
+        });
+        // What eframe runs while the window is minimized: logic, no ui.
+        t.app.tick(&t.ctx);
+        assert_eq!(t.queues().load(crate::deezer::ID).map(|s| ids(&s.tracks)), Some(vec![1, 2]), "the queue is saved");
+        assert_eq!(t.app.plays.len(), 1, "and the play kept");
     }
 
     #[test]
