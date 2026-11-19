@@ -101,8 +101,8 @@ impl App {
 
     /// The artists the palette offers: those listened to lately.
     fn palette_artists(&self) -> Vec<(String, String)> {
-        let Some(source) = self.client.as_ref().map(|c| c.id().key).filter(|_| self.prefs.history_on) else { return Vec::new() };
-        self.listened_artists(source, crate::clock::unix_now())
+        let Some(source) = self.client.as_ref().map(|c| c.data_key()).filter(|_| self.prefs.history_on) else { return Vec::new() };
+        self.listened_artists(&source, crate::clock::unix_now())
     }
 
     /// Everything the palette offers now, in the order shown before anything is

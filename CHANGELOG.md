@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Deezer family plans: after logging in with the plan owner's session (or an `arl`), dust
+  asks *Who's listening?* and lists the members that can be listened as. The pick is
+  remembered; *Switch profile…* in the account menu changes it. dust acts as that member:
+  their library, favourites and listen history, and each member keeps their own play
+  history, Crate, saved queue and new-release alerts. If Deezer doesn't confirm the
+  switch, dust stays on the owner's account and says so
+
 ## 0.33.0 (2026-11-18)
 
 - A notification for each new track while dust is out of sight (macOS and

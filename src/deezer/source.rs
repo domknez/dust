@@ -18,6 +18,17 @@ impl Source for Deezer {
         ID
     }
 
+    fn data_key(&self) -> String {
+        Deezer::data_key(self)
+    }
+
+    fn queue_file(&self) -> String {
+        match self.data_key() {
+            key if key == ID.key => ID.queue_file.to_string(),
+            key => format!("queue-{}.json", key.replace(':', "-")),
+        }
+    }
+
     fn features(&self) -> Features {
         Features::ALL
     }

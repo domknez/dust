@@ -22,11 +22,19 @@ pub fn http_agent() -> ureq::Agent {
 pub struct Session {
     pub api_token: String,
     cookies: Vec<(String, String)>,
+    /// The family profile acted as: sent as the `account_id` cookie, which is how
+    /// deezer.com itself picks the member (library, favourites, history).
+    profile: Option<u64>,
 }
 
 impl Session {
     pub fn new() -> Self {
-        Self { api_token: NO_TOKEN.into(), cookies: Vec::new() }
+        Self { api_token: NO_TOKEN.into(), cookies: Vec::new(), profile: None }
+    }
+
+    /// Act as this family profile from now on (the account owner's own when none).
+    pub fn set_profile(&mut self, profile: Option<u64>) {
+        self.profile = profile;
     }
 
     pub fn reset_token(&mut self) {
@@ -35,8 +43,11 @@ impl Session {
 
     fn cookie_header(&self, arl: &str) -> String {
         let arl = (!arl.is_empty()).then(|| format!("arl={arl}"));
-        let others = self.cookies.iter().filter(|(k, _)| k != "arl").map(|(k, v)| format!("{k}={v}"));
-        arl.into_iter().chain(others).collect::<Vec<_>>().join("; ")
+        // A chosen profile overrides whatever `account_id` the server last set.
+        let pinned = self.profile.map(|id| format!("account_id={id}"));
+        let is_pinned = pinned.is_some();
+        let others = self.cookies.iter().filter(|(k, _)| k != "arl" && !(is_pinned && k == "account_id")).map(|(k, v)| format!("{k}={v}"));
+        arl.into_iter().chain(others).chain(pinned).collect::<Vec<_>>().join("; ")
     }
 
     fn store(&mut self, set_cookie: &str) {
@@ -128,6 +139,18 @@ mod tests {
         s.store("later=1; expires=Fri, 01 Jan 2100 00:00:00 GMT");
         assert_eq!(s.cookie_header("A"), "arl=A; sid=def; dzr_uniq_id=x; later=1", "an hour's Max-Age and a future date keep");
         assert_eq!(Session::new().cookie_header(""), "");
+    }
+
+    #[test]
+    fn chosen_profile_overrides_the_account_id_cookie() {
+        let mut s = Session::new();
+        s.set_profile(Some(42));
+        s.store("account_id=7; path=/");
+        s.store("sid=abc; path=/");
+        assert_eq!(s.cookie_header("A"), "arl=A; sid=abc; account_id=42");
+        let mut owner = Session::new();
+        owner.store("account_id=7; path=/");
+        assert_eq!(owner.cookie_header("A"), "arl=A; account_id=7", "no profile chosen: the server's cookie stands");
     }
 
     #[test]

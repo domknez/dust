@@ -258,6 +258,13 @@ and closes it. The session token (`arl` cookie) is stored in your OS keychain; *
 of Deezer** in the account menu removes it. Deezer Premium required. Email/password
 sign-in works; Google and Apple sign-in may refuse embedded browsers.
 
+**Family plans:** when the account is a Deezer family plan's owner, dust shows *Who's
+listening?* after sign-in with the members that can be listened as (members who made
+their profile private are left out). The choice is kept in the keychain with the
+session; *Switch profile…* in the account menu changes it. Each member has their own
+play history, Crate, saved queue and new-release alerts. If Deezer doesn't confirm the
+switch, dust stays on the plan owner's account and says so.
+
 Fallback: "Paste ARL cookie instead" takes the `arl` value from a logged-in browser
 (DevTools → Application → Cookies). Treat it like a password; "Log out of all devices"
 in Deezer's account settings revokes it.

@@ -24,7 +24,7 @@ use crate::output::airplay::dacp::{self, Remote};
 use crate::player::saved::QueueFiles;
 use crate::player::{Cmd, Flow, Output, PlayerHandle, Repeat, Status};
 use crate::settings::Prefs;
-use crate::source::{Shared, SourceId};
+use crate::source::Shared;
 use eframe::egui::{self, Key, Margin, Ui};
 
 /// What the panel on the right shows.
@@ -82,8 +82,16 @@ impl App {
             return;
         }
         let any = !played.is_empty();
+        // The plays of a Deezer family member are kept apart from the owner's.
+        let in_use = self.client.as_ref().map(|c| (c.id().key, c.data_key()));
         for played in played {
-            self.plays.record(Play::new(played));
+            let mut play = Play::new(played);
+            if let Some((key, data_key)) = &in_use
+                && play.source == *key
+            {
+                play.source = data_key.clone();
+            }
+            self.plays.record(play);
         }
         if any && self.prefs.flow_new_only {
             self.send_skip_heard();
@@ -269,24 +277,59 @@ impl App {
     pub(super) fn log_in_with(&mut self, arl: String) {
         self.login.error = None;
         self.login.remember = true;
-        self.login.task.start(&self.jobs, move || Deezer::login(&arl));
+        self.login.task.start(&self.jobs, move || Deezer::login_as(&arl, None));
     }
 
     #[cfg(feature = "login-window")]
     pub(super) fn log_in_with_browser(&mut self) {
         self.login.error = None;
         self.login.remember = true;
-        self.login.task.start(&self.jobs, || Deezer::login(&crate::login::obtain_arl().map_err(Error::Other)?));
+        self.login.task.start(&self.jobs, || Deezer::login_as(&crate::login::obtain_arl().map_err(Error::Other)?, None));
     }
 
-    fn on_logged_in(&mut self, ctx: &egui::Context, client: Deezer) {
-        if std::mem::take(&mut self.login.remember)
-            && let Err(e) = credentials::save(deezer::ID, client.arl())
+    pub(super) fn on_logged_in(&mut self, ctx: &egui::Context, client: Deezer) {
+        let remember = std::mem::take(&mut self.login.remember);
+        if remember
+            && let Err(e) =
+                credentials::save(deezer::ID, client.arl()).and_then(|()| credentials::save_profile(deezer::ID, client.profile()))
         {
             self.toasts.error(ctx, format!("Logged in, but dust can't remember it for next time: {e}"));
         }
         self.login.arl.clear();
+        if client.profile_unconfirmed() {
+            self.login.notice = Some("Couldn't switch to that profile: Deezer didn't confirm it. Using the plan owner's account.".into());
+        }
+        let several = client.profiles().len() > 1;
+        self.login.family = several.then(|| client.clone());
+        // A new login to a family plan asks who is listening, before any music.
+        if several && remember && client.profile().is_none() {
+            self.login.choosing = true;
+            return;
+        }
+        // Another member: nothing of the last one's pages stays.
+        if std::mem::take(&mut self.login.choosing) && self.client.as_ref().is_some_and(|c| c.id() == deezer::ID) {
+            self.clear_content();
+        }
         self.source_ready(std::sync::Arc::new(client));
+    }
+
+    /// The profile picker's choice: log in again as that family member.
+    pub(super) fn pick_profile(&mut self, id: u64) {
+        let Some(family) = self.login.family.clone() else { return };
+        if self.client.as_ref().is_some_and(|c| c.id() == deezer::ID) && family.profile() == Some(id) {
+            self.login.choosing = false;
+            return;
+        }
+        let arl = family.arl().to_string();
+        self.login.error = None;
+        self.login.remember = true;
+        self.login.task.start(&self.jobs, move || Deezer::login_as(&arl, Some(id)));
+    }
+
+    /// "Switch profile…" in the account menu.
+    pub(super) fn choose_profile(&mut self) {
+        self.login.error = None;
+        self.login.choosing = self.login.family.is_some();
     }
 
     // ------------------------------------------------------------ navigation
@@ -403,10 +446,10 @@ impl App {
 
     /// The tracks of a list made from the play history (the source in use's).
     pub(super) fn history_list(&self, which: super::stats::Smart) -> Vec<Track> {
-        let source = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
+        let source = self.client.as_ref().map(|c| c.data_key()).unwrap_or_default();
         let now = crate::clock::unix_now();
         let likes = &self.library.likes.likes;
-        super::stats::smart_list(&self.plays.oldest_first(source), which, now, &|id| likes.tracks.contains(id))
+        super::stats::smart_list(&self.plays.oldest_first(&source), which, now, &|id| likes.tracks.contains(id))
     }
 
     /// Open a collection; artists get their full page instead of a track list.
@@ -498,9 +541,9 @@ impl App {
 
     /// Save the queue of `source` as it is now (unless its restore is still on its
     /// way, which would save an empty queue over it).
-    pub(super) fn save_queue_now(&mut self, source: SourceId) {
+    pub(super) fn save_queue_now(&mut self, file: &str) {
         if self.queue_saved.is_some() && !self.restore_pending {
-            self.queues.save(&self.player.status(), source);
+            self.queues.save(&self.player.status(), file);
         }
     }
 
@@ -518,7 +561,7 @@ impl App {
         let key = (st.queue_version, st.index, st.flow.clone());
         if *last != key {
             if let Some(client) = &self.client {
-                self.queues.save(st, client.id());
+                self.queues.save(st, &client.queue_file());
             }
             self.queue_saved = Some(key);
         }
@@ -677,7 +720,7 @@ impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         // Once more with the exact position, to resume right there next time.
         if let Some(client) = &self.client {
-            self.save_queue_now(client.id());
+            self.save_queue_now(&client.queue_file());
         }
         self.updates.apply_on_exit();
     }
@@ -696,6 +739,11 @@ impl eframe::App for App {
         self.sync_appearance(&ctx);
         self.covers.begin_frame();
         let mut acts = Actions::default();
+        if self.login.choosing {
+            self.profile_picker(ui, &mut acts);
+            self.apply(&ctx, acts);
+            return;
+        }
         if self.client.is_none() {
             self.login_screen(ui, &mut acts);
             self.server_dialog(&ctx, &mut acts);
@@ -707,6 +755,9 @@ impl eframe::App for App {
         let st = self.status.take().unwrap_or_else(|| self.player.status());
         super::widgets::offer_crate(&ctx, self.prefs.crate_on);
         self.shortcuts(&ctx, &st, &mut acts);
+        if let Some(notice) = self.login.notice.take() {
+            self.toasts.error(&ctx, notice);
+        }
         let p = colors();
         if self.mini_player.is_some() {
             egui::CentralPanel::default().frame(panel_frame(p.bar, Margin::ZERO)).show(ui, |ui| self.mini_player(ui, &st, &mut acts));
@@ -994,7 +1045,7 @@ mod tests {
         });
         // What eframe runs while the window is minimized: logic, no ui.
         t.app.tick(&t.ctx);
-        assert_eq!(t.queues().load(crate::deezer::ID).map(|s| ids(&s.tracks)), Some(vec![1, 2]), "the queue is saved");
+        assert_eq!(t.queues().load(crate::deezer::ID.queue_file).map(|s| ids(&s.tracks)), Some(vec![1, 2]), "the queue is saved");
         assert_eq!(t.app.plays.len(), 1, "and the play kept");
     }
 
@@ -1045,7 +1096,7 @@ mod tests {
         assert!(matches!(t.sent()[..], [Cmd::Shuffle(true), Cmd::Repeat(Repeat::All)]), "the player gets the saved modes");
         assert_eq!(t.jobs.waiting(), 0);
         assert!(t.app.client.is_none() && t.app.discovery.is_none() && t.app.now_playing.is_none());
-        assert!(t.queues().load(deezer::ID).is_none());
+        assert!(t.queues().load(deezer::ID.queue_file).is_none());
     }
 
     #[test]
