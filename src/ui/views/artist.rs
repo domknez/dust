@@ -256,8 +256,8 @@ fn tabs(ui: &Ui, right_top: egui::Pos2, labels: &[&str], selected: usize) -> Opt
     clicked
 }
 
-/// One release in the discography grid: cover, title and year; a lime outline on
-/// hover.
+/// One release in the discography grid: cover, title and year; on hover a lime
+/// outline and a play button that plays it in place of the queue.
 fn release(ui: &mut Ui, covers: &mut Covers, item: &Item, acts: &mut Actions) {
     let Some(coll) = Coll::from_item(item) else { return };
     let p = colors();
@@ -266,9 +266,14 @@ fn release(ui: &mut Ui, covers: &mut Covers, item: &Item, acts: &mut Actions) {
     let art = Rect::from_min_size(rect.min, Vec2::splat(size));
     let resp = ui.interact(rect, ui.scope_id().with(("release", &item.id)), Sense::click());
     widgets::cover(ui, covers, item.picture.as_ref(), metrics::GRID_CARD_PX, art, radius::CARD);
+    let mut play = false;
     if resp.hovered() {
         let ring = art.expand(3.0);
         ui.painter().rect_stroke(ring, CornerRadius::same(radius::CONTROL), egui::Stroke::new(1.5, p.accent), egui::StrokeKind::Inside);
+        let knob = pos2(art.right() - 24.0, art.bottom() - 24.0);
+        let over_knob = resp.hover_pos().is_some_and(|at| at.distance(knob) < 20.0);
+        widgets::play_knob(ui, knob, if over_knob { 18.0 } else { 16.0 });
+        play = over_knob;
     }
     let year = item.release.as_ref().and_then(|r| r.year.as_deref()).unwrap_or_default();
     let year_width = ui.painter().layout_no_wrap(year.to_string(), ty::META.font(), p.dim).size().x;
@@ -279,7 +284,7 @@ fn release(ui: &mut Ui, covers: &mut Covers, item: &Item, acts: &mut Actions) {
         acts.push(Action::PlaySource(coll.source.clone(), mode));
     }
     if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-        acts.push(Action::OpenCollection(coll));
+        acts.push(if play { Action::PlaySource(coll.source.clone(), PlayMode::Now) } else { Action::OpenCollection(coll) });
     }
 }
 

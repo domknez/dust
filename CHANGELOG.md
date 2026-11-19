@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A play button on a release in an artist's discography when hovered: it plays the
+  release in place of the queue
+
 ## 0.33.3 (2026-11-19)
 
 - An AirPlay speaker lost mid-song (a Wi-Fi reconnect, a new address) is tried again
