@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.33.4 (2026-11-19)
+
 - A play button on a release in an artist's discography when hovered: it plays the
   release in place of the queue
 
