@@ -25,10 +25,11 @@ static ACTIVE_REMOTES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 impl ActiveRemote {
     pub fn new() -> Self {
-        // Unguessable: it's what lets a request in.
-        let mut bytes = [0u8; 8];
+        // From the OS's RNG, as it's what lets a request in. 32 bits: receivers keep
+        // it as one (a 64-bit id came back cut, so every button press was refused).
+        let mut bytes = [0u8; 4];
         getrandom::fill(&mut bytes).expect("OS RNG");
-        let id = u64::from_le_bytes(bytes).to_string();
+        let id = u32::from_le_bytes(bytes).to_string();
         ACTIVE_REMOTES.lock().unwrap_or_else(|e| e.into_inner()).push(id.clone());
         ActiveRemote(id)
     }
@@ -216,6 +217,16 @@ fn read_request(reader: &mut impl BufRead) -> Option<(String, Option<String>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn active_remote_ids_fit_in_32_bits() {
+        let remote = ActiveRemote::new();
+        assert!(remote.as_str().parse::<u32>().is_ok(), "{}", remote.as_str());
+        assert!(is_active(remote.as_str()));
+        let id = remote.as_str().to_string();
+        drop(remote);
+        assert!(!is_active(&id));
+    }
 
     #[test]
     fn parses_receiver_requests() {
