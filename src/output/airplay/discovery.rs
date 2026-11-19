@@ -107,7 +107,6 @@ fn parse_features(v: &str) -> u64 {
 pub struct Discovery {
     devices: Arc<Mutex<Vec<Device>>>,
     refresh: Sender<()>,
-    _daemon: ServiceDaemon,
 }
 
 /// How often the browse thread checks for sleep and network changes.
@@ -123,14 +122,16 @@ impl Discovery {
     /// only announce themselves when something changes on their side. So after sleep
     /// or a network change, when the cached speakers have expired, a speaker could
     /// stay missing for a long time: the search restarts then, and on [`refresh`].
+    /// Each restart uses a new mDNS daemon: one left from before a sleep or a network
+    /// change can keep listening on sockets that no longer hear anything, so searching
+    /// again through it found nothing for hours.
     ///
     /// [`refresh`]: Discovery::refresh
     pub fn start(on_change: impl Fn() + Send + 'static) -> Result<Self, String> {
-        let daemon = ServiceDaemon::new().map_err(|e| e.to_string())?;
-        let mut events = daemon.browse(SERVICE).map_err(|e| e.to_string())?;
+        let (mut browser, mut events) = browse()?;
         let devices = Arc::new(Mutex::new(Vec::<Device>::new()));
         let (refresh, refresh_rx) = mpsc::channel::<()>();
-        let (list, browser) = (devices.clone(), daemon.clone());
+        let list = devices.clone();
         std::thread::Builder::new()
             .name("airplay-discovery".into())
             .spawn(move || {
@@ -190,16 +191,18 @@ impl Discovery {
                     if let Some(reason) = watch.check(asked, empty).or(lost.then_some("browse ended")) {
                         log_debug!("airplay discovery: searching again ({reason})");
                         own_ips = local_ips();
-                        let _ = browser.stop_browse(SERVICE);
-                        match browser.browse(SERVICE) {
-                            Ok(fresh) => events = fresh,
+                        match browse() {
+                            Ok((fresh, fresh_events)) => {
+                                let _ = std::mem::replace(&mut browser, fresh).shutdown();
+                                events = fresh_events;
+                            }
                             Err(e) => log_warn!("airplay discovery: {e}"),
                         }
                     }
                 }
             })
             .map_err(|e| e.to_string())?;
-        Ok(Self { devices, refresh, _daemon: daemon })
+        Ok(Self { devices, refresh })
     }
 
     pub fn devices(&self) -> Vec<Device> {
@@ -211,6 +214,14 @@ impl Discovery {
     pub fn refresh(&self) {
         let _ = self.refresh.send(());
     }
+}
+
+/// A new mDNS daemon, with its own sockets on the current network, browsing for
+/// speakers.
+fn browse() -> Result<(ServiceDaemon, mdns_sd::Receiver<ServiceEvent>), String> {
+    let daemon = ServiceDaemon::new().map_err(|e| e.to_string())?;
+    let events = daemon.browse(SERVICE).map_err(|e| e.to_string())?;
+    Ok((daemon, events))
 }
 
 fn local_ips() -> Vec<IpAddr> {

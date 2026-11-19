@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- AirPlay speakers missing after sleep or a network change until dust was restarted:
+  each new search now starts on the current network
+
 ## 0.33.0 (2026-11-18)
 
 - A notification for each new track while dust is out of sight (macOS and
