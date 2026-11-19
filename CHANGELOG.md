@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.33.1 (2026-11-19)
+
 - AirPlay speakers missing after sleep or a network change until dust was restarted:
   each new search now starts on the current network
 
