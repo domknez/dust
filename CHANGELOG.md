@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.33.2 (2026-11-19)
+
 - The buttons on an AirPlay speaker (play/pause, skip, volume) work again: since
   0.32.0 dust refused them
 
