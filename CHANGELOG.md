@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.33.3 (2026-11-19)
+
 - An AirPlay speaker lost mid-song (a Wi-Fi reconnect, a new address) is tried again
   for up to 15 seconds and playback carries on there, instead of moving to this
   computer's speakers after the first failed try
