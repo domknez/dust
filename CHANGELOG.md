@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- An AirPlay speaker lost mid-song (a Wi-Fi reconnect, a new address) is tried again
+  for up to 15 seconds and playback carries on there, instead of moving to this
+  computer's speakers after the first failed try
+
 ## 0.33.2 (2026-11-19)
 
 - The buttons on an AirPlay speaker (play/pause, skip, volume) work again: since
