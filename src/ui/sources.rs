@@ -73,8 +73,15 @@ pub struct Login {
     /// The ARL typed in, and whether its field is open.
     pub arl: String,
     pub show_arl: bool,
-    /// Store the session in the keychain once the pending login succeeds.
+    /// The pending login is a new one, or a pick from the profile picker: its session
+    /// (and pick) are stored once it succeeds, and a new one to a family plan opens
+    /// the picker. Not set for the stored login at start.
     pub remember: bool,
+    /// The logged-in Deezer account when it is a family plan with several members to
+    /// listen as: what the profile picker lists.
+    pub family: Option<Deezer>,
+    /// The profile picker is showing.
+    pub choosing: bool,
     pub error: Option<String>,
 }
 
@@ -117,7 +124,8 @@ impl App {
     /// At start: log in with the stored logins.
     pub(super) fn start_sources(&mut self) {
         if let Some(arl) = credentials::load(deezer::ID) {
-            self.login.task.start(&self.jobs, move || Deezer::login(&arl));
+            let profile = credentials::load_profile(deezer::ID);
+            self.login.task.start(&self.jobs, move || Deezer::login_as(&arl, profile));
         }
         if let Some(server) = credentials::load(subsonic::ID).and_then(|text| Server::from_json(&text)) {
             self.sources.connecting.start(&self.jobs, move || Subsonic::connect(&server));
@@ -171,8 +179,9 @@ impl App {
     /// used last time), remembered for next time. Another source than before stops
     /// playback; its queue is saved and the new source's comes back.
     pub(super) fn activate(&mut self, source: Shared, chosen: bool) {
-        let old = self.client.as_ref().map(|c| c.id());
+        let old = self.client.as_ref().map(|c| (c.data_key().to_string(), c.queue_file()));
         let new = source.id();
+        let (new_key, new_file) = (source.data_key().to_string(), source.queue_file());
         if chosen {
             self.sources.settled = true;
             self.prefs.update(|p| p.source = new);
@@ -181,28 +190,29 @@ impl App {
         self.player.send(Cmd::Client(source.clone()));
         self.player.send(Cmd::Quality(self.prefs.quality));
         self.player.send(Cmd::ReportListens(self.prefs.report_listens));
-        self.send_skip_heard();
-        if old != Some(new) {
-            if let Some(old) = old {
-                self.save_queue_now(old);
+        if old.as_ref().map(|o| &o.0) != Some(&new_key) {
+            if let Some((_, old_file)) = old {
+                self.save_queue_now(&old_file);
                 log_info!("switching to {}", new.name);
             }
             self.clear_content();
-            self.restore_queue(new);
-            self.releases = super::release_watch::Watch::load(self.queues.dir(), new.key);
+            self.restore_queue(&new_file);
+            self.releases = super::release_watch::Watch::load(self.queues.dir(), &new_key);
         }
         let c = source.clone();
         self.library.playlists_load.start(&self.jobs, move || c.playlists());
         let c = source.clone();
         self.library.likes_load.start(&self.jobs, move || c.likes());
         self.client = Some(source);
+        // What was heard is the new one's (a family member's own).
+        self.send_skip_heard();
         self.open_view(View::Home);
     }
 
     /// Bring back the source's queue from last time, paused where it was.
-    fn restore_queue(&mut self, source: SourceId) {
+    fn restore_queue(&mut self, file: &str) {
         self.restore_pending = false;
-        if let Some(s) = self.queues.load(source) {
+        if let Some(s) = self.queues.load(file) {
             log_info!("restoring a queue of {} tracks", s.tracks.len());
             self.player.send(Cmd::Restore { tracks: s.tracks, index: s.index, position: s.position, flow: s.flow });
             self.restore_pending = true;
@@ -218,9 +228,13 @@ impl App {
     /// Log out of the source in use and forget its login; another logged-in one
     /// takes over, otherwise the login screen shows.
     pub(super) fn log_out(&mut self, ctx: &egui::Context) {
-        let Some(id) = self.client.as_ref().map(|c| c.id()) else { return };
+        let Some((id, file)) = self.client.as_ref().map(|c| (c.id(), c.queue_file())) else { return };
         if let Err(e) = credentials::clear(id) {
             self.toasts.error(ctx, format!("Logged out, but the stored login couldn't be removed: {e}"));
+        }
+        if id == deezer::ID {
+            // A login (a pick) still on its way would store the session again.
+            self.login = Login::default();
         }
         self.sources.logged_in.remove(&id);
         match self.sources.first() {
@@ -228,7 +242,7 @@ impl App {
             None => {
                 // Its tracks keep no source to play from, or to be credited to.
                 self.player.send(Cmd::Pause);
-                self.save_queue_now(id);
+                self.save_queue_now(&file);
                 self.client = None;
                 self.clear_content();
             }
@@ -400,7 +414,7 @@ mod tests {
 
     /// The tracks of the saved queue of `source`.
     fn saved(t: &TestApp, source: SourceId) -> Option<Vec<u64>> {
-        t.queues().load(source).map(|s| ids(&s.tracks))
+        t.queues().load(source.queue_file).map(|s| ids(&s.tracks))
     }
 
     /// The tracks of the queue restore sent to the player, if one was.
@@ -456,6 +470,7 @@ mod tests {
 
     #[test]
     fn logging_out_hands_over_to_the_other_source() {
+        let _keychain = keychain();
         let mut t = TestApp::new("source=deezer\n");
         t.app.source_ready(deezer());
         server_connects(&mut t);
@@ -494,7 +509,7 @@ mod tests {
     #[test]
     fn nothing_is_saved_before_the_queue_was_offered_back() {
         let mut t = TestApp::new("");
-        t.queues().save(&queue(&[1, 2], 1), deezer::ID);
+        t.queues().save(&queue(&[1, 2], 1), deezer::ID.queue_file);
         // The player's queue before any login: empty, then whatever it is.
         t.app.save_queue_if_changed(&Status::default());
         t.app.save_queue_if_changed(&queue(&[9], 0));
@@ -504,7 +519,7 @@ mod tests {
     #[test]
     fn the_saved_queue_comes_back_and_is_kept_up_to_date() {
         let mut t = TestApp::new("");
-        t.queues().save(&queue(&[1, 2], 1), deezer::ID);
+        t.queues().save(&queue(&[1, 2], 1), deezer::ID.queue_file);
         t.app.source_ready(deezer());
         assert_eq!(restored(&t), Some(vec![1, 2]));
         // Until the player shows it, its empty queue isn't saved over it.
@@ -513,13 +528,13 @@ mod tests {
         t.app.save_queue_if_changed(&queue(&[1, 2], 1));
         t.app.save_queue_if_changed(&queue(&[1, 2, 3], 2));
         assert_eq!(saved(&t, deezer::ID), Some(vec![1, 2, 3]));
-        assert_eq!(t.queues().load(deezer::ID).map(|s| s.index), Some(2));
+        assert_eq!(t.queues().load(deezer::ID.queue_file).map(|s| s.index), Some(2));
     }
 
     #[test]
     fn each_source_keeps_its_own_queue() {
         let mut t = TestApp::new("");
-        t.queues().save(&queue(&[7], 0), subsonic::ID);
+        t.queues().save(&queue(&[7], 0), subsonic::ID.queue_file);
         t.app.source_ready(deezer());
         t.app.player.set_status(|st| *st = queue(&[1, 2], 0));
         t.sent();
@@ -531,10 +546,253 @@ mod tests {
     #[test]
     fn switching_before_a_restore_arrives_keeps_the_saved_queue() {
         let mut t = TestApp::new("");
-        t.queues().save(&queue(&[1, 2], 1), deezer::ID);
+        t.queues().save(&queue(&[1, 2], 1), deezer::ID.queue_file);
         t.app.source_ready(deezer());
         // The player hasn't shown the restored queue yet: it's still empty.
         t.update(Action::SwitchSource(navidrome()));
         assert_eq!(saved(&t, deezer::ID), Some(vec![1, 2]));
+    }
+
+    /// The keychain is one for all tests: those that store or read Deezer's login
+    /// take turns.
+    static KEYCHAIN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn keychain() -> std::sync::MutexGuard<'static, ()> {
+        KEYCHAIN.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    const MEMBERS: [(u64, &str); 2] = [(1, "Parent"), (2, "Kid")];
+
+    fn family(profile: Option<u64>) -> Deezer {
+        Deezer::offline_family("Parent", &MEMBERS, profile)
+    }
+
+    /// A login that lands; `remember`: a new one (or a pick), to be stored.
+    fn lands(t: &mut TestApp, client: Deezer, remember: bool) {
+        t.app.login.remember = remember;
+        t.app.on_logged_in(&t.ctx, client);
+    }
+
+    fn data_key(t: &TestApp) -> &str {
+        t.app.client.as_ref().map_or("", |c| c.data_key())
+    }
+
+    #[test]
+    fn a_new_family_login_asks_who_is_listening_as_the_owner_meanwhile() {
+        let _keychain = keychain();
+        let mut t = TestApp::new("source=navidrome\n");
+        server_connects(&mut t);
+        lands(&mut t, family(None), true);
+        assert!(t.app.login.choosing, "the picker comes first");
+        assert!(t.app.sources.get(deezer::ID).is_some(), "Deezer is there already");
+        assert_eq!(credentials::load_profile(deezer::ID), None);
+        // Closing the picker keeps Deezer (as the owner) in the menu.
+        t.update(Action::CancelProfilePicker);
+        assert!(!t.app.login.choosing && t.app.sources.get(deezer::ID).is_some());
+        credentials::clear(deezer::ID).unwrap();
+    }
+
+    #[test]
+    fn a_stored_login_without_a_profile_starts_as_the_owner() {
+        let mut t = TestApp::new("");
+        lands(&mut t, family(None), false);
+        assert!(!t.app.login.choosing, "no picker at start-up");
+        assert_eq!((in_use(&t), data_key(&t)), (Some("Deezer"), "deezer"));
+        assert!(t.app.login.family.is_some(), "but Switch profile is offered");
+    }
+
+    #[test]
+    fn a_plan_with_one_member_has_nothing_to_pick() {
+        let _keychain = keychain();
+        let mut t = TestApp::new("");
+        lands(&mut t, Deezer::offline_family("Solo", &[(1, "Solo")], None), true);
+        assert!(!t.app.login.choosing && t.app.login.family.is_none());
+        assert_eq!(in_use(&t), Some("Deezer"));
+        credentials::clear(deezer::ID).unwrap();
+    }
+
+    #[test]
+    fn picking_a_member_switches_everything_kept_locally_and_is_remembered() {
+        let _keychain = keychain();
+        let mut t = TestApp::new("");
+        let kid = family(Some(2));
+        t.queues().save(&queue(&[7, 8], 1), &crate::source::Source::queue_file(&kid));
+        lands(&mut t, family(None), true);
+        t.app.player.set_status(|st| *st = queue(&[1, 2], 0));
+        t.sent();
+        t.update(Action::PickProfile(2));
+        assert!(t.app.login.task.is_loading() && t.app.login.remember, "logging in as the member");
+        lands(&mut t, kid, true);
+        assert!(!t.app.login.choosing);
+        assert_eq!(data_key(&t), "deezer:2");
+        assert_eq!(credentials::load_profile(deezer::ID), Some(2), "kept for next time");
+        assert_eq!(saved(&t, deezer::ID), Some(vec![1, 2]), "the owner's queue is kept");
+        let sent = t.sent();
+        // The player hears of the member first: it stops the owner's track there.
+        assert!(matches!(sent.first(), Some(Cmd::Client(c)) if c.data_key() == "deezer:2"));
+        let restored = sent.iter().find_map(|cmd| match cmd {
+            Cmd::Restore { tracks, .. } => Some(ids(tracks)),
+            _ => None,
+        });
+        assert_eq!(restored, Some(vec![7, 8]), "and the member's comes back");
+        credentials::clear(deezer::ID).unwrap();
+    }
+
+    #[test]
+    fn a_pick_deezer_doesnt_confirm_changes_nothing() {
+        let _keychain = keychain();
+        let mut t = TestApp::new("");
+        lands(&mut t, family(None), true);
+        t.update(Action::PickProfile(2));
+        lands(&mut t, Deezer::offline_unconfirmed("Parent", &MEMBERS), true);
+        assert!(t.app.login.choosing && t.app.login.error.is_some(), "said in the picker");
+        assert_eq!(data_key(&t), "deezer");
+        assert!(t.app.login.family.as_ref().is_some_and(|f| !f.profile_unconfirmed()), "the picker still lists the plan");
+        assert!(!t.app.login.remember);
+        credentials::clear(deezer::ID).unwrap();
+    }
+
+    #[test]
+    fn a_pick_deezer_doesnt_confirm_after_a_switch_to_the_server_keeps_the_stored_one() {
+        let _keychain = keychain();
+        let mut t = TestApp::new("");
+        lands(&mut t, family(Some(2)), true);
+        server_connects(&mut t);
+        t.update(Action::ChooseProfile);
+        t.update(Action::PickProfile(1));
+        let server = t.app.sources.get(subsonic::ID).cloned().expect("connected");
+        t.update(Action::SwitchSource(server));
+        lands(&mut t, Deezer::offline_unconfirmed("Parent", &MEMBERS), true);
+        assert_eq!(credentials::load_profile(deezer::ID), Some(2), "not written over");
+        assert_eq!(in_use(&t), Some("Navidrome"));
+        credentials::clear(deezer::ID).unwrap();
+    }
+
+    #[test]
+    fn a_stored_pick_deezer_doesnt_confirm_is_kept_for_next_time() {
+        let _keychain = keychain();
+        credentials::save_with_profile(deezer::ID, "arl", Some(2)).unwrap();
+        let mut t = TestApp::new("");
+        lands(&mut t, Deezer::offline_unconfirmed("Parent", &MEMBERS), false);
+        assert!(!t.app.login.choosing);
+        assert_eq!((in_use(&t), data_key(&t)), (Some("Deezer"), "deezer"), "the owner, for now");
+        assert_eq!(credentials::load_profile(deezer::ID), Some(2));
+        credentials::clear(deezer::ID).unwrap();
+    }
+
+    #[test]
+    fn switching_profile_can_be_cancelled_and_log_out_forgets_the_plan() {
+        let _keychain = keychain();
+        let mut t = TestApp::new("");
+        lands(&mut t, family(Some(1)), false);
+        t.update(Action::ChooseProfile);
+        assert!(t.app.login.choosing);
+        t.update(Action::CancelProfilePicker);
+        assert!(!t.app.login.choosing && in_use(&t) == Some("Deezer"));
+        t.update(Action::ChooseProfile);
+        t.update(Action::PickProfile(1));
+        assert!(!t.app.login.choosing, "the profile already in use is not logged in again");
+        assert!(!t.app.login.task.is_loading());
+        t.update(Action::LogOut);
+        assert!(t.app.login.family.is_none());
+    }
+
+    #[test]
+    fn each_member_hears_their_own_plays() {
+        let mut t = TestApp::new("");
+        lands(&mut t, family(Some(2)), false);
+        let played = |source: &str, id| crate::player::Played {
+            source: source.into(),
+            track: crate::model::Track::test(id),
+            started_unix: 1,
+            heard_secs: 200,
+            skipped: false,
+            flow: None,
+        };
+        t.app.player.set_status(|st| st.played = vec![played("deezer:2", 5), played("deezer", 6)]);
+        t.app.tick(&t.ctx);
+        assert!(t.app.plays.has_heard("deezer:2", &crate::model::TrackId::from(5)));
+        assert!(!t.app.plays.has_heard("deezer:2", &crate::model::TrackId::from(6)), "the owner's play isn't the kid's");
+        assert!(t.app.plays.has_heard("deezer", &crate::model::TrackId::from(6)));
+    }
+
+    /// The tracks Flow was last told to leave out.
+    fn skip_heard(t: &TestApp) -> Option<Vec<u64>> {
+        t.sent().into_iter().rev().find_map(|cmd| match cmd {
+            Cmd::SkipHeard(heard) => Some(heard.map(|h| {
+                let mut ids: Vec<u64> = h.iter().map(|id| id.to_string().parse().expect("a number")).collect();
+                ids.sort();
+                ids
+            })),
+            _ => None,
+        })?
+    }
+
+    #[test]
+    fn flow_leaves_out_what_the_member_in_use_heard() {
+        let mut t = TestApp::new("flow_new_only=true\n");
+        let play = |source: &str, id| crate::ui::plays::Play {
+            source: source.into(),
+            at: 1,
+            heard_secs: 200,
+            skipped: false,
+            flow: None,
+            track: crate::model::Track::test(id),
+        };
+        t.app.plays.record(play("deezer", 1));
+        t.app.plays.record(play("deezer:2", 2));
+        lands(&mut t, family(None), false);
+        assert_eq!(skip_heard(&t), Some(vec![1]), "the owner's");
+        lands(&mut t, family(Some(2)), false);
+        assert_eq!(skip_heard(&t), Some(vec![2]), "then the kid's");
+    }
+
+    #[test]
+    fn a_member_deezer_stops_taking_goes_back_to_the_owner() {
+        let _keychain = keychain();
+        credentials::save_with_profile(deezer::ID, "arl", Some(2)).unwrap();
+        let mut t = TestApp::new("");
+        lands(&mut t, family(Some(2)), false);
+        t.app.profile_lost(&t.ctx);
+        assert!(t.app.login.task.is_loading() && !t.app.login.remember, "logging in as the owner, not stored");
+        lands(&mut t, family(None), false);
+        assert_eq!(data_key(&t), "deezer");
+        assert!(!t.app.login.choosing, "no picker");
+        assert_eq!(credentials::load_profile(deezer::ID), Some(2), "the pick is tried again next time");
+        credentials::clear(deezer::ID).unwrap();
+    }
+
+    #[test]
+    fn closing_the_picker_drops_a_pick_on_its_way() {
+        let mut t = TestApp::new("");
+        lands(&mut t, family(Some(2)), false);
+        t.update(Action::ChooseProfile);
+        t.update(Action::PickProfile(1));
+        assert!(t.app.login.task.is_loading());
+        t.app.login.error = Some("an earlier try".into());
+        t.update(Action::CancelProfilePicker);
+        assert!(!t.app.login.task.is_loading() && !t.app.login.remember && t.app.login.error.is_none());
+        assert_eq!(data_key(&t), "deezer:2", "the kid stays");
+    }
+
+    #[test]
+    fn logging_out_drops_a_pick_on_its_way() {
+        let _keychain = keychain();
+        let mut t = TestApp::new("");
+        lands(&mut t, family(Some(1)), false);
+        t.update(Action::ChooseProfile);
+        t.update(Action::PickProfile(2));
+        t.update(Action::LogOut);
+        assert!(!t.app.login.task.is_loading() && !t.app.login.remember && !t.app.login.choosing);
+        assert!(t.app.login.family.is_none());
+    }
+
+    #[test]
+    fn the_owner_after_a_closed_picker_isnt_logged_in_again() {
+        let mut t = TestApp::new("");
+        lands(&mut t, family(None), false);
+        t.update(Action::ChooseProfile);
+        t.update(Action::PickProfile(1));
+        assert!(!t.app.login.task.is_loading() && !t.app.login.choosing);
     }
 }

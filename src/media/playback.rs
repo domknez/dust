@@ -27,7 +27,7 @@ impl From<Error> for OpenError {
             Error::Http { status, .. } if status == 408 || status == 429 || status >= 500 => OpenError::Transient(message),
             Error::Http { .. } => OpenError::Unavailable(message),
             // The same for every track: skipping would only fail again.
-            Error::Network { .. } | Error::SessionExpired | Error::InvalidToken => OpenError::Transient(message),
+            Error::Network { .. } | Error::SessionExpired | Error::ProfileLost | Error::InvalidToken => OpenError::Transient(message),
         }
     }
 }

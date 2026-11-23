@@ -115,7 +115,7 @@ impl App {
     /// Put `thing` in the Crate (or say it's there already).
     pub(in crate::ui) fn save_to_crate(&mut self, ctx: &egui::Context, thing: Thing, from: String) {
         let Some(client) = &self.client else { return };
-        let source = client.id().key;
+        let source = client.data_key();
         let message = match self.crates.store.find(source, &thing).map(|e| (e.id.clone(), e.heard)) {
             Some((id, true)) => {
                 self.crates.store.change(Change::Heard { id, heard: false });
@@ -138,7 +138,7 @@ impl App {
 
     /// New entries of the source in use that can be played (not notes).
     pub(in crate::ui) fn crate_playable(&self) -> usize {
-        let source = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
+        let source = self.data_key();
         self.crates.store.entries().iter().filter(|e| !e.heard && e.source == source && e.thing != Thing::Note).count()
     }
 
@@ -249,13 +249,21 @@ fn tick_box(ui: &Ui, rect: Rect, hovered: bool) {
 
 /// "Deezer", "Navidrome": a source's name from its key.
 fn source_name(key: &str) -> &'static str {
-    crate::source::KINDS.iter().find(|k| k.key == key).map_or("another source", |k| k.name)
+    crate::source::KINDS.iter().find(|k| k.key == key.split(':').next().unwrap_or(key)).map_or("another source", |k| k.name)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ui::app::testing::*;
+
+    #[test]
+    fn a_family_members_entries_name_their_source() {
+        assert_eq!(source_name("deezer"), "Deezer");
+        assert_eq!(source_name("deezer:2"), "Deezer");
+        assert_eq!(source_name("navidrome"), "Navidrome");
+        assert_eq!(source_name("elsewhere"), "another source");
+    }
 
     #[test]
     fn the_entry_menu_marks_heard_and_removes() {

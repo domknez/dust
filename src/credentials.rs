@@ -146,10 +146,33 @@ pub fn save(source: SourceId, secret: &str) -> Result<(), String> {
     })
 }
 
+/// Where a source keeps which member of the account was picked (a Deezer family plan).
+fn profile_key(source: SourceId) -> String {
+    format!("{}.profile", source.login_key)
+}
+
+/// The family member picked for `source`, if any.
+pub fn load_profile(source: SourceId) -> Option<u64> {
+    with_logins(|l| l.0.get(&profile_key(source))?.parse().ok()).flatten()
+}
+
+/// Keep `secret` as the login of `source` and `profile` as the member picked
+/// (none: the account itself), in one write; Err says why they couldn't be.
+pub fn save_with_profile(source: SourceId, secret: &str, profile: Option<u64>) -> Result<(), String> {
+    update(|l| {
+        l.0.insert(source.login_key.to_string(), secret.to_string());
+        match profile {
+            Some(id) => l.0.insert(profile_key(source), id.to_string()),
+            None => l.0.remove(&profile_key(source)),
+        };
+    })
+}
+
 /// Forget the login of `source`; Err says why it couldn't be.
 pub fn clear(source: SourceId) -> Result<(), String> {
     update(|l| {
         l.0.remove(source.login_key);
+        l.0.remove(&profile_key(source));
     })
 }
 
@@ -187,5 +210,22 @@ mod tests {
         assert_eq!((server.url.as_str(), server.user.as_str()), ("http://nas", "me"));
         assert_eq!(Logins::from_json(r#"{"arl":"abc","server":null}"#), logins(&[("arl", "abc")]), "a login 0.19 didn't have");
         assert_eq!(Logins::from_json(&read.to_json()), read, "and writes it back the same");
+    }
+
+    /// A source of its own: the other tests log Deezer and Navidrome in and out in
+    /// the shared in-memory keychain while this runs.
+    #[test]
+    fn the_picked_profile_is_kept_with_the_login_and_cleared_with_it() {
+        let own = SourceId { key: "profile-test", name: "Test", queue_file: "profile-test.json", login_key: "profile-test" };
+        assert_eq!(load_profile(own), None);
+        save_with_profile(own, "secret", Some(42)).unwrap();
+        assert_eq!((load(own).as_deref(), load_profile(own)), (Some("secret"), Some(42)));
+        save_with_profile(own, "secret", None).unwrap();
+        assert_eq!(load_profile(own), None, "the account itself");
+        save_with_profile(own, "secret", Some(7)).unwrap();
+        save(own, "renewed").unwrap();
+        assert_eq!(load_profile(own), Some(7), "a new session alone keeps the pick");
+        clear(own).unwrap();
+        assert_eq!((load(own), load_profile(own)), (None, None), "logging out forgets the pick too");
     }
 }

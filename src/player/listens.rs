@@ -6,14 +6,13 @@
 use super::library::Library;
 use super::{Flow, Played};
 use crate::model::{Format, Listen, Track, TrackId};
-use crate::source::SourceId;
 use std::time::Duration;
 
 /// A listen that played to within this many seconds of the end isn't a skip.
 const SKIP_TOLERANCE_SECS: u64 = 3;
 
 struct Current {
-    source: &'static str,
+    source: String,
     listen: Listen,
     heard: Duration,
     track_secs: u32,
@@ -33,12 +32,13 @@ impl ListenTracker {
         Self { enabled: true, current: None }
     }
 
-    /// A new track of `source` started: report the start and begin counting.
+    /// A new track of `source` (its [`data_key`](crate::source::Source::data_key))
+    /// started: report the start and begin counting.
     /// `flow`: the endless Flow it came from, if any.
     pub fn start(
         &mut self,
         library: Option<&dyn Library>,
-        source: SourceId,
+        source: String,
         song_id: TrackId,
         format: Format,
         track: &Track,
@@ -51,8 +51,7 @@ impl ListenTracker {
         {
             library.report_listen_start(song_id);
         }
-        self.current =
-            Some(Current { source: source.key, listen, heard: Duration::ZERO, track_secs, seeked: false, track: track.clone(), flow });
+        self.current = Some(Current { source, listen, heard: Duration::ZERO, track_secs, seeked: false, track: track.clone(), flow });
     }
 
     /// Audio played for `elapsed`.
@@ -128,7 +127,7 @@ mod tests {
     fn listen(secs: u64, seeked: bool) -> (Option<bool>, Option<bool>) {
         let reports = Reports::default();
         let mut tracker = ListenTracker::new();
-        tracker.start(Some(&reports), crate::deezer::ID, TrackId::from(1), Format::Mp3(320), &Track::test(1), None);
+        tracker.start(Some(&reports), crate::deezer::ID.key.into(), TrackId::from(1), Format::Mp3(320), &Track::test(1), None);
         tracker.heard(Duration::from_secs(secs));
         if seeked {
             tracker.seeked();
@@ -151,9 +150,9 @@ mod tests {
     fn reports_can_be_turned_off_but_the_history_still_keeps_it() {
         let reports = Reports::default();
         let mut tracker = ListenTracker { enabled: false, ..ListenTracker::new() };
-        tracker.start(Some(&reports), crate::deezer::ID, TrackId::from(1), Format::Mp3(320), &Track::test(1), None);
+        tracker.start(Some(&reports), crate::deezer::ID.key.into(), TrackId::from(1), Format::Mp3(320), &Track::test(1), None);
         tracker.heard(Duration::from_secs(60));
-        assert_eq!(tracker.finish(Some(&reports)).map(|p| p.source), Some("deezer"));
+        assert_eq!(tracker.finish(Some(&reports)).map(|p| p.source).as_deref(), Some("deezer"));
         assert!(reports.0.lock().unwrap().is_empty());
     }
 }

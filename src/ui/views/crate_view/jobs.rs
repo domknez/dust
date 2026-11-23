@@ -20,7 +20,7 @@ fn about_from(known: About, tracks: usize, info: crate::model::AlbumInfo) -> Abo
 impl App {
     /// New tracks, albums and artists of the source in use, oldest saved first.
     fn new_to_play(&self) -> Vec<Thing> {
-        let source = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
+        let source = self.data_key();
         let mut fresh: Vec<&Entry> =
             self.crates.store.entries().iter().filter(|e| !e.heard && e.source == source && e.thing != Thing::Note).collect();
         fresh.sort_by_key(|e| e.saved);
@@ -80,7 +80,7 @@ impl App {
             return;
         }
         let Some(client) = self.client.clone() else { return };
-        let source = client.id().key;
+        let source = client.data_key();
         let wanted: Vec<(String, String, About)> = self
             .crates
             .store

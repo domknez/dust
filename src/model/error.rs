@@ -65,6 +65,10 @@ pub enum Error {
     /// Couldn't reach the service.
     #[error("Couldn't reach {}: {message}", service.place)]
     Network { service: Service, message: String },
+    /// Deezer stopped answering as the family member in use (one taken off the plan,
+    /// or its cookie no longer honoured): carrying on would act as the plan's owner.
+    #[error("Deezer no longer lets dust listen as this profile.")]
+    ProfileLost,
     /// The service answered with an error; `codes` are the names it gave it, for
     /// telling one error from another without reading the message.
     #[error("{service}: {message}")]
@@ -87,6 +91,10 @@ pub enum Error {
 impl Error {
     pub fn is_session_expired(&self) -> bool {
         matches!(self, Error::SessionExpired)
+    }
+
+    pub fn is_profile_lost(&self) -> bool {
+        matches!(self, Error::ProfileLost)
     }
 
     /// The service's answer named this error `code`.

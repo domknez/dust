@@ -20,7 +20,8 @@ const COMPACT_AT: usize = KEEP + 1000;
 /// One track heard.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Play {
-    /// The source's [`key`](crate::source::SourceId::key): which one plays it.
+    /// The source's [`data_key`](crate::source::Source::data_key): which one (and
+    /// which Deezer family member) played it.
     pub source: String,
     /// When it started, Unix seconds.
     pub at: u64,
@@ -39,7 +40,7 @@ impl Play {
 
     pub fn new(played: Played) -> Self {
         Play {
-            source: played.source.to_string(),
+            source: played.source,
             at: played.started_unix,
             heard_secs: played.heard_secs,
             skipped: played.skipped,
@@ -84,8 +85,8 @@ fn slim(mut track: Value) -> Value {
 #[derive(Default)]
 pub struct Plays {
     plays: Vec<Play>,
-    /// The tracks and albums in `plays`.
-    heard: Heard,
+    /// The tracks and albums in `plays`, by source (a Deezer family member's apart).
+    heard: HashMap<String, Heard>,
     log: Log,
     /// Lines in this computer's file, to know when to compact it.
     lines: usize,
@@ -109,8 +110,8 @@ impl Plays {
             plays.drain(..plays.len() - KEEP);
         }
         let lines = log.own_lines();
-        let mut heard = Heard::default();
-        plays.iter().for_each(|p| heard.add(p));
+        let mut heard = HashMap::<String, Heard>::new();
+        plays.iter().for_each(|p| heard.entry(p.source.clone()).or_default().add(p));
         Plays { plays, heard, log, lines, unsaved: false, revision: 0 }
     }
 
@@ -139,7 +140,7 @@ impl Plays {
     pub fn record(&mut self, play: Play) {
         self.revision += 1;
         let line = play.encode().to_string();
-        self.heard.add(&play);
+        self.heard.entry(play.source.clone()).or_default().add(&play);
         let at = self.plays.partition_point(|p| p.at <= play.at);
         self.plays.insert(at, play);
         self.keep_latest();
@@ -157,7 +158,9 @@ impl Plays {
     fn keep_latest(&mut self) {
         let Some(over) = self.plays.len().checked_sub(KEEP).filter(|&n| n > 0) else { return };
         for dropped in self.plays.drain(..over) {
-            self.heard.remove(&dropped);
+            if let Some(heard) = self.heard.get_mut(&dropped.source) {
+                heard.remove(&dropped);
+            }
         }
     }
 
@@ -184,19 +187,19 @@ impl Plays {
         self.plays.iter().rev().filter(move |p| p.source == source)
     }
 
-    /// Whether `id` was played before (any source, any computer; the plays kept).
-    pub fn has_heard(&self, id: &TrackId) -> bool {
-        self.heard.tracks.contains_key(id)
+    /// Whether `id` was played before from `source` (on any computer; the plays kept).
+    pub fn has_heard(&self, source: &str, id: &TrackId) -> bool {
+        self.heard.get(source).is_some_and(|h| h.tracks.contains_key(id))
     }
 
-    /// Whether a track of album `id` was played before.
-    pub fn has_heard_album(&self, id: &str) -> bool {
-        self.heard.albums.contains_key(id)
+    /// Whether a track of album `id` was played before from `source`.
+    pub fn has_heard_album(&self, source: &str, id: &str) -> bool {
+        self.heard.get(source).is_some_and(|h| h.albums.contains_key(id))
     }
 
-    /// The tracks played before, for Flow to leave out.
-    pub fn heard(&self) -> HashSet<TrackId> {
-        self.heard.tracks.keys().cloned().collect()
+    /// The tracks played before from `source`, for Flow to leave out.
+    pub fn heard(&self, source: &str) -> HashSet<TrackId> {
+        self.heard.get(source).map(|h| h.tracks.keys().cloned().collect()).unwrap_or_default()
     }
 
     pub fn len(&self) -> usize {
@@ -220,7 +223,7 @@ impl Plays {
             return;
         }
         self.revision += 1;
-        missing.iter().for_each(|p| self.heard.add(p));
+        missing.iter().for_each(|p| self.heard.entry(p.source.clone()).or_default().add(p));
         self.plays.extend(missing);
         self.plays.sort_by_key(|p| p.at);
         self.keep_latest();
@@ -370,7 +373,8 @@ mod tests {
         }
         assert_eq!(plays.of("deezer").count(), KEEP);
         assert_eq!(plays.of("deezer").next().map(|p| p.track.id.clone()), Some(TrackId::from(COMPACT_AT as u64 + 4)));
-        assert!(!plays.has_heard(&TrackId::from(0)), "the oldest, dropped, isn't heard any more");
+        assert!(!plays.has_heard("deezer", &TrackId::from(0)), "the oldest, dropped, isn't heard any more");
+        assert!(plays.has_heard("deezer", &TrackId::from(COMPACT_AT as u64 + 4)));
         let lines = std::fs::read_to_string(dir.join("history.jsonl")).unwrap().lines().count();
         assert!(lines < COMPACT_AT, "the file was compacted, {lines} lines");
         assert_eq!(Plays::load(log(&dir)).of("deezer").count(), KEEP);
@@ -425,7 +429,7 @@ mod tests {
         plays.restore(&backup);
         let ids: Vec<_> = plays.oldest_first("deezer").iter().map(|p| p.track.id.to_string()).collect();
         assert_eq!(ids, ["1", "2", "3"], "each once, in time order");
-        assert!(plays.revision() > before && plays.has_heard(&TrackId::from(3)));
+        assert!(plays.revision() > before && plays.has_heard("deezer", &TrackId::from(3)));
         assert_eq!(Plays::load(log(&dir)).len(), 3, "and written");
         let _ = std::fs::remove_dir_all(&dir);
     }

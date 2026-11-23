@@ -278,12 +278,18 @@ impl Crate {
         self.entries.iter().find(|e| e.id == id)
     }
 
-    /// How many are still to be heard.
-    pub fn new_count(&self) -> usize {
-        self.entries.iter().filter(|e| !e.heard).count()
+    /// The entries shown while `current` (a [`data_key`](crate::source::Source::data_key))
+    /// is in use: see [`shown_to`].
+    pub fn entries_for<'a>(&'a self, current: &'a str) -> impl Iterator<Item = &'a Entry> {
+        self.entries.iter().filter(move |e| shown_to(&e.source, current))
     }
 
-    /// The entry already holding `thing`, if it's saved.
+    /// How many of those shown while `current` is in use are still to be heard.
+    pub fn new_count(&self, current: &str) -> usize {
+        self.entries_for(current).filter(|e| !e.heard).count()
+    }
+
+    /// The entry already holding `thing` for `source`, if it's saved.
     pub fn find(&self, source: &str, thing: &Thing) -> Option<&Entry> {
         let key = thing.key()?;
         self.entries.iter().find(|e| e.source == source && e.thing.key().as_ref() == Some(&key))
@@ -419,9 +425,29 @@ fn new_id() -> String {
     format!("{:016x}", fastrand::u64(..))
 }
 
+/// Whether an entry saved under `source` shows while `current` is in use. Other
+/// sources' entries do (marked with where they're from), as do notes; a Deezer
+/// family member's (`deezer:2`) only to that member, and the owner's not to them.
+pub fn shown_to(source: &str, current: &str) -> bool {
+    fn kind(key: &str) -> &str {
+        key.split(':').next().unwrap_or(key)
+    }
+    source == current || (kind(source) != kind(current) && !source.contains(':'))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_family_members_crate_is_their_own() {
+        assert!(shown_to("deezer", "deezer") && shown_to("deezer:2", "deezer:2"));
+        assert!(!shown_to("deezer", "deezer:2"), "the owner's isn't the kid's");
+        assert!(!shown_to("deezer:2", "deezer") && !shown_to("deezer:2", "deezer:3"));
+        assert!(shown_to("navidrome", "deezer:2") && shown_to("deezer", "navidrome"), "other sources', marked");
+        assert!(!shown_to("deezer:2", "navidrome"), "a member's, only to them");
+        assert!(shown_to("", "deezer:2"), "notes");
+    }
     use crate::model::{DeezerSong, Origin};
     use std::path::{Path, PathBuf};
 
@@ -464,7 +490,7 @@ mod tests {
         assert_eq!((saved.note.as_str(), saved.from.as_str()), ("great bass", "Flow · chill"));
         let saved = again.get(&note).unwrap();
         assert_eq!((saved.title(), saved.source.as_str()), ("that Turkish psych band", ""));
-        assert_eq!(again.new_count(), 1);
+        assert_eq!(again.new_count("deezer"), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

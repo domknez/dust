@@ -147,7 +147,7 @@ impl Command {
 
 fn logged_in() -> Deezer {
     let arl = credentials::load(crate::deezer::ID).expect("no stored session; log in with the app first");
-    Deezer::login(&arl).expect("login")
+    Deezer::login_as(&arl, credentials::load_profile(crate::deezer::ID)).expect("login")
 }
 
 /// Play a 440 Hz tone for 4 s on the local output or an AirPlay speaker.

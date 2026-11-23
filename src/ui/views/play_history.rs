@@ -34,7 +34,7 @@ pub struct HistoryView {
 
 #[derive(PartialEq)]
 struct LinesKey {
-    source: &'static str,
+    source: String,
     plays: u64,
     today: jiff::civil::Date,
     radio: bool,
@@ -45,10 +45,10 @@ impl App {
         ui.add_space(metrics::TOP_INSET);
         self.side_panel_tabs(ui, acts);
         ui.add_space(4.0);
-        let Some(source) = self.client.as_ref().map(|c| c.id().key) else { return };
+        let Some(source) = self.client.as_ref().map(|c| c.data_key().to_string()) else { return };
         let radio = !self.features().flow;
         let zone = when::zone();
-        let plays: Vec<&Play> = self.plays.of(source).take(SHOWN).collect();
+        let plays: Vec<&Play> = self.plays.of(&source).take(SHOWN).collect();
         let key = LinesKey { source, plays: self.plays.revision(), today: when::today(&zone), radio };
         let cache = &mut self.history_view.lines;
         if cache.as_ref().is_none_or(|(k, _)| *k != key) {

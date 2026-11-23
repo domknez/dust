@@ -48,13 +48,13 @@ impl App {
         ui.add_space(12.0);
 
         let filter = self.crates.view.filter;
-        let shown: Vec<Entry> = self.crates.store.entries().iter().filter(|e| filter.keeps(e)).cloned().collect();
+        let shown: Vec<Entry> = self.crates.store.entries_for(self.data_key()).filter(|e| filter.keeps(e)).cloned().collect();
         if self.crates.view.selected.as_ref().is_none_or(|id| !shown.iter().any(|e| e.id == *id)) {
             self.crates.view.selected = shown.first().map(|e| e.id.clone());
         }
         if shown.is_empty() {
             ui.add_space(30.0);
-            let (title, hint) = if self.crates.store.entries().is_empty() {
+            let (title, hint) = if self.crates.store.entries_for(self.data_key()).next().is_none() {
                 (
                     "Your Crate is empty",
                     format!(
@@ -69,7 +69,7 @@ impl App {
             return;
         }
         let area = ui.available_rect_before_wrap();
-        let current = self.client.as_ref().map(|c| c.id().key).unwrap_or_default();
+        let current = self.data_key().to_string();
         // Too narrow for both: the list, or the entry picked with a way back.
         if one_column(area.width()) {
             let entry = self.crates.view.selected.as_ref().and_then(|id| self.crates.store.get(id)).cloned();
@@ -80,11 +80,11 @@ impl App {
                             self.crates.view.open = false;
                         }
                         ui.add_space(12.0);
-                        self.entry_detail(ui, &entry, current, acts);
+                        self.entry_detail(ui, &entry, &current, acts);
                     });
                 }
                 None => {
-                    ui.scope_builder(UiBuilder::new().max_rect(area), |ui| self.crate_list(ui, &shown, current, acts));
+                    ui.scope_builder(UiBuilder::new().max_rect(area), |ui| self.crate_list(ui, &shown, &current, acts));
                 }
             }
             ui.allocate_rect(area, Sense::hover());
@@ -93,12 +93,12 @@ impl App {
         let detail_width = DETAIL_WIDTH.min(area.width() * 0.45);
         let list = Rect::from_min_max(area.min, pos2(area.right() - detail_width - 24.0, area.bottom()));
         let detail = Rect::from_min_max(pos2(list.right() + 24.0, area.top()), area.max);
-        ui.scope_builder(UiBuilder::new().max_rect(list), |ui| self.crate_list(ui, &shown, current, acts));
+        ui.scope_builder(UiBuilder::new().max_rect(list), |ui| self.crate_list(ui, &shown, &current, acts));
         let entry = self.crates.view.selected.as_ref().and_then(|id| self.crates.store.get(id)).cloned();
         if let Some(entry) = entry {
             ui.scope_builder(UiBuilder::new().max_rect(detail), |ui| {
                 egui::ScrollArea::vertical().id_salt("crate-detail").auto_shrink([false, false]).show(ui, |ui| {
-                    self.entry_detail(ui, &entry, current, acts);
+                    self.entry_detail(ui, &entry, &current, acts);
                 });
             });
         }
@@ -133,8 +133,8 @@ impl App {
 
     /// All · New · Heard, then the kinds there are, each with its count.
     fn filter_chips(&mut self, ui: &mut Ui) {
-        let entries = self.crates.store.entries();
-        let count = |f: Filter| entries.iter().filter(|e| f.keeps(e)).count();
+        let current = self.data_key().to_string();
+        let count = |f: Filter| self.crates.store.entries_for(&current).filter(|e| f.keeps(e)).count();
         let mut chips = vec![("All", Filter::All), ("New", Filter::New), ("Heard", Filter::Heard)];
         for (label, kind) in [("Tracks", "track"), ("Albums", "album"), ("Artists", "artist"), ("Notes", "note")] {
             if count(Filter::Kind(kind)) > 0 {

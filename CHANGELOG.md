@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Deezer family plans: after logging in with the plan owner's session (or an `arl`), dust
+  asks *Who's listening?* and lists the members that can be listened as. The pick is
+  remembered; *Switch profile…* in the account menu changes it. dust acts as that member:
+  their library, favourites and listen history, and each member keeps their own play
+  history (and what counts as heard), Crate, saved queue and new-release alerts.
+  Switching stops the last member's track. If Deezer doesn't confirm the switch, dust
+  stays as before and says so
+
 ## 0.33.4 (2026-11-19)
 
 - A play button on a release in an artist's discography when hovered: it plays the

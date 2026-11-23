@@ -56,7 +56,7 @@ impl App {
         }
         // The Crate, with how many in it are new.
         if self.prefs.crate_on {
-            let new = self.crates.store.new_count();
+            let new = self.crates.store.new_count(self.data_key());
             let count = (new > 0).then(|| new.to_string());
             if widgets::sidebar_item(ui, "Crate", count.as_deref(), self.browse.view == View::Crate).clicked() {
                 acts.push(Action::OpenCrate(None, None));
