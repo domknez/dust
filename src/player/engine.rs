@@ -1784,6 +1784,20 @@ mod tests {
     }
 
     #[test]
+    fn the_player_tells_family_members_apart() {
+        let (mut e, library, _tx) = engine(FakeLibrary::default());
+        let member = |profile| Cmd::Client(Arc::new(crate::deezer::Deezer::offline_family("P", &[(1, "P"), (2, "K")], profile)));
+        e.handle(member(None));
+        e.library = Some(library.clone()); // the fake's tracks, not Deezer's
+        e.handle(Cmd::Play(vec![track(1, 60)], 0));
+        e.handle(member(Some(1)));
+        assert_eq!(now_playing(&e), Some(1), "the owner picked is the same listener");
+        e.library = Some(library);
+        e.handle(member(Some(2)));
+        assert!(e.queue.is_empty() && !e.playing, "another member: stopped");
+    }
+
+    #[test]
     fn another_family_member_stops_the_last_ones_track() {
         let (mut e, library, _tx) = engine(FakeLibrary::default());
         e.set_source("deezer".into(), library.clone());

@@ -18,6 +18,8 @@
 mod catalog;
 mod client;
 mod crypto;
+#[cfg(test)]
+mod fake;
 mod images;
 mod links;
 mod listens;

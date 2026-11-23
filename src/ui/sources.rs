@@ -653,6 +653,22 @@ mod tests {
     }
 
     #[test]
+    fn a_pick_deezer_doesnt_confirm_after_a_switch_to_the_server_keeps_the_stored_one() {
+        let _keychain = keychain();
+        let mut t = TestApp::new("");
+        lands(&mut t, family(Some(2)), true);
+        server_connects(&mut t);
+        t.update(Action::ChooseProfile);
+        t.update(Action::PickProfile(1));
+        let server = t.app.sources.get(subsonic::ID).cloned().expect("connected");
+        t.update(Action::SwitchSource(server));
+        lands(&mut t, Deezer::offline_unconfirmed("Parent", &MEMBERS), true);
+        assert_eq!(credentials::load_profile(deezer::ID), Some(2), "not written over");
+        assert_eq!(in_use(&t), Some("Navidrome"));
+        credentials::clear(deezer::ID).unwrap();
+    }
+
+    #[test]
     fn a_stored_pick_deezer_doesnt_confirm_is_kept_for_next_time() {
         let _keychain = keychain();
         credentials::save_with_profile(deezer::ID, "arl", Some(2)).unwrap();

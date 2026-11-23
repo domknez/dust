@@ -309,4 +309,101 @@ mod tests {
         assert_eq!(profiles, vec![Profile { id: 11, name: "Parent".into() }, Profile { id: 22, name: "Kid".into() }]);
         assert!(profiles_from(&json!(null)).is_empty());
     }
+
+    // ---------------------------------------------------- against a fake Deezer
+
+    use super::super::fake::{self, Fake};
+
+    /// What the next authenticated call is answered as.
+    fn acting_as(client: &Deezer) -> u64 {
+        number(&client.call_raw("user.whoami", json!({})).expect("answered")["USER_ID"])
+    }
+
+    #[test]
+    fn the_owner_logs_in_and_sees_the_members_that_can_be_picked() {
+        let _deezer = Fake::start();
+        let client = Deezer::login_as(fake::ARL, None).unwrap();
+        let ids: Vec<u64> = client.profiles().iter().map(|p| p.id).collect();
+        assert_eq!(ids, [1, 2], "the private member is left out");
+        assert_eq!((client.profile(), client.user_id(), client.data_key()), (None, 1, "deezer"));
+        assert!(!client.profile_unconfirmed());
+        assert_eq!(acting_as(&client), 1);
+    }
+
+    #[test]
+    fn a_member_is_acted_as_once_deezer_confirms_it() {
+        let deezer = Fake::start();
+        let client = Deezer::login_as(fake::ARL, Some(2)).unwrap();
+        assert_eq!((client.profile(), client.user_id(), client.data_key(), client.name()), (Some(2), 2, "deezer:2", "Kid"));
+        assert!(!client.profile_unconfirmed());
+        // Deezer sets the owner's account_id again with every getUserData: the
+        // member's stays what's sent.
+        assert_eq!(acting_as(&client), 2);
+        assert_eq!(acting_as(&client), 2);
+        let sent = deezer.last_cookies();
+        assert!(sent.contains("account_id=2") && !sent.contains("account_id=1"), "{sent}");
+    }
+
+    #[test]
+    fn the_owner_picked_is_the_owner() {
+        let _deezer = Fake::start();
+        let client = Deezer::login_as(fake::ARL, Some(1)).unwrap();
+        assert_eq!((client.profile(), client.data_key()), (Some(1), "deezer"), "keeps what was saved before profiles");
+        assert!(!client.profile_unconfirmed());
+        assert_eq!(acting_as(&client), 1);
+    }
+
+    #[test]
+    fn a_member_deezer_doesnt_take_leaves_the_owner_and_no_trace_of_the_member() {
+        let deezer = Fake::start();
+        deezer.state().honour_members = false;
+        let client = Deezer::login_as(fake::ARL, Some(2)).unwrap();
+        assert!(client.profile_unconfirmed());
+        assert_eq!((client.profile(), client.user_id(), client.data_key(), client.name()), (None, 1, "deezer", "Parent"));
+        assert_eq!(acting_as(&client), 1);
+        let sent = deezer.last_cookies();
+        assert!(!sent.contains("account_id=2"), "the member's cookie is gone: {sent}");
+    }
+
+    #[test]
+    fn a_member_not_on_the_plan_is_not_tried() {
+        let deezer = Fake::start();
+        for gone in [3, 99] {
+            let client = Deezer::login_as(fake::ARL, Some(gone)).unwrap();
+            assert!(client.profile_unconfirmed(), "{gone}");
+            assert_eq!((client.profile(), client.data_key()), (None, "deezer"));
+        }
+        assert!(deezer.state().requests.iter().all(|r| !r.cookies.contains("account_id=3") && !r.cookies.contains("account_id=99")));
+    }
+
+    #[test]
+    fn a_session_deezer_doesnt_know_is_expired() {
+        let _deezer = Fake::start();
+        assert!(matches!(Deezer::login_as("stale-arl", None), Err(Error::SessionExpired)));
+        assert!(matches!(Deezer::login_as("stale-arl", Some(2)), Err(Error::SessionExpired)));
+    }
+
+    #[test]
+    fn a_stale_token_is_renewed_as_the_same_member() {
+        let deezer = Fake::start();
+        let client = Deezer::login_as(fake::ARL, Some(2)).unwrap();
+        deezer.state().token_round += 1;
+        assert_eq!(acting_as(&client), 2, "renewed, still the kid");
+        assert_eq!(deezer.served("user.whoami"), [2], "refused once, then served as the kid");
+    }
+
+    #[test]
+    fn a_member_deezer_stops_taking_is_never_acted_as_the_owner() {
+        let deezer = Fake::start();
+        let client = Deezer::login_as(fake::ARL, Some(2)).unwrap();
+        {
+            let mut state = deezer.state();
+            state.honour_members = false;
+            state.token_round += 1;
+        }
+        assert!(matches!(client.call_raw("user.whoami", json!({})), Err(Error::ProfileLost)));
+        // The owner's token wasn't taken: nothing goes through as them afterwards.
+        assert!(client.call_raw("user.whoami", json!({})).is_err());
+        assert!(deezer.served("user.whoami").is_empty(), "nothing done as the owner");
+    }
 }

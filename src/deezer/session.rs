@@ -13,6 +13,21 @@ const NO_TOKEN: &str = "null";
 /// Per-call limit for API requests. Streams opt out (see `open_stream`).
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Where gw-light calls go: Deezer's, or a test's stand-in on this thread (see
+/// `deezer::fake`).
+fn gateway() -> std::borrow::Cow<'static, str> {
+    #[cfg(test)]
+    if let Some(url) = TEST_GATEWAY.with(|g| g.borrow().clone()) {
+        return url.into();
+    }
+    GATEWAY.into()
+}
+
+#[cfg(test)]
+thread_local! {
+    pub static TEST_GATEWAY: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
 pub fn http_agent() -> ureq::Agent {
     crate::http::agent(USER_AGENT, Some(CALL_TIMEOUT))
 }
@@ -81,7 +96,7 @@ pub fn call(agent: &ureq::Agent, arl: &str, session: &Mutex<Session>, method: &s
         (s.api_token.clone(), s.cookie_header(arl))
     };
     let resp = agent
-        .post(GATEWAY)
+        .post(gateway().as_ref())
         .query("method", method)
         .query("input", "3")
         .query("api_version", "1.0")
