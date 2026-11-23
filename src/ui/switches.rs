@@ -23,12 +23,22 @@ pub enum Page {
     Podcasts,
     Explore,
     NewReleases,
+    Discover,
     Listening,
 }
 
 impl Page {
-    pub const ALL: [Page; 8] =
-        [Page::Loved, Page::Playlists, Page::Albums, Page::Artists, Page::Podcasts, Page::Explore, Page::NewReleases, Page::Listening];
+    pub const ALL: [Page; 9] = [
+        Page::Loved,
+        Page::Playlists,
+        Page::Albums,
+        Page::Artists,
+        Page::Podcasts,
+        Page::Explore,
+        Page::NewReleases,
+        Page::Discover,
+        Page::Listening,
+    ];
 
     /// How it's kept in the settings file.
     pub fn key(self) -> &'static str {
@@ -40,6 +50,7 @@ impl Page {
             Page::Podcasts => "podcasts",
             Page::Explore => "explore",
             Page::NewReleases => "new_releases",
+            Page::Discover => "discover",
             Page::Listening => "listening",
         }
     }
@@ -53,6 +64,7 @@ impl Page {
             Page::Podcasts => "Podcasts",
             Page::Explore => "Explore",
             Page::NewReleases => "New releases",
+            Page::Discover => "Discover",
             Page::Listening => "Listening",
         }
     }
@@ -66,6 +78,7 @@ impl Page {
             Page::Podcasts => View::Podcasts,
             Page::Explore => View::Channel(Box::new(ChannelView::explore())),
             Page::NewReleases => View::Channel(Box::new(ChannelView::new_releases())),
+            Page::Discover => View::Channel(Box::new(ChannelView::discover())),
             Page::Listening => View::Stats,
         }
     }
@@ -85,6 +98,7 @@ impl Page {
             Page::Podcasts => Key::Num6,
             Page::Explore => Key::Num7,
             Page::NewReleases => Key::Num8,
+            Page::Discover => Key::Num9,
             Page::Listening => return None,
         })
     }
@@ -106,7 +120,7 @@ impl App {
         let features = self.features();
         match page {
             Page::Podcasts => features.podcasts,
-            Page::Explore | Page::NewReleases => features.explore,
+            Page::Explore | Page::NewReleases | Page::Discover => features.explore,
             Page::Listening => self.prefs.history_on,
             _ => true,
         }
@@ -373,6 +387,8 @@ mod tests {
         assert_eq!(shortcut(&t, Key::Num5), [View::Artists], "the others keep their number");
         assert_eq!(shortcut(&t, Key::Num1), [View::Home]);
         assert_eq!(shortcut(&logged_in(""), Key::Num4), [View::Albums]);
+        assert_eq!(shortcut(&logged_in(""), Key::Num9), [View::Channel(Box::new(ChannelView::discover()))]);
+        assert!(shortcut(&logged_in("hidden_pages=discover"), Key::Num9).is_empty());
     }
 
     #[test]

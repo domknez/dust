@@ -37,7 +37,7 @@ last. More sources can be added later without changing the rest of the app.
 |---|---|---|
 | **You need** | Deezer Premium | your own [Navidrome](https://www.navidrome.org) (or Subsonic / OpenSubsonic) server |
 | **Home** | your recommendations, Flow by mood or genre, daily mixes, mixes inspired by tracks | *Radio* (endless, from the whole library or one genre), recently added / played, most played, favourites, mixes per artist |
-| **Discover** | *Explore* (genres, moods, decades, charts), *New releases*, artist mixes, track mixes from any track | artist mixes |
+| **Discover** | *Explore* (genres, moods, decades, charts), *New releases*, *Discover* (radar playlists, up-and-coming artists), artist mixes, track mixes from any track | artist mixes |
 | **Library** | Loved tracks, playlists, albums, followed artists, podcasts | starred songs as *Loved tracks*, playlists, the whole library under *Albums* and *Artists* |
 | **Playlists** | create, add, remove, rename, delete | create, add, remove, rename, delete |
 | **Likes** | tracks, albums, artists | stars |
@@ -168,6 +168,10 @@ and *Connect a Navidrome server*.
   Genre cards on Home open them too; *see all* on a row shows the whole of it
 - **New releases:** this week's albums, the ones from artists you listen to first
   (*New releases for you*), then by genre
+- **Discover:** Deezer's hub for finding new music: its weekly radar playlists (Radar
+  Weekly, Hot New Rock, Metal Radar, ...), up-and-coming artists (*Deezer Next* and its
+  mix, Soundcheck, Alt radar, ...), your discovery mixes, *Dig deeper* essentials and
+  artists like the ones you listen to
 - **New releases in your Crate:** twice a day dust looks through the artists you follow
   and the ones you've played most lately; a new album, single or EP goes in the Crate
   as new, with a toast. Settings → Features → *New releases to the Crate* turns it off
@@ -381,8 +385,8 @@ dust --debug-decode <playlist id> flac 60  # decrypt and decode 10 s from 0:60, 
 
 - `Space`: play/pause
 - `⌘F` / `Ctrl+F`: search
-- `⌘1`–`⌘8` / `Ctrl+1`–`Ctrl+8`: Home, Loved tracks, Playlists, Albums, Artists, Podcasts,
-  Explore, New releases
+- `⌘1`–`⌘9` / `Ctrl+1`–`Ctrl+9`: Home, Loved tracks, Playlists, Albums, Artists, Podcasts,
+  Explore, New releases, Discover
 - `⌘←` / `⌘→` (`Alt+←` / `Alt+→` on Windows and Linux), or the mouse's side buttons:
   back / forward between pages
 - `⇧⌘M` / `Ctrl+Shift+M`: mini player on/off

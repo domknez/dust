@@ -39,10 +39,12 @@ use crate::model::{Error, Result, Service};
 
 /// Deezer, as its errors name it.
 pub const SERVICE: Service = Service::new("Deezer", "Deezer");
-/// Deezer's pages of genres, moods and charts, and of new releases, for
+/// Deezer's pages of genres, moods and charts, of new releases, and of music to
+/// discover (its radar playlists, up-and-coming artists, discovery mixes), for
 /// [`Deezer::page`].
 pub const EXPLORE_PAGE: &str = "channels/explore";
 pub const NEW_RELEASES_PAGE: &str = "channels/new";
+pub const DISCOVER_PAGE: &str = "channels/discovery";
 
 /// A failed request to Deezer, as an error naming Deezer.
 fn http(e: ureq::Error) -> Error {

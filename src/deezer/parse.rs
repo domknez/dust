@@ -123,8 +123,19 @@ pub fn playlist(v: &Value, me: u64) -> Playlist {
 /// A section of a `page.get` page: its cards, the page "See all" opens and whether
 /// it's a grid (Explore's genres) rather than a row.
 pub fn section(v: &Value) -> Section {
-    let items = v["items"].as_array().map(|a| a.iter().map(item).collect()).unwrap_or_default();
-    Section { title: text(&v["title"]), items, more: channel_page(&v["target"]), grid: text(&v["layout"]) == "grid" }
+    let items: Vec<Item> = v["items"].as_array().map(|a| a.iter().map(item).collect()).unwrap_or_default();
+    let title = section_title(text(&v["title"]), &items);
+    Section { title, items, more: channel_page(&v["target"]), grid: text(&v["layout"]) == "grid" }
+}
+
+/// A row of artists like one you listen to comes titled in the account's language
+/// ("S obzirom da voliš: Pearl Jam") even when English is asked for.
+fn section_title(title: String, items: &[Item]) -> String {
+    let artists = !items.is_empty() && items.iter().all(|it| it.kind == ItemKind::Artist);
+    match title.split_once(": ") {
+        Some((_, artist)) if artists && !artist.is_empty() => format!("Because you like {artist}"),
+        _ => title,
+    }
 }
 
 /// The page a link like "/channels/rock" names ("channels/rock"); None for links
@@ -351,6 +362,9 @@ fn english_texts(kind: &str, id: &str, data: &Value, title: String, subtitle: St
             (name, String::new())
         }
         "smarttracklist" => {
+            if let Some((title, sub)) = discovery_mix(id) {
+                return (title.to_string(), sub.to_string());
+            }
             let title = match id {
                 "discovery" => "Discovery".to_string(),
                 "new-releases" => "New releases".to_string(),
@@ -371,6 +385,19 @@ fn english_texts(kind: &str, id: &str, data: &Value, title: String, subtitle: St
         "track" => (title, format!("by {}", text(&data["ART_NAME"]))),
         _ => (title, subtitle),
     }
+}
+
+/// Deezer's discovery mixes whose name and blurb only come in the account's
+/// language ("Novi zanimljivi izvođači"); their blurb isn't a list of artists.
+fn discovery_mix(id: &str) -> Option<(&'static str, &'static str)> {
+    Some(match id {
+        "deezer-next" => ("Deezer Next", "Up-and-coming artists, picked for you"),
+        "discovery-2020s" => ("2020s songs you missed", "Your next favourite song"),
+        "valentines-day" => ("Your love mixtape", "For you, with love"),
+        id if id.starts_with("spring-") => ("Discover fresh talent", "New artists, picked for you"),
+        id if id.starts_with("international-womens-day") => ("Support women in music", "Women artists, picked for you"),
+        _ => return None,
+    })
 }
 
 /// "09" -> "September".
@@ -468,6 +495,12 @@ mod tests {
         let top = json!({"TAGS": ["monthlyTop", "09", "2026"]});
         assert_eq!(english_texts("smarttracklist", "monthly-top", &top, "Moj top rujan".into(), String::new()).0, "My top September");
         assert_eq!(english_texts("smarttracklist", "inspired-by-3", &json!({}), "daily".into(), String::new()).0, "Daily mix 3");
+        let mix = |id: &str, title: &str, sub: &str| english_texts("smarttracklist", id, &json!({}), title.into(), sub.into());
+        let next = mix("deezer-next", "Novi zanimljivi izvođači", "Sadrži od programa Deezer Next, odabrano za tebe");
+        assert_eq!(next, ("Deezer Next".into(), "Up-and-coming artists, picked for you".into()), "not \"Featuring od programa…\"");
+        assert_eq!(mix("spring-2026", "Otkrij svježi talent", "x y").0, "Discover fresh talent", "whichever year");
+        assert_eq!(mix("international-womens-day-2025", "Podrži žene", "x y").0, "Support women in music");
+        assert_eq!(mix("autumn-2026", "Jesen", "Sadrži A, B"), ("Jesen".into(), "Featuring A, B".into()), "others as before");
         let track = json!({"ART_NAME": "Slash"});
         assert_eq!(english_texts("track", "1", &track, "Ghost".into(), "Slash".into()), ("Ghost".into(), "by Slash".into()));
     }
@@ -487,6 +520,17 @@ mod tests {
         assert_eq!(kind(json!({"type": "radio", "id": "37151"})), ItemKind::Other("radio".into()), "not the Radio panel");
         let flow = item(&json!({"type": "flow", "id": "hip-hop", "title": "Hip-hop", "pictures": [{"type": "misc", "md5": "f1"}]}));
         assert_eq!((flow.title.as_str(), flow.kind.tuning(), flow.picture), ("Hip Hop", Some("hip-hop"), art("misc", "f1")));
+    }
+
+    #[test]
+    fn rows_of_artists_like_one_are_titled_in_english() {
+        let artist = json!({"type": "artist", "id": "1", "title": "Architects"});
+        let playlist = json!({"type": "playlist", "id": "2", "title": "Soundcheck"});
+        let title = |t: &str, items: Value| section(&json!({"title": t, "items": items})).title;
+        assert_eq!(title("S obzirom da voliš: Bring Me the Horizon", json!([artist])), "Because you like Bring Me the Horizon");
+        assert_eq!(title("Flow: play how you feel", json!([playlist])), "Flow: play how you feel", "only rows of artists");
+        assert_eq!(title("Picks: ", json!([artist])), "Picks: ");
+        assert_eq!(title("Similar artists", json!([artist])), "Similar artists");
     }
 
     #[test]

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Discover (sidebar, `⌘9`): Deezer's page for finding new music: weekly radar playlists
+  (Radar Weekly, Hot New Rock, Metal Radar, ...), up-and-coming artists (Deezer Next and
+  its mix, Soundcheck, Alt radar, ...), discovery mixes, *Dig deeper* and artists like the
+  ones you listen to. It can be hidden in Settings → Features like the other pages
+- Rows of artists like one you listen to, and Deezer's seasonal discovery mixes, are
+  titled in English (they came in the account's language)
+
 ## 0.34.0 (2026-11-23)
 
 - Deezer family plans: after logging in with the plan owner's session (or an `arl`), dust

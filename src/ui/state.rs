@@ -51,6 +51,12 @@ impl ChannelView {
     pub fn new_releases() -> Self {
         Self::new(crate::deezer::NEW_RELEASES_PAGE, "New releases")
     }
+
+    /// Music to discover: the service's radar playlists, up-and-coming artists and
+    /// discovery mixes.
+    pub fn discover() -> Self {
+        Self::new(crate::deezer::DISCOVER_PAGE, "Discover")
+    }
 }
 
 /// An artist page being shown: enough to draw its header before the page loads.

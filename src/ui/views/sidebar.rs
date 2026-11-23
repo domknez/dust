@@ -174,7 +174,7 @@ impl App {
         self.client.as_ref().map(|c| c.account()).unwrap_or_default()
     }
 
-    /// ⌘1 … ⌘8 (Ctrl elsewhere) open the pages listed in the sidebar.
+    /// ⌘1 … ⌘9 (Ctrl elsewhere) open the pages listed in the sidebar.
     pub(in crate::ui) fn nav_shortcuts(&self, ctx: &egui::Context, acts: &mut Actions) {
         let pages =
             std::iter::once((Key::Num1, View::Home)).chain(self.pages_on().into_iter().filter_map(|p| Some((p.key_code()?, p.view()))));
