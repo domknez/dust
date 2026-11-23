@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.34.0 (2026-11-23)
+
 - Deezer family plans: after logging in with the plan owner's session (or an `arl`), dust
   asks *Who's listening?* and lists the members that can be listened as. The pick is
   remembered; *Switch profile…* in the account menu changes it. dust acts as that member:
