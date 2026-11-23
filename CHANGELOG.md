@@ -9,6 +9,27 @@
   history, Crate, saved queue and new-release alerts. If Deezer doesn't confirm the
   switch, dust stays on the owner's account and says so
 
+## 0.33.4 (2026-11-19)
+
+- A play button on a release in an artist's discography when hovered: it plays the
+  release in place of the queue
+
+## 0.33.3 (2026-11-19)
+
+- An AirPlay speaker lost mid-song (a Wi-Fi reconnect, a new address) is tried again
+  for up to 15 seconds and playback carries on there, instead of moving to this
+  computer's speakers after the first failed try
+
+## 0.33.2 (2026-11-19)
+
+- The buttons on an AirPlay speaker (play/pause, skip, volume) work again: since
+  0.32.0 dust refused them
+
+## 0.33.1 (2026-11-19)
+
+- AirPlay speakers missing after sleep or a network change until dust was restarted:
+  each new search now starts on the current network
+
 ## 0.33.0 (2026-11-18)
 
 - A notification for each new track while dust is out of sight (macOS and

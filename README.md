@@ -114,7 +114,8 @@ and *Connect a Navidrome server*.
   in the queue) or the queue (even on repeat); the next track waits for play
 - **Artist pages:** popular tracks and the full discography, plus related artists; click
   any artist name to get there. *Mix* plays songs by the artist and artists like them.
-  The discography's *Timeline* tab lists every release by year, each marked *heard* or
+  Hovering a release in the discography shows a play button that plays it in place of
+  the queue. The discography's *Timeline* tab lists every release by year, each marked *heard* or
   *not heard* from your play history, with how many you've heard
 - **Command palette:** `⌘K` (Ctrl+K elsewhere, or *Commands…* in the account menu):
   type to go to a page, a playlist or an artist you listen to, or to do something:
