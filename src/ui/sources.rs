@@ -205,7 +205,7 @@ impl App {
         self.library.likes_load.start(&self.jobs, move || c.likes());
         self.client = Some(source);
         // What was heard is the new one's (a family member's own).
-        self.send_skip_heard();
+        self.send_heard();
         self.open_view(View::Home);
     }
 
@@ -716,11 +716,11 @@ mod tests {
         assert!(t.app.plays.has_heard("deezer", &crate::model::TrackId::from(6)));
     }
 
-    /// The tracks Flow was last told to leave out.
-    fn skip_heard(t: &TestApp) -> Option<Vec<u64>> {
+    /// The tracks of the history the player was last told of.
+    fn heard(t: &TestApp) -> Option<Vec<u64>> {
         t.sent().into_iter().rev().find_map(|cmd| match cmd {
-            Cmd::SkipHeard(heard) => Some(heard.map(|h| {
-                let mut ids: Vec<u64> = h.iter().map(|id| id.to_string().parse().expect("a number")).collect();
+            Cmd::Heard(heard) => Some(heard.map(|h| {
+                let mut ids: Vec<u64> = h.keys().map(|id| id.to_string().parse().expect("a number")).collect();
                 ids.sort();
                 ids
             })),
@@ -729,7 +729,7 @@ mod tests {
     }
 
     #[test]
-    fn flow_leaves_out_what_the_member_in_use_heard() {
+    fn the_player_gets_the_history_of_the_member_in_use() {
         let mut t = TestApp::new("flow_new_only=true\n");
         let play = |source: &str, id| crate::ui::plays::Play {
             source: source.into(),
@@ -742,9 +742,9 @@ mod tests {
         t.app.plays.record(play("deezer", 1));
         t.app.plays.record(play("deezer:2", 2));
         lands(&mut t, family(None), false);
-        assert_eq!(skip_heard(&t), Some(vec![1]), "the owner's");
+        assert_eq!(heard(&t), Some(vec![1]), "the owner's");
         lands(&mut t, family(Some(2)), false);
-        assert_eq!(skip_heard(&t), Some(vec![2]), "then the kid's");
+        assert_eq!(heard(&t), Some(vec![2]), "then the kid's");
     }
 
     #[test]

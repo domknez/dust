@@ -85,8 +85,8 @@ impl App {
         for played in played {
             self.plays.record(Play::new(played));
         }
-        if any && self.prefs.flow_new_only {
-            self.send_skip_heard();
+        if any {
+            self.send_heard();
         }
     }
 
@@ -96,11 +96,12 @@ impl App {
         self.client.as_ref().map_or("", |c| c.data_key())
     }
 
-    /// Tell the player which tracks Flow leaves out: the ones heard, with *new to me
-    /// only* on.
-    pub(super) fn send_skip_heard(&self) {
-        let heard = (self.prefs.flow_new_only && self.prefs.history_on).then(|| std::sync::Arc::new(self.plays.heard(self.data_key())));
-        self.player.send(Cmd::SkipHeard(heard));
+    /// Tell the player the play history of the source in use: shuffle favours
+    /// what wasn't heard for a while, and Flow can leave out what was (*new to me
+    /// only*). Nothing with the history off.
+    pub(super) fn send_heard(&self) {
+        let heard = self.prefs.history_on.then(|| std::sync::Arc::new(self.plays.last_heard(self.data_key())));
+        self.player.send(Cmd::Heard(heard));
     }
 }
 
@@ -222,6 +223,7 @@ impl App {
     pub(super) fn with(ctx: &egui::Context, prefs: Prefs, player: PlayerHandle, jobs: Jobs, queues: QueueFiles) -> Self {
         player.send(Cmd::Shuffle(prefs.shuffle));
         player.send(Cmd::Repeat(prefs.repeat));
+        player.send(Cmd::FlowNewOnly(prefs.flow_new_only));
         let sync_dir = prefs.sync_folder.as_ref().filter(|_| !prefs.device.is_empty()).map(|f| SyncDir::new(f, &prefs.device));
         let plays = Plays::load(Log::new("history", queues.dir(), sync_dir.as_ref()));
         let store = Crate::load(Log::new("crate", queues.dir(), sync_dir.as_ref()));
@@ -1119,7 +1121,10 @@ mod tests {
     #[test]
     fn the_app_starts_with_nothing_running() {
         let t = TestApp::new("shuffle=true\nrepeat=all\n");
-        assert!(matches!(t.sent()[..], [Cmd::Shuffle(true), Cmd::Repeat(Repeat::All)]), "the player gets the saved modes");
+        assert!(
+            matches!(t.sent()[..], [Cmd::Shuffle(true), Cmd::Repeat(Repeat::All), Cmd::FlowNewOnly(false)]),
+            "the player gets the saved modes"
+        );
         assert_eq!(t.jobs.waiting(), 0);
         assert!(t.app.client.is_none() && t.app.discovery.is_none() && t.app.now_playing.is_none());
         assert!(t.queues().load(deezer::ID.queue_file).is_none());

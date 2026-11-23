@@ -5,7 +5,7 @@
 
 use crate::model::{Track, TrackId};
 use crate::player::saved::{decode_track, encode_track};
-use crate::player::{Flow, Played};
+use crate::player::{Flow, LastHeard, Played};
 use crate::ui::sync::Log;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -197,9 +197,9 @@ impl Plays {
         self.heard.get(source).is_some_and(|h| h.albums.contains_key(id))
     }
 
-    /// The tracks played before from `source`, for Flow to leave out.
-    pub fn heard(&self, source: &str) -> HashSet<TrackId> {
-        self.heard.get(source).map(|h| h.tracks.keys().cloned().collect()).unwrap_or_default()
+    /// When each track played from `source` was last heard.
+    pub fn last_heard(&self, source: &str) -> LastHeard {
+        self.heard.get(source).map(|h| h.last.clone()).unwrap_or_default()
     }
 
     pub fn len(&self) -> usize {
@@ -238,11 +238,16 @@ impl Plays {
 struct Heard {
     tracks: HashMap<TrackId, usize>,
     albums: HashMap<String, usize>,
+    /// When each track in `tracks` was last heard. Plays are dropped oldest first,
+    /// so dropping one never makes a track's last play an earlier one.
+    last: LastHeard,
 }
 
 impl Heard {
     fn add(&mut self, play: &Play) {
         *self.tracks.entry(play.track.id.clone()).or_default() += 1;
+        let last = self.last.entry(play.track.id.clone()).or_default();
+        *last = (*last).max(play.at);
         if !play.track.album_id.is_empty() {
             *self.albums.entry(play.track.album_id.clone()).or_default() += 1;
         }
@@ -259,6 +264,9 @@ impl Heard {
         }
         forget(&mut self.tracks, &play.track.id);
         forget(&mut self.albums, &play.track.album_id);
+        if !self.tracks.contains_key(&play.track.id) {
+            self.last.remove(&play.track.id);
+        }
     }
 }
 

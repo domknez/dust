@@ -281,7 +281,7 @@ impl App {
             Action::ReleaseAlerts(on) => self.prefs.update(|p| p.release_alerts = on),
             Action::FlowNewOnly(on) => {
                 self.prefs.update(|p| p.flow_new_only = on);
-                self.send_skip_heard();
+                self.player.send(Cmd::FlowNewOnly(on));
             }
             Action::AutoUpdate(on) => {
                 self.updates.set_auto(on);
