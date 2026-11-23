@@ -200,7 +200,7 @@ impl App {
             }
         });
         match switch {
-            Switch::History => self.send_skip_heard(),
+            Switch::History => self.send_heard(),
             Switch::AirPlay if on => self.start_discovery(ctx),
             Switch::AirPlay => {
                 self.discovery = None;
@@ -333,23 +333,23 @@ mod tests {
     }
 
     #[test]
-    fn with_the_history_off_nothing_is_recorded_and_flow_skips_nothing() {
+    fn with_the_history_off_nothing_is_recorded_or_told_to_the_player() {
         let mut t = logged_in("history=false\nflow_new_only=true");
         t.app.player.set_status(|s| s.played = vec![heard(1)]);
         t.app.record_plays();
         assert_eq!(t.app.plays.len(), 0, "not recorded");
         assert_eq!(t.app.prefs.new_only(), None, "no *new to me only* to offer");
-        t.app.send_skip_heard();
-        assert!(matches!(t.sent()[..], [Cmd::SkipHeard(None)]), "Flow plays everything");
+        t.app.send_heard();
+        assert!(matches!(t.sent()[..], [Cmd::Heard(None)]), "Flow plays everything, shuffle favours nothing");
 
         t.app.set_switch(&t.ctx.clone(), Switch::History, true);
-        assert!(matches!(t.sent()[..], [Cmd::SkipHeard(Some(_))]), "turned on, Flow skips what's heard again");
+        assert!(matches!(t.sent()[..], [Cmd::Heard(Some(_))]), "turned on, the player gets the history again");
         t.app.player.set_status(|s| s.played = vec![heard(2)]);
         t.app.record_plays();
         assert_eq!(t.app.plays.len(), 1);
         match &t.sent()[..] {
-            [Cmd::SkipHeard(Some(heard))] => assert!(heard.contains(&track(2, true).id)),
-            _ => panic!("expected the heard tracks sent to the player"),
+            [Cmd::Heard(Some(heard))] => assert_eq!(heard.get(&track(2, true).id), Some(&1_000_000), "with when"),
+            _ => panic!("expected the history sent to the player"),
         }
     }
 

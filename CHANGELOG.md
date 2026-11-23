@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Smarter shuffle: no artist twice in a row where the list allows it (nor right after
+  the track playing), and tracks you haven't heard for a while, or never, tend to come
+  first; the ones heard today still come, only later on average. Uses the play history,
+  so with it off shuffle only keeps artists apart
+
 - Discover (sidebar, `⌘9`): Deezer's page for finding new music: weekly radar playlists
   (Radar Weekly, Hot New Rock, Metal Radar, ...), up-and-coming artists (Deezer Next and
   its mix, Soundcheck, Alt radar, ...), discovery mixes, *Dig deeper* and artists like the

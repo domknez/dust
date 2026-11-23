@@ -1,8 +1,10 @@
 //! Queue bookkeeping: the tracks, which one is current, shuffle and endless Flow.
 //! Pure data manipulation — no audio, no network — so it is fully unit-testable.
 
+use super::LastHeard;
 use crate::model::{Track, TrackId};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 /// Endless Flow (a music server's Radio): the queue refills itself from the source
 /// as it runs out.
@@ -31,6 +33,9 @@ pub struct Queue {
     pub flow: Option<Flow>,
     /// Shuffled: the track ids in the order before shuffling, to put it back.
     unshuffled: Option<Vec<TrackId>>,
+    /// When each track was last heard, for the shuffled order and Flow's *new to
+    /// me only*; None with the play history off.
+    heard: Option<Arc<LastHeard>>,
     /// Changed since the UI last took a copy.
     dirty: bool,
 }
@@ -116,10 +121,18 @@ impl Queue {
         self.dirty = true;
     }
 
+    /// The play history the shuffled order goes by, from the next shuffle on.
+    pub fn set_heard(&mut self, heard: Option<Arc<LastHeard>>) {
+        self.heard = heard;
+    }
+
+    /// Everything after the current track in shuffled order (see [`super::shuffle`]).
     fn shuffle_upcoming(&mut self) {
-        if let Some(upcoming) = self.tracks.get_mut(self.index + 1..) {
-            fastrand::shuffle(upcoming);
-        }
+        let start = (self.index + 1).min(self.tracks.len());
+        let mut upcoming = self.tracks.split_off(start);
+        let now = crate::clock::unix_now();
+        super::shuffle::shuffle(&mut upcoming, self.current(), self.heard.as_deref(), now, &mut fastrand::Rng::new());
+        self.tracks.append(&mut upcoming);
         self.dirty = true;
     }
 
@@ -148,11 +161,11 @@ impl Queue {
         self.dirty = true;
     }
 
-    /// A batch of Flow: like [`Queue::extend_unique`], leaving out the tracks in
-    /// `heard` unless that leaves none (Flow mustn't run dry over it).
-    pub fn extend_flow(&mut self, tracks: Vec<Track>, heard: Option<&HashSet<TrackId>>) -> bool {
-        let fresh: Vec<Track> = match heard {
-            Some(heard) => tracks.iter().filter(|t| !heard.contains(&t.id)).cloned().collect(),
+    /// A batch of Flow: like [`Queue::extend_unique`]; with `new_only`, leaving out
+    /// the tracks heard before unless that leaves none (Flow mustn't run dry over it).
+    pub fn extend_flow(&mut self, tracks: Vec<Track>, new_only: bool) -> bool {
+        let fresh: Vec<Track> = match self.heard.as_deref().filter(|_| new_only) {
+            Some(heard) => tracks.iter().filter(|t| !heard.contains_key(&t.id)).cloned().collect(),
             None => Vec::new(),
         };
         if !fresh.is_empty() && self.extend_unique(fresh) {
@@ -328,13 +341,15 @@ mod tests {
     fn flow_can_leave_out_what_was_heard() {
         let mut q = Queue::default();
         q.start_flow(Flow { mood: None });
-        assert!(q.extend_flow(vec![t(1), t(2)], None));
-        let heard: HashSet<TrackId> = [t(3).id, t(4).id].into();
-        assert!(q.extend_flow(vec![t(3), t(4), t(5)], Some(&heard)));
+        q.set_heard(Some(Arc::new([(t(3).id, 1), (t(4).id, 1)].into())));
+        assert!(q.extend_flow(vec![t(1), t(2)], true));
+        assert!(q.extend_flow(vec![t(3), t(4), t(5)], true));
         let ids = |q: &Queue| q.tracks.iter().map(|x| x.id.clone()).collect::<Vec<_>>();
         assert_eq!(ids(&q), [t(1).id, t(2).id, t(5).id], "heard ones left out");
-        assert!(q.extend_flow(vec![t(3), t(4)], Some(&heard)), "all heard: kept rather than running dry");
+        assert!(q.extend_flow(vec![t(3), t(4)], true), "all heard: kept rather than running dry");
         assert_eq!(q.tracks.len(), 5);
+        assert!(q.extend_flow(vec![t(3), t(6)], false), "without new to me only, nothing left out");
+        assert_eq!(q.tracks.iter().map(number).collect::<Vec<_>>(), [1, 2, 5, 3, 4, 6]);
     }
 
     #[test]
@@ -378,6 +393,19 @@ mod tests {
         assert_eq!(q.current().map(number), Some(7));
         q.play((1..=3).map(t).collect(), 1);
         assert_eq!(ids(&q), [1, 2, 3]);
+    }
+
+    #[test]
+    fn shuffled_queues_keep_artists_apart_from_the_current_track_on() {
+        let by = |id: u64, artist: &str| Track { artist: artist.into(), ..t(id) };
+        for _ in 0..50 {
+            let mut q = Queue::default();
+            q.set_shuffle(true);
+            q.play(vec![by(1, "a"), by(2, "a"), by(3, "b"), by(4, "c"), by(5, "a")], 0);
+            let artists: Vec<&str> = q.tracks.iter().map(|t| t.artist.as_str()).collect();
+            assert_eq!(artists[0], "a", "the chosen track first");
+            assert!(artists.windows(2).all(|w| w[0] != w[1]), "{artists:?}");
+        }
     }
 
     #[test]

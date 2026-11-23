@@ -45,6 +45,7 @@ impl App {
                 if stamp != self.sync.stamp {
                     self.crates.store.reload();
                     self.plays.reload();
+                    self.send_heard();
                     self.sync.stamp = stamp;
                 }
                 self.sync.synced = Some(SystemTime::now());
@@ -97,6 +98,7 @@ impl App {
         };
         self.crates.store.move_to(Log::new("crate", local.as_deref(), sync_dir.as_ref()));
         self.plays.move_to(Log::new("history", local.as_deref(), sync_dir.as_ref()));
+        self.send_heard();
         let (backed_up, seen) = (self.sync.backed_up.take(), std::mem::take(&mut self.sync.seen));
         self.sync = SyncState { backed_up, seen, ..SyncState::new(sync_dir) };
         self.sync_tick(ctx);
@@ -137,6 +139,7 @@ impl App {
         }
         self.crates.store.restore(&backup_crate);
         self.plays.restore(&backup_plays);
+        self.send_heard();
         // The backup just made shows in the list.
         self.sync.check_soon();
         let day = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
@@ -344,6 +347,28 @@ mod tests {
         c.add("", Thing::Note, "", "that Turkish psych band");
         let text = markdown(c.entries());
         assert_eq!(text, "# Crate\n\n## New\n\n- that Turkish psych band\n- **Wild God** by Nick Cave (album): start with Joy\n");
+    }
+
+    #[test]
+    fn plays_from_another_computer_reach_the_player() {
+        use crate::player::Cmd;
+        use crate::ui::plays::{Play, Plays};
+        let root = std::env::temp_dir().join(format!("dust-sync-heard-{}", std::process::id()));
+        let mut other = Plays::load(Log::new("history", None, Some(&SyncDir::new(&root, "Other-0001"))));
+        std::fs::create_dir_all(&root).unwrap();
+        let track = crate::model::Track::test(7);
+        other.record(Play { source: "deezer".into(), at: 1_000, heard_secs: 200, skipped: false, flow: None, track: track.clone() });
+
+        let mut t = crate::ui::app::testing::TestApp::new("");
+        t.app.source_ready(crate::ui::app::testing::deezer());
+        t.sent();
+        t.app.set_sync_folder(&egui::Context::default(), Some(root.clone()));
+        let heard = t.sent().into_iter().rev().find_map(|cmd| match cmd {
+            Cmd::Heard(heard) => heard,
+            _ => None,
+        });
+        assert_eq!(heard.and_then(|h| h.get(&track.id).copied()), Some(1_000), "the shuffle knows what was heard there");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

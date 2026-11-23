@@ -3,6 +3,7 @@
 //!
 //! - [`engine`]: the playback loop and command handling
 //! - [`queue`]: queue bookkeeping (pure, unit-tested)
+//! - [`shuffle`]: the shuffled order (pure, unit-tested)
 //! - [`library`]: what the engine needs from a music source (a seam for tests)
 //! - [`listens`]: listen tracking and reporting to the source
 //! - [`preload`]: opening the next track ahead, off the player thread
@@ -15,6 +16,7 @@ mod listens;
 mod preload;
 mod queue;
 pub mod saved;
+mod shuffle;
 mod sleep;
 
 pub use crate::output::Output;
@@ -24,6 +26,10 @@ use crate::model::{Quality, Track, TrackId};
 use eframe::egui;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
+
+/// When each track was last heard, Unix seconds: the play history, for shuffle
+/// and Flow.
+pub type LastHeard = std::collections::HashMap<TrackId, u64>;
 
 /// What happens when a track ends.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -72,8 +78,12 @@ pub enum Cmd {
     /// Report listens to the source (Deezer's history, Flow, Last.fm; a server's
     /// play counts).
     ReportListens(bool),
-    /// Tracks endless Flow leaves out (the ones heard before); None plays them all.
-    SkipHeard(Option<Arc<std::collections::HashSet<TrackId>>>),
+    /// The play history of the source in use; None with the history off. From the
+    /// next shuffle on, shuffle favours what wasn't heard for a while.
+    Heard(Option<Arc<LastHeard>>),
+    /// Whether endless Flow leaves out the tracks in [`Cmd::Heard`] (*new to me
+    /// only*).
+    FlowNewOnly(bool),
     Output(Output),
 
     /// Replace the queue and play from an index.

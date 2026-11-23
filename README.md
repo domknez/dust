@@ -107,7 +107,10 @@ and *Connect a Navidrome server*.
   Under *Made from your history* are four lists that open like playlists: *On
   repeat*, *Found lately*, *Not heard in a while* (liked or played often, not lately)
   and *Never skipped*; they're in the command palette too
-- **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs
+- **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs.
+  Shuffle keeps the same artist from playing twice in a row where the list allows it,
+  and, with the play history on, tends to bring up tracks you haven't heard for a while
+  (or ever) first
 - **Sleep timer:** in the player bar's ⋯ menu, with a countdown ring; after 15 minutes
   to an hour the music fades out over 30 seconds and pauses (your volume is back for
   the next play), or it stops at the end of the track, the album (after its last track

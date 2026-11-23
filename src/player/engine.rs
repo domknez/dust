@@ -15,10 +15,9 @@ use super::queue::{Flow, Queue, Removed};
 use super::sleep::{SleepTimer, Tick};
 use super::{Cmd, Output, Repeat, State, Status};
 use crate::media::{Decoded, OpenError, Playback};
-use crate::model::{Quality, Track, TrackId};
+use crate::model::{Quality, Track};
 use crate::output::{self, RATE, Sink};
 use eframe::egui;
-use std::collections::HashSet;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -85,8 +84,8 @@ pub struct Engine {
     quality: Quality,
     queue: Queue,
     listens: ListenTracker,
-    /// Tracks Flow leaves out, see [`Cmd::SkipHeard`].
-    skip_heard: Option<Arc<HashSet<TrackId>>>,
+    /// Flow leaves out the tracks heard before, see [`Cmd::FlowNewOnly`].
+    flow_new_only: bool,
     output: Output,
     sink: Option<Box<dyn Sink>>,
     make_sink: SinkFactory,
@@ -135,7 +134,7 @@ impl Engine {
             quality: Quality::Mp3_320,
             queue: Queue::default(),
             listens: ListenTracker::new(),
-            skip_heard: None,
+            flow_new_only: false,
             output: Output::Local,
             sink: None,
             make_sink,
@@ -222,7 +221,8 @@ impl Engine {
                 self.quality = q;
             }
             Cmd::ReportListens(on) => self.listens.enabled = on,
-            Cmd::SkipHeard(heard) => self.skip_heard = heard,
+            Cmd::Heard(heard) => self.queue.set_heard(heard),
+            Cmd::FlowNewOnly(on) => self.flow_new_only = on,
             Cmd::Output(o) => self.switch_output(o),
 
             Cmd::Play(tracks, index) => {
@@ -413,7 +413,7 @@ impl Engine {
     fn extend_flow(&mut self) -> bool {
         let (Some(flow), Some(library)) = (self.queue.flow.clone(), self.library.clone()) else { return false };
         match library.flow(flow.mood.as_deref()) {
-            Ok(tracks) => self.queue.extend_flow(tracks, self.skip_heard.as_deref()),
+            Ok(tracks) => self.queue.extend_flow(tracks, self.flow_new_only),
             Err(e) => {
                 self.error(format!("Flow: {e}"));
                 false
@@ -573,7 +573,7 @@ impl Engine {
         }
         if let Some((flow, tracks)) = self.preload.as_mut().and_then(Preload::poll) {
             // Still the same Flow (not cleared or replaced meanwhile), and new tracks.
-            if self.queue.flow.as_ref() == Some(&flow) && self.queue.extend_flow(tracks, self.skip_heard.as_deref()) {
+            if self.queue.flow.as_ref() == Some(&flow) && self.queue.extend_flow(tracks, self.flow_new_only) {
                 self.preload = None;
             }
         }
@@ -1648,6 +1648,20 @@ mod tests {
         assert!(e.playing, "Flow keeps going");
         assert!(e.queue.index() >= 3, "moved past the first batch");
         assert_eq!(e.status.lock().unwrap().flow, Some(Flow { mood: Some("chill".into()) }));
+    }
+
+    #[test]
+    fn flow_leaves_out_heard_tracks_only_when_asked() {
+        let heard: Arc<crate::player::LastHeard> = Arc::new([(track(100, 2).id, 1)].into());
+        let first = |new_only: bool| {
+            let (mut e, _library, _tx) = engine(FakeLibrary::default());
+            e.handle(Cmd::Heard(Some(heard.clone())));
+            e.handle(Cmd::FlowNewOnly(new_only));
+            e.handle(Cmd::PlayFlow(None));
+            now_playing(&e)
+        };
+        assert_eq!(first(false), Some(100), "the history alone doesn't change Flow");
+        assert_eq!(first(true), Some(101), "new to me only: the heard one is left out");
     }
 
     #[test]
