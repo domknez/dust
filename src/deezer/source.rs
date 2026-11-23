@@ -18,7 +18,7 @@ impl Source for Deezer {
         ID
     }
 
-    fn data_key(&self) -> String {
+    fn data_key(&self) -> &str {
         Deezer::data_key(self)
     }
 

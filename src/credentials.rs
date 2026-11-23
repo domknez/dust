@@ -156,15 +156,15 @@ pub fn load_profile(source: SourceId) -> Option<u64> {
     with_logins(|l| l.0.get(&profile_key(source))?.parse().ok()).flatten()
 }
 
-/// Remember the member picked for `source` (none: the account itself).
-pub fn save_profile(source: SourceId, profile: Option<u64>) -> Result<(), String> {
-    update(|l| match profile {
-        Some(id) => {
-            l.0.insert(profile_key(source), id.to_string());
-        }
-        None => {
-            l.0.remove(&profile_key(source));
-        }
+/// Keep `secret` as the login of `source` and `profile` as the member picked
+/// (none: the account itself), in one write; Err says why they couldn't be.
+pub fn save_with_profile(source: SourceId, secret: &str, profile: Option<u64>) -> Result<(), String> {
+    update(|l| {
+        l.0.insert(source.login_key.to_string(), secret.to_string());
+        match profile {
+            Some(id) => l.0.insert(profile_key(source), id.to_string()),
+            None => l.0.remove(&profile_key(source)),
+        };
     })
 }
 
@@ -218,12 +218,13 @@ mod tests {
     fn the_picked_profile_is_kept_with_the_login_and_cleared_with_it() {
         let own = SourceId { key: "profile-test", name: "Test", queue_file: "profile-test.json", login_key: "profile-test" };
         assert_eq!(load_profile(own), None);
-        save(own, "secret").unwrap();
-        save_profile(own, Some(42)).unwrap();
-        assert_eq!(load_profile(own), Some(42));
-        save_profile(own, None).unwrap();
-        assert_eq!(load_profile(own), None);
-        save_profile(own, Some(7)).unwrap();
+        save_with_profile(own, "secret", Some(42)).unwrap();
+        assert_eq!((load(own).as_deref(), load_profile(own)), (Some("secret"), Some(42)));
+        save_with_profile(own, "secret", None).unwrap();
+        assert_eq!(load_profile(own), None, "the account itself");
+        save_with_profile(own, "secret", Some(7)).unwrap();
+        save(own, "renewed").unwrap();
+        assert_eq!(load_profile(own), Some(7), "a new session alone keeps the pick");
         clear(own).unwrap();
         assert_eq!((load(own), load_profile(own)), (None, None), "logging out forgets the pick too");
     }

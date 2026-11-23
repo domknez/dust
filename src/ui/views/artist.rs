@@ -116,7 +116,7 @@ impl App {
                 }
                 let grid = Rect::from_min_max(right.min + vec2(0.0, 40.0), right.max);
                 if on_timeline {
-                    let plays = self.prefs.history_on.then_some(&self.plays);
+                    let plays = self.prefs.history_on.then(|| (&self.plays, self.client.as_ref().map_or("", |c| c.data_key())));
                     show_timeline(ui, &mut self.covers, plays, grid, &years, acts);
                 } else {
                     RELEASES.show(ui, grid, items.len(), |ui, k| release(ui, &mut self.covers, &items[k], acts));
@@ -325,14 +325,14 @@ fn timeline_height(years: &[(String, Vec<&Item>)]) -> f32 {
 fn show_timeline(
     ui: &mut Ui,
     covers: &mut Covers,
-    plays: Option<&crate::ui::plays::Plays>,
+    plays: Option<(&crate::ui::plays::Plays, &str)>,
     area: Rect,
     years: &[(String, Vec<&Item>)],
     acts: &mut Actions,
 ) {
     let p = colors();
     let all: usize = years.iter().map(|(_, items)| items.len()).sum();
-    let heard_album = |id: &str| plays.is_some_and(|p| p.has_heard_album(id));
+    let heard_album = |id: &str| plays.is_some_and(|(p, source)| p.has_heard_album(source, id));
     let heard = years.iter().flat_map(|(_, items)| items).filter(|item| heard_album(&item.id)).count();
     let summary = if plays.is_some() { format!("You've heard {heard} of {all} releases") } else { format!("{all} releases") };
     text_left(ui.painter(), pos2(area.left(), area.top() + 8.0), &summary, ty::SMALL, p.dim, area.width());

@@ -19,7 +19,7 @@ impl App {
             acts.push(Action::CancelProfilePicker);
             return;
         };
-        let current = self.client.as_ref().and(family.profile());
+        let current = self.client.as_ref().map(|_| family.user_id());
         let can_cancel = self.client.is_some();
         egui::CentralPanel::default().frame(egui::Frame::new().fill(p.sidebar)).show(ui, |ui| {
             ui.vertical_centered(|ui| {
@@ -28,11 +28,11 @@ impl App {
                 ui.add_space(14.0);
                 ui.label(RichText::new("Who's listening?").color(p.text).font(ty::LEAD.font()));
                 ui.add_space(24.0);
-                if self.login.task.is_loading() {
+                let loading = self.login.task.is_loading();
+                if loading {
                     ui.spinner();
-                    return;
                 }
-                for profile in family.profiles() {
+                for profile in family.profiles().iter().filter(|_| !loading) {
                     let (rect, resp) = ui.allocate_exact_size(vec2(ROW_WIDTH, ROW_HEIGHT), Sense::click());
                     let corner = CornerRadius::same(radius::CONTROL);
                     if resp.hovered() {

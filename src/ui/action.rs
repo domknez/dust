@@ -298,7 +298,7 @@ impl App {
             Action::SwitchSource(source) => self.switch_source(source),
             Action::ChooseProfile => self.choose_profile(),
             Action::PickProfile(id) => self.pick_profile(id),
-            Action::CancelProfilePicker => self.login.choosing = false,
+            Action::CancelProfilePicker => self.cancel_profile_picker(),
             Action::LogOut => self.log_out(ctx),
         }
     }
@@ -373,9 +373,9 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!((entries[0].source.as_str(), entries[0].from.as_str()), ("deezer", "Flow · chill"));
         t.update(Action::Crate(Change::Heard { id: entries[0].id.clone(), heard: true }));
-        assert_eq!(t.app.crates.store.new_count(), 0);
+        assert_eq!(t.app.crates.store.new_count("deezer"), 0);
         t.update(save());
-        assert_eq!((t.app.crates.store.entries().len(), t.app.crates.store.new_count()), (1, 1), "saved again: new again");
+        assert_eq!((t.app.crates.store.entries().len(), t.app.crates.store.new_count("deezer")), (1, 1), "saved again: new again");
         t.update(Action::CrateNote("  ".into()));
         t.update(Action::CrateNote("Elder, from Ana".into()));
         assert_eq!(t.app.crates.store.entries()[0].title(), "Elder, from Ana", "newest first");

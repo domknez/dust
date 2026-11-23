@@ -7,7 +7,7 @@ use super::covers::Covers;
 use super::crate_store::Crate;
 use super::history::Visit;
 use super::library::Library;
-use super::load::Jobs;
+use super::load::{Jobs, Load};
 use super::now_playing::NowPlaying;
 use super::plays::{Play, Plays};
 use super::sources::{Login, Sources};
@@ -82,26 +82,24 @@ impl App {
             return;
         }
         let any = !played.is_empty();
-        // The plays of a Deezer family member are kept apart from the owner's.
-        let in_use = self.client.as_ref().map(|c| (c.id().key, c.data_key()));
         for played in played {
-            let mut play = Play::new(played);
-            if let Some((key, data_key)) = &in_use
-                && play.source == *key
-            {
-                play.source = data_key.clone();
-            }
-            self.plays.record(play);
+            self.plays.record(Play::new(played));
         }
         if any && self.prefs.flow_new_only {
             self.send_skip_heard();
         }
     }
 
+    /// What the local data of the source in use is kept under (see
+    /// [`Source::data_key`](crate::source::Source::data_key)); "" before any login.
+    pub(super) fn data_key(&self) -> &str {
+        self.client.as_ref().map_or("", |c| c.data_key())
+    }
+
     /// Tell the player which tracks Flow leaves out: the ones heard, with *new to me
     /// only* on.
     pub(super) fn send_skip_heard(&self) {
-        let heard = (self.prefs.flow_new_only && self.prefs.history_on).then(|| std::sync::Arc::new(self.plays.heard()));
+        let heard = (self.prefs.flow_new_only && self.prefs.history_on).then(|| std::sync::Arc::new(self.plays.heard(self.data_key())));
         self.player.send(Cmd::SkipHeard(heard));
     }
 }
@@ -289,34 +287,44 @@ impl App {
 
     pub(super) fn on_logged_in(&mut self, ctx: &egui::Context, client: Deezer) {
         let remember = std::mem::take(&mut self.login.remember);
-        if remember
-            && let Err(e) =
-                credentials::save(deezer::ID, client.arl()).and_then(|()| credentials::save_profile(deezer::ID, client.profile()))
-        {
-            self.toasts.error(ctx, format!("Logged in, but dust can't remember it for next time: {e}"));
-        }
+        // A member picked in the profile picker (a new login only opens it).
+        let picked = std::mem::take(&mut self.login.choosing);
         self.login.arl.clear();
         if client.profile_unconfirmed() {
-            self.login.notice = Some("Couldn't switch to that profile: Deezer didn't confirm it. Using the plan owner's account.".into());
+            const NOT_CONFIRMED: &str = "Couldn't switch to that profile: Deezer didn't confirm it.";
+            if picked && self.client.as_ref().is_some_and(|c| c.id() == deezer::ID) {
+                // The member listening so far stays, and so does the stored pick.
+                self.login.error = Some(NOT_CONFIRMED.into());
+                self.login.choosing = true;
+                return;
+            }
+            self.toasts.error(ctx, format!("{NOT_CONFIRMED} Using the plan owner's account."));
+        } else if remember && let Err(e) = credentials::save_with_profile(deezer::ID, client.arl(), client.profile()) {
+            self.toasts.error(ctx, format!("Logged in, but dust can't remember it for next time: {e}"));
         }
         let several = client.profiles().len() > 1;
         self.login.family = several.then(|| client.clone());
-        // A new login to a family plan asks who is listening, before any music.
-        if several && remember && client.profile().is_none() {
-            self.login.choosing = true;
-            return;
-        }
-        // Another member: nothing of the last one's pages stays.
-        if std::mem::take(&mut self.login.choosing) && self.client.as_ref().is_some_and(|c| c.id() == deezer::ID) {
-            self.clear_content();
-        }
+        // A new login to a family plan asks who is listening; it's the owner until a
+        // pick (or if the picker is closed).
+        self.login.choosing = several && remember && !picked && client.profile().is_none();
         self.source_ready(std::sync::Arc::new(client));
+    }
+
+    /// Deezer stopped answering as the family member in use: back to the plan's
+    /// owner (what came back for the member is dropped), rather than act as the owner
+    /// in the member's name. The stored pick stays, to be tried at the next start.
+    pub(super) fn profile_lost(&mut self, ctx: &egui::Context) {
+        let Some(family) = self.login.family.clone() else { return };
+        self.toasts.error(ctx, format!("{} Back on the plan owner's account.", Error::ProfileLost));
+        let arl = family.arl().to_string();
+        self.login.remember = false;
+        self.login.task.start(&self.jobs, move || Deezer::login_as(&arl, None));
     }
 
     /// The profile picker's choice: log in again as that family member.
     pub(super) fn pick_profile(&mut self, id: u64) {
         let Some(family) = self.login.family.clone() else { return };
-        if self.client.as_ref().is_some_and(|c| c.id() == deezer::ID) && family.profile() == Some(id) {
+        if self.client.as_ref().is_some_and(|c| c.id() == deezer::ID) && family.user_id() == id {
             self.login.choosing = false;
             return;
         }
@@ -324,6 +332,17 @@ impl App {
         self.login.error = None;
         self.login.remember = true;
         self.login.task.start(&self.jobs, move || Deezer::login_as(&arl, Some(id)));
+    }
+
+    /// The picker closed: whoever was listening stays (the owner, after a new
+    /// login), and a pick still on its way is dropped.
+    pub(super) fn cancel_profile_picker(&mut self) {
+        self.login.choosing = false;
+        self.login.error = None;
+        if self.login.task.is_loading() {
+            self.login.task = Load::Idle;
+            self.login.remember = false;
+        }
     }
 
     /// "Switch profile…" in the account menu.
@@ -446,10 +465,10 @@ impl App {
 
     /// The tracks of a list made from the play history (the source in use's).
     pub(super) fn history_list(&self, which: super::stats::Smart) -> Vec<Track> {
-        let source = self.client.as_ref().map(|c| c.data_key()).unwrap_or_default();
+        let source = self.data_key();
         let now = crate::clock::unix_now();
         let likes = &self.library.likes.likes;
-        super::stats::smart_list(&self.plays.oldest_first(&source), which, now, &|id| likes.tracks.contains(id))
+        super::stats::smart_list(&self.plays.oldest_first(source), which, now, &|id| likes.tracks.contains(id))
     }
 
     /// Open a collection; artists get their full page instead of a track list.
@@ -599,6 +618,10 @@ impl App {
         // ends it, and then what else arrived belongs to the old one.
         for error in &failed {
             log_warn!("{error}");
+        }
+        if failed.iter().any(Error::is_profile_lost) {
+            self.profile_lost(ctx);
+            return;
         }
         if let Some(expired) = failed.into_iter().find(Error::is_session_expired) {
             self.log_out(ctx);
@@ -755,9 +778,6 @@ impl eframe::App for App {
         let st = self.status.take().unwrap_or_else(|| self.player.status());
         super::widgets::offer_crate(&ctx, self.prefs.crate_on);
         self.shortcuts(&ctx, &st, &mut acts);
-        if let Some(notice) = self.login.notice.take() {
-            self.toasts.error(&ctx, notice);
-        }
         let p = colors();
         if self.mini_player.is_some() {
             egui::CentralPanel::default().frame(panel_frame(p.bar, Margin::ZERO)).show(ui, |ui| self.mini_player(ui, &st, &mut acts));
@@ -980,7 +1000,7 @@ mod tests {
         let now = jiff::Timestamp::now().as_second() as u64;
         for (ago, id) in [(300, 1), (200, 1), (100, 2)] {
             let played = crate::player::Played {
-                source: "deezer",
+                source: "deezer".into(),
                 track: track(id, true),
                 started_unix: now - ago,
                 heard_secs: 200,
@@ -1037,8 +1057,14 @@ mod tests {
     fn the_queue_and_history_keep_up_without_a_frame_drawn() {
         let mut t = TestApp::new("");
         t.app.source_ready(deezer());
-        let played =
-            crate::player::Played { source: "deezer", track: track(9, true), started_unix: 1, heard_secs: 200, skipped: false, flow: None };
+        let played = crate::player::Played {
+            source: "deezer".into(),
+            track: track(9, true),
+            started_unix: 1,
+            heard_secs: 200,
+            skipped: false,
+            flow: None,
+        };
         t.app.player.set_status(|st| {
             *st = super::testing::queue(&[1, 2], 1);
             st.played = vec![played];

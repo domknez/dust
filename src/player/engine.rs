@@ -17,7 +17,6 @@ use super::{Cmd, Output, Repeat, State, Status};
 use crate::media::{Decoded, OpenError, Playback};
 use crate::model::{Quality, Track, TrackId};
 use crate::output::{self, RATE, Sink};
-use crate::source::SourceId;
 use eframe::egui;
 use std::collections::HashSet;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
@@ -80,7 +79,9 @@ pub struct Engine {
     ctx: egui::Context,
     library: Option<SharedLibrary>,
     /// Which source `library` is.
-    source: Option<SourceId>,
+    /// The [`data_key`](crate::source::Source::data_key) of the source in use: a
+    /// family member of a Deezer plan is a source of its own here.
+    source: Option<String>,
     quality: Quality,
     queue: Queue,
     listens: ListenTracker,
@@ -213,7 +214,7 @@ impl Engine {
             self.end_handoff();
         }
         match cmd {
-            Cmd::Client(client) => self.set_source(client.id(), Arc::new(client)),
+            Cmd::Client(client) => self.set_source(client.data_key().to_string(), Arc::new(client)),
             Cmd::Quality(q) => {
                 if q != self.quality {
                     self.preload = None; // opened in the old quality
@@ -527,7 +528,7 @@ impl Engine {
         // Podcast episodes aren't songs: a source's listen reports (Deezer's
         // history and Flow, a server's play counts, Last.fm) are for songs only.
         let Some(stream) = self.stream.as_ref().filter(|_| !track.is_episode()) else { return };
-        let Some(source) = self.source else { return };
+        let Some(source) = self.source.clone() else { return };
         let flow = self.queue.flow.clone();
         self.listens.start(self.library.as_deref(), source, stream.song_id(), stream.format(), track, flow);
     }
@@ -687,10 +688,11 @@ impl Engine {
         self.publish(true);
     }
 
-    /// Play from `library` from now on. Another source than before ends playback and
-    /// empties the queue: its tracks belong to the old source.
-    fn set_source(&mut self, id: SourceId, library: SharedLibrary) {
-        if self.source.is_some_and(|s| s != id) {
+    /// Play from `library` from now on. Another source (or family member) than before
+    /// ends playback and empties the queue: its tracks, and listens, belong to the old
+    /// one.
+    fn set_source(&mut self, key: String, library: SharedLibrary) {
+        if self.source.as_ref().is_some_and(|s| *s != key) {
             log_info!("music source changed: stopping and clearing the queue");
             self.stop();
             if let Some(s) = self.sink.as_mut() {
@@ -700,7 +702,7 @@ impl Engine {
             self.queue.replace(Vec::new(), 0);
             self.restored_at = None;
         }
-        self.source = Some(id);
+        self.source = Some(key);
         self.library = Some(library);
     }
 
@@ -1114,7 +1116,7 @@ mod tests {
     fn with_outputs(rx: Receiver<Cmd>, status: Arc<Mutex<Status>>, volume: f32, make_sink: SinkFactory) -> Engine {
         let mut e = Engine::with_outputs(rx, status, egui::Context::default(), volume, make_sink);
         e.spawn = Box::new(|job| job());
-        e.source = Some(crate::deezer::ID);
+        e.source = Some(crate::deezer::ID.key.into());
         e
     }
 
@@ -1503,13 +1505,13 @@ mod tests {
     #[test]
     fn switching_source_clears_the_queue() {
         let (mut e, library, _tx) = engine(FakeLibrary::default());
-        e.set_source(crate::deezer::ID, library.clone());
+        e.set_source(crate::deezer::ID.key.into(), library.clone());
         e.handle(Cmd::Play(vec![track(1, 60), track(2, 60)], 0));
         assert_eq!(now_playing(&e), Some(1));
         // Logging in again to the same source keeps playing.
-        e.set_source(crate::deezer::ID, library.clone());
+        e.set_source(crate::deezer::ID.key.into(), library.clone());
         assert_eq!(now_playing(&e), Some(1));
-        e.set_source(crate::subsonic::ID, library);
+        e.set_source(crate::subsonic::ID.key.into(), library);
         e.publish(true);
         assert_eq!(now_playing(&e), None);
         assert!(!e.playing && e.queue.is_empty());
@@ -1776,9 +1778,21 @@ mod tests {
         let (mut e, library, _tx) = engine(FakeLibrary::default());
         e.handle(Cmd::Play(vec![track(1, 60)], 0));
         e.listens.heard(Duration::from_secs(20));
-        e.set_source(crate::subsonic::ID, library);
+        e.set_source(crate::subsonic::ID.key.into(), library);
         let played = std::mem::take(&mut e.status.lock().unwrap().played);
-        assert_eq!(played.iter().map(|p| p.source).collect::<Vec<_>>(), [crate::deezer::ID.key]);
+        assert_eq!(played.iter().map(|p| p.source.as_str()).collect::<Vec<_>>(), [crate::deezer::ID.key]);
+    }
+
+    #[test]
+    fn another_family_member_stops_the_last_ones_track() {
+        let (mut e, library, _tx) = engine(FakeLibrary::default());
+        e.set_source("deezer".into(), library.clone());
+        e.handle(Cmd::Play(vec![track(1, 60), track(2, 60)], 0));
+        e.listens.heard(Duration::from_secs(20));
+        e.set_source("deezer:2".into(), library);
+        assert!(!e.playing && e.queue.is_empty(), "the owner's queue isn't the kid's");
+        let played = std::mem::take(&mut e.status.lock().unwrap().played);
+        assert_eq!(played.iter().map(|p| p.source.as_str()).collect::<Vec<_>>(), ["deezer"], "the listen is the owner's");
     }
 
     // ------------------------------------------------------------ preloading
@@ -1829,7 +1843,7 @@ mod tests {
         let jobs = Jobs::default();
         let queued = jobs.clone();
         e.spawn = Box::new(move |job| queued.borrow_mut().push(job));
-        e.source = Some(crate::deezer::ID);
+        e.source = Some(crate::deezer::ID.key.into());
         let library = Arc::new(library);
         e.library = Some(library.clone());
         (e, library, buffer, jobs)
@@ -2012,8 +2026,8 @@ mod tests {
         assert_eq!(now_playing(&e), Some(2), "opened as usual");
 
         decode_to_end(&mut e);
-        e.set_source(crate::subsonic::ID, library.clone());
-        e.set_source(crate::deezer::ID, library.clone());
+        e.set_source(crate::subsonic::ID.key.into(), library.clone());
+        e.set_source(crate::deezer::ID.key.into(), library.clone());
         assert!(e.preload.is_none() && e.handoff.is_none());
         run_jobs(&jobs);
         assert!(e.preload.is_none(), "a late result goes nowhere");

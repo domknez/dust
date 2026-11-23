@@ -14,8 +14,8 @@ impl App {
             acts.push(Action::CrateNote(note));
         }
         ui.add_space(14.0);
-        let fresh: Vec<Entry> = self.crates.store.entries().iter().filter(|e| !e.heard).cloned().collect();
-        let heard = self.crates.store.entries().len() - fresh.len();
+        let fresh: Vec<Entry> = self.crates.store.entries_for(self.data_key()).filter(|e| !e.heard).cloned().collect();
+        let heard = self.crates.store.entries_for(self.data_key()).count() - fresh.len();
         let p = colors();
         let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
         text_left(ui.painter(), pos2(row.left() + 4.0, row.center().y), &format!("NEW · {}", fresh.len()), ty::OVERLINE, p.faint, 120.0);
@@ -34,7 +34,7 @@ impl App {
                 acts.push(Action::PlayCrate);
             }
         }
-        let current = self.client.as_ref().map(|c| c.data_key()).unwrap_or_default();
+        let current = self.data_key().to_string();
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             if fresh.is_empty() {
                 widgets::empty_panel(
@@ -84,8 +84,8 @@ impl App {
         let p = colors();
         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 54.0), Sense::click());
         let track = st.track.as_ref().filter(|t| !t.is_episode());
-        let source = self.client.as_ref().map(|c| c.data_key()).unwrap_or_default();
-        let saved = track.and_then(|t| self.crates.store.find(&source, &Thing::Track(t.clone()))).is_some_and(|e| !e.heard);
+        let source = self.data_key();
+        let saved = track.and_then(|t| self.crates.store.find(source, &Thing::Track(t.clone()))).is_some_and(|e| !e.heard);
         let enabled = track.is_some() && !saved;
         let corner = CornerRadius::same(radius::CONTROL);
         ui.painter().rect_filled(rect, corner, if enabled && resp.hovered() { p.raised } else { p.surface });

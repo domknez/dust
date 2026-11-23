@@ -48,13 +48,13 @@ impl App {
         ui.add_space(12.0);
 
         let filter = self.crates.view.filter;
-        let shown: Vec<Entry> = self.crates.store.entries().iter().filter(|e| filter.keeps(e)).cloned().collect();
+        let shown: Vec<Entry> = self.crates.store.entries_for(self.data_key()).filter(|e| filter.keeps(e)).cloned().collect();
         if self.crates.view.selected.as_ref().is_none_or(|id| !shown.iter().any(|e| e.id == *id)) {
             self.crates.view.selected = shown.first().map(|e| e.id.clone());
         }
         if shown.is_empty() {
             ui.add_space(30.0);
-            let (title, hint) = if self.crates.store.entries().is_empty() {
+            let (title, hint) = if self.crates.store.entries_for(self.data_key()).next().is_none() {
                 (
                     "Your Crate is empty",
                     format!(
@@ -69,7 +69,7 @@ impl App {
             return;
         }
         let area = ui.available_rect_before_wrap();
-        let current = self.client.as_ref().map(|c| c.data_key()).unwrap_or_default();
+        let current = self.data_key().to_string();
         // Too narrow for both: the list, or the entry picked with a way back.
         if one_column(area.width()) {
             let entry = self.crates.view.selected.as_ref().and_then(|id| self.crates.store.get(id)).cloned();
@@ -133,8 +133,8 @@ impl App {
 
     /// All · New · Heard, then the kinds there are, each with its count.
     fn filter_chips(&mut self, ui: &mut Ui) {
-        let entries = self.crates.store.entries();
-        let count = |f: Filter| entries.iter().filter(|e| f.keeps(e)).count();
+        let current = self.data_key().to_string();
+        let count = |f: Filter| self.crates.store.entries_for(&current).filter(|e| f.keeps(e)).count();
         let mut chips = vec![("All", Filter::All), ("New", Filter::New), ("Heard", Filter::Heard)];
         for (label, kind) in [("Tracks", "track"), ("Albums", "album"), ("Artists", "artist"), ("Notes", "note")] {
             if count(Filter::Kind(kind)) > 0 {

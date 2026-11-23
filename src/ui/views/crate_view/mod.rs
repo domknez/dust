@@ -116,14 +116,14 @@ impl App {
     pub(in crate::ui) fn save_to_crate(&mut self, ctx: &egui::Context, thing: Thing, from: String) {
         let Some(client) = &self.client else { return };
         let source = client.data_key();
-        let message = match self.crates.store.find(&source, &thing).map(|e| (e.id.clone(), e.heard)) {
+        let message = match self.crates.store.find(source, &thing).map(|e| (e.id.clone(), e.heard)) {
             Some((id, true)) => {
                 self.crates.store.change(Change::Heard { id, heard: false });
                 "Back in your Crate as new"
             }
             Some(_) => "Already in your Crate",
             None => {
-                self.crates.store.add(&source, thing, &from, "");
+                self.crates.store.add(source, thing, &from, "");
                 "Saved to your Crate"
             }
         };
@@ -138,7 +138,7 @@ impl App {
 
     /// New entries of the source in use that can be played (not notes).
     pub(in crate::ui) fn crate_playable(&self) -> usize {
-        let source = self.client.as_ref().map(|c| c.data_key()).unwrap_or_default();
+        let source = self.data_key();
         self.crates.store.entries().iter().filter(|e| !e.heard && e.source == source && e.thing != Thing::Note).count()
     }
 
@@ -256,6 +256,14 @@ fn source_name(key: &str) -> &'static str {
 mod tests {
     use super::*;
     use crate::ui::app::testing::*;
+
+    #[test]
+    fn a_family_members_entries_name_their_source() {
+        assert_eq!(source_name("deezer"), "Deezer");
+        assert_eq!(source_name("deezer:2"), "Deezer");
+        assert_eq!(source_name("navidrome"), "Navidrome");
+        assert_eq!(source_name("elsewhere"), "another source");
+    }
 
     #[test]
     fn the_entry_menu_marks_heard_and_removes() {

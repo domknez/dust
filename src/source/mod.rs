@@ -104,8 +104,8 @@ pub trait Source: Send + Sync {
     fn id(&self) -> SourceId;
     /// What this account's local data (play history, Crate, release alerts) is kept
     /// under: the source's key, unless the account has profiles that mustn't share it.
-    fn data_key(&self) -> String {
-        self.id().key.to_string()
+    fn data_key(&self) -> &str {
+        self.id().key
     }
     /// Its saved queue's file, next to the settings file: one per [`Source::data_key`].
     fn queue_file(&self) -> String {

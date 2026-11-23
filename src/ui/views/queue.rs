@@ -132,7 +132,7 @@ impl App {
         let show_remove = hovered && self.queue_drag.is_none();
         acts.extend(widgets::queue_row(ui, &mut self.covers, rect, track, false, !show_remove).map(Action::OpenArtist));
         // A lime dot on the cover: never heard before.
-        if self.prefs.history_on && !track.is_episode() && !self.plays.has_heard(&track.id) {
+        if self.prefs.history_on && !track.is_episode() && !self.plays.has_heard(self.data_key(), &track.id) {
             let corner = pos2(rect.left() + 6.0 + metrics::LIST_ART, rect.center().y - metrics::LIST_ART / 2.0);
             ui.painter().circle(corner, 4.5, p.accent, egui::Stroke::new(2.0, p.surface));
             let dot = Rect::from_center_size(corner, Vec2::splat(14.0));

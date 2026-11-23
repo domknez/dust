@@ -45,7 +45,7 @@ impl App {
         ui.add_space(metrics::TOP_INSET);
         self.side_panel_tabs(ui, acts);
         ui.add_space(4.0);
-        let Some(source) = self.client.as_ref().map(|c| c.data_key()) else { return };
+        let Some(source) = self.client.as_ref().map(|c| c.data_key().to_string()) else { return };
         let radio = !self.features().flow;
         let zone = when::zone();
         let plays: Vec<&Play> = self.plays.of(&source).take(SHOWN).collect();

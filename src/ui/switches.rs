@@ -238,7 +238,7 @@ mod tests {
 
     fn heard(id: u64) -> crate::player::Played {
         crate::player::Played {
-            source: "deezer",
+            source: "deezer".into(),
             track: track(id, true),
             started_unix: 1_000_000,
             heard_secs: 200,
