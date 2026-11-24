@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.36.0 (2026-11-24)
+
 - Recap: a page for one calendar month or year of your play history: time listened and
   how it compares to the one before, days you listened and the longest run of them,
   your busiest day and the time of day you mostly listen, a chart, top artists, albums
