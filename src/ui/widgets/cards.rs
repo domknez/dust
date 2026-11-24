@@ -54,13 +54,8 @@ pub fn channel_card(ui: &mut Ui, covers: &mut Covers, item: &Item) -> bool {
     cover(ui, covers, item.picture.as_ref(), metrics::HOME_CARD_PX, art, radius::CARD);
     if resp.hovered() {
         ui.painter().rect_filled(art, CornerRadius::same(radius::CARD), colors().veil);
-        let ring = art.expand(3.0);
-        ui.painter().rect_stroke(
-            ring,
-            CornerRadius::same(radius::CONTROL),
-            egui::Stroke::new(1.5, colors().accent),
-            egui::StrokeKind::Inside,
-        );
+        // Inside the artwork: outside it, a scrolling row clips the first card's edge.
+        ui.painter().rect_stroke(art, CornerRadius::same(radius::CARD), egui::Stroke::new(1.5, colors().accent), egui::StrokeKind::Inside);
     }
     text_left(ui.painter(), pos2(rect.left(), art.bottom() + 15.0), &item.title, ty::ITEM.strong(), colors().text, w);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
