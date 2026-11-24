@@ -40,6 +40,7 @@ mod palette;
 mod playlist_edit;
 mod playlist_file;
 mod plays;
+mod recap;
 mod release_watch;
 mod selection;
 mod shortcuts;

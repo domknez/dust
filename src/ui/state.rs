@@ -26,6 +26,8 @@ pub enum View {
     Crate,
     /// What the play history adds up to.
     Stats,
+    /// A month or year of listening, as highlights.
+    Recap(crate::ui::recap::Span),
 }
 
 /// A page of sections being shown: which, and its title for before it loads.

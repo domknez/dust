@@ -84,6 +84,10 @@ pub enum Action {
     Crate(Change),
     /// The Crate page, with this entry shown and/or this filter.
     OpenCrate(Option<String>, Option<Filter>),
+    /// The recap of a month (or a year) to start with, see [`recap::opening`](crate::ui::recap::opening).
+    OpenRecap {
+        month: bool,
+    },
     /// Play the Crate's new tracks, albums and artists.
     PlayCrate,
     /// Search the source for this.
@@ -162,6 +166,7 @@ impl Action {
                 | Action::OpenArtist(_)
                 | Action::OpenCollection(_)
                 | Action::OpenCrate(..)
+                | Action::OpenRecap { .. }
                 | Action::SearchFor(_)
         )
     }
@@ -255,6 +260,7 @@ impl App {
             Action::CrateNote(note) => self.crate_note(note),
             Action::Crate(change) => self.crates.store.change(change),
             Action::OpenCrate(entry, filter) => self.open_crate(entry, filter),
+            Action::OpenRecap { month } => self.open_recap(month),
             Action::PlayCrate => self.play_crate(),
             Action::SearchFor(query) => self.search_for(query),
             Action::SyncFolder(folder) => self.set_sync_folder(ctx, folder),

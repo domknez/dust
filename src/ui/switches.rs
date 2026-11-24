@@ -152,6 +152,7 @@ impl App {
             View::Crate => self.prefs.crate_on,
             View::Lyrics => self.prefs.lyrics,
             View::Collection(coll) if matches!(coll.source, CollSource::History(_)) => self.prefs.history_on,
+            View::Recap(_) => self.prefs.history_on,
             _ => Page::of(view).is_none_or(|page| self.page_on(page)),
         }
     }
@@ -170,7 +171,7 @@ impl App {
         match action {
             Action::Open(view) => self.view_allowed(view),
             Action::OpenCollection(coll) => self.view_allowed(&View::Collection(Box::new(coll.clone()))),
-            Action::PlaySource(CollSource::History(_), _) | Action::FlowNewOnly(_) => prefs.history_on,
+            Action::PlaySource(CollSource::History(_), _) | Action::FlowNewOnly(_) | Action::OpenRecap { .. } => prefs.history_on,
             Action::SaveToCrate(..)
             | Action::CrateNote(_)
             | Action::Crate(_)

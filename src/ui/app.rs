@@ -140,6 +140,7 @@ pub struct App {
     /// with them.
     pub(super) crates: super::views::Crates,
     pub(super) stats_view: super::views::StatsView,
+    pub(super) recap_view: super::views::RecapView,
     pub(super) history_view: super::views::HistoryView,
     /// New releases looked for, of the source in use.
     pub(super) releases: super::release_watch::Watch,
@@ -242,6 +243,7 @@ impl App {
             plays,
             crates: super::views::Crates::new(store),
             stats_view: Default::default(),
+            recap_view: Default::default(),
             history_view: Default::default(),
             releases: Default::default(),
             importing: Default::default(),
@@ -388,7 +390,7 @@ impl App {
                 library.favorite_shows.start(&self.jobs, move || client.favorite_shows())
             }
             View::Artists if library.followed.wants_load() => library.followed.start(&self.jobs, move || client.favorite_artists()),
-            View::Home | View::Albums | View::Podcasts | View::Artists | View::Lyrics | View::Crate | View::Stats => {}
+            View::Home | View::Albums | View::Podcasts | View::Artists | View::Lyrics | View::Crate | View::Stats | View::Recap(_) => {}
             View::Artist(artist) => {
                 let id = artist.id.clone();
                 self.browse.artist_page.start(&self.jobs, move || client.artist(&id));
@@ -430,7 +432,8 @@ impl App {
             | View::Channel(_)
             | View::Lyrics
             | View::Crate
-            | View::Stats => {}
+            | View::Stats
+            | View::Recap(_) => {}
             View::Search if browse.search.trim().is_empty() => {}
             // A pasted link to the source opens what it points at instead of searching.
             View::Search if client.is_link(&browse.search) => {

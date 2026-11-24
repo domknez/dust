@@ -301,6 +301,11 @@ pub mod when {
         local(unix, zone).map(|z| z.date())
     }
 
+    /// The local hour of the day `unix` falls in, 0–23.
+    pub fn hour(unix: u64, zone: &TimeZone) -> Option<i8> {
+        local(unix, zone).map(|z| z.hour())
+    }
+
     /// "21:47".
     pub fn clock(unix: u64, zone: &TimeZone) -> String {
         local(unix, zone).map(|z| z.strftime("%H:%M").to_string()).unwrap_or_default()

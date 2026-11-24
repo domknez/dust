@@ -6,7 +6,7 @@ use crate::model::Track;
 use crate::ui::plays::{Play, when};
 use jiff::ToSpan;
 use jiff::civil::Date;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub const DAY: u64 = 24 * 60 * 60;
 const YEAR: u64 = 365 * DAY;
@@ -80,8 +80,9 @@ pub struct Bar {
     pub secs: u64,
 }
 
+/// What the plays of a stretch of time add up to.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Stats {
+pub struct Summary {
     /// Time listened, skips included.
     pub secs: u64,
     /// Plays heard through (not skipped).
@@ -92,10 +93,21 @@ pub struct Stats {
     pub top_artists: Vec<Ranked>,
     pub top_albums: Vec<Ranked>,
     pub top_tracks: Vec<Ranked>,
-    /// Artists whose first play kept falls in the period, most heard first (none
-    /// for [`Period::All`]).
+    /// Artists whose first play kept falls in the stretch, most heard first (none
+    /// when it starts with the history).
     pub new_artists: Vec<Ranked>,
     pub new_artist_count: usize,
+}
+
+impl Summary {
+    pub fn is_empty(&self) -> bool {
+        self.plays + self.skipped == 0
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Stats {
+    pub summary: Summary,
     pub chart: Vec<Bar>,
     /// The most heard tracks of the same week a year ago.
     pub year_ago: Vec<Ranked>,
@@ -104,7 +116,7 @@ pub struct Stats {
 }
 
 /// Which artist a play counts for: the first credited, else the display name.
-fn artist_key(track: &Track) -> String {
+pub(super) fn artist_key(track: &Track) -> String {
     match track.artists.first() {
         Some(a) if !a.id.is_empty() => format!("id:{}", a.id),
         _ => format!("name:{}", track.artist.to_lowercase()),
@@ -145,37 +157,8 @@ impl Tally {
 /// (Unix seconds) in `zone`.
 pub fn compute(plays: &[&Play], period: Period, now: u64, zone: &when::Zone) -> Stats {
     let start = period.days().map_or(0, |d| now.saturating_sub(d * DAY));
-    let first = start_of_period(period, now, zone);
-    let start = first.unwrap_or(start);
+    let start = start_of_period(period, now, zone).unwrap_or(start);
     let shown: Vec<&Play> = plays.iter().copied().filter(|p| p.at >= start && p.at <= now).collect();
-
-    let mut artists = Tally::default();
-    let mut albums = Tally::default();
-    let mut tracks = Tally::default();
-    for play in &shown {
-        artists.add(artist_key(&play.track), play);
-        if !play.track.album.is_empty() {
-            albums.add(album_key(&play.track), play);
-        }
-        tracks.add(play.track.id.to_string(), play);
-    }
-    let artist_count = artists.0.len();
-
-    // Artists first heard in the period: not in any play before it.
-    let (new_artists, new_artist_count) = if period == Period::All {
-        (Vec::new(), 0)
-    } else {
-        let before: std::collections::HashSet<String> = plays.iter().filter(|p| p.at < start).map(|p| artist_key(&p.track)).collect();
-        let mut fresh = Tally::default();
-        for play in &shown {
-            let key = artist_key(&play.track);
-            if !before.contains(&key) {
-                fresh.add(key, play);
-            }
-        }
-        let count = fresh.0.len();
-        (fresh.top(TOP), count)
-    };
 
     // The week around this day a year ago.
     let year_ago = {
@@ -189,19 +172,51 @@ pub fn compute(plays: &[&Play], period: Period, now: u64, zone: &when::Zone) -> 
     };
 
     let since = plays.iter().map(|p| p.at).min();
-    Stats {
+    Stats { summary: summarize(plays, start, now + 1, TOP), chart: chart(&shown, period, now, since, zone), year_ago, since }
+}
+
+/// What `plays` (oldest first, one source's) from `start` until before `end` (Unix
+/// seconds) add up to, with the `top_tracks` most heard tracks. Artists are new
+/// when no play kept before `start` has them; with `start` 0 (everything), none are.
+pub fn summarize(plays: &[&Play], start: u64, end: u64, top_tracks: usize) -> Summary {
+    let shown: Vec<&Play> = plays.iter().copied().filter(|p| p.at >= start && p.at < end).collect();
+    let mut artists = Tally::default();
+    let mut albums = Tally::default();
+    let mut tracks = Tally::default();
+    for play in &shown {
+        artists.add(artist_key(&play.track), play);
+        if !play.track.album.is_empty() {
+            albums.add(album_key(&play.track), play);
+        }
+        tracks.add(play.track.id.to_string(), play);
+    }
+    let artist_count = artists.0.len();
+
+    let (new_artists, new_artist_count) = if start == 0 {
+        (Vec::new(), 0)
+    } else {
+        let before: HashSet<String> = plays.iter().filter(|p| p.at < start).map(|p| artist_key(&p.track)).collect();
+        let mut fresh = Tally::default();
+        for play in &shown {
+            let key = artist_key(&play.track);
+            if !before.contains(&key) {
+                fresh.add(key, play);
+            }
+        }
+        let count = fresh.0.len();
+        (fresh.top(TOP), count)
+    };
+
+    Summary {
         secs: shown.iter().map(|p| p.heard_secs).sum(),
         plays: shown.iter().filter(|p| !p.skipped).count(),
         skipped: shown.iter().filter(|p| p.skipped).count(),
         artists: artist_count,
         top_artists: artists.top(TOP),
         top_albums: albums.top(TOP),
-        top_tracks: tracks.top(TOP),
+        top_tracks: tracks.top(top_tracks),
         new_artists,
         new_artist_count,
-        chart: chart(&shown, period, now, since, zone),
-        year_ago,
-        since,
     }
 }
 
@@ -218,7 +233,8 @@ fn start_of_period(period: Period, now: u64, zone: &when::Zone) -> Option<u64> {
     unix(first, zone)
 }
 
-fn unix(day: Date, zone: &when::Zone) -> Option<u64> {
+/// Midnight starting `day` in `zone`, Unix seconds.
+pub(super) fn unix(day: Date, zone: &when::Zone) -> Option<u64> {
     let start = day.to_zoned(zone.clone()).ok()?;
     u64::try_from(start.timestamp().as_second()).ok()
 }
@@ -417,25 +433,25 @@ mod tests {
             play(0, 1, "Emma", "Killing", false),
         ];
         let s = stats(&plays, Period::Week);
-        assert_eq!(s.plays, 4);
-        assert_eq!(s.skipped, 2);
-        assert_eq!(s.secs, 4 * 200 + 2 * 20);
-        assert_eq!(s.artists, 2);
-        let names: Vec<_> = s.top_artists.iter().map(|r| (r.track.artist.as_str(), r.plays)).collect();
+        assert_eq!(s.summary.plays, 4);
+        assert_eq!(s.summary.skipped, 2);
+        assert_eq!(s.summary.secs, 4 * 200 + 2 * 20);
+        assert_eq!(s.summary.artists, 2);
+        let names: Vec<_> = s.summary.top_artists.iter().map(|r| (r.track.artist.as_str(), r.plays)).collect();
         assert_eq!(names, [("Emma", 3), ("Low", 1)]);
-        assert_eq!(s.top_tracks[0].track.id, TrackId::from(1));
-        assert_eq!(s.top_tracks[0].plays, 2);
-        assert!(s.top_tracks.iter().all(|r| r.track.id != TrackId::from(4)), "only skipped: not in the top");
-        assert_eq!(s.top_albums[0].track.album, "Killing");
+        assert_eq!(s.summary.top_tracks[0].track.id, TrackId::from(1));
+        assert_eq!(s.summary.top_tracks[0].plays, 2);
+        assert!(s.summary.top_tracks.iter().all(|r| r.track.id != TrackId::from(4)), "only skipped: not in the top");
+        assert_eq!(s.summary.top_albums[0].track.album, "Killing");
     }
 
     #[test]
     fn new_artists_are_those_not_heard_before() {
         let plays = [play(40, 9, "Old", "Gone", false), play(3, 1, "Old", "Gone", false), play(2, 2, "Fresh", "New", false)];
         let s = stats(&plays, Period::Week);
-        assert_eq!(s.new_artist_count, 1);
-        assert_eq!(s.new_artists[0].track.artist, "Fresh");
-        assert_eq!(stats(&plays, Period::All).new_artist_count, 0);
+        assert_eq!(s.summary.new_artist_count, 1);
+        assert_eq!(s.summary.new_artists[0].track.artist, "Fresh");
+        assert_eq!(stats(&plays, Period::All).summary.new_artist_count, 0);
     }
 
     #[test]

@@ -9,12 +9,14 @@ use crate::ui::crate_store::Thing;
 use crate::ui::format::thousands;
 use crate::ui::plays::when;
 use crate::ui::state::{Coll, CollSource};
-use crate::ui::stats::{self, Bar, Period, Ranked, Smart, Stats};
+use crate::ui::stats::{self, Bar, Period, Ranked, Smart, Stats, Summary};
 use crate::ui::style::{colors, metrics, radius, typography as ty};
 use crate::ui::widgets::{self, MenuTarget, Playlists, TrackMenu, text_left};
 use eframe::egui::{self, Align2, CornerRadius, Rect, RichText, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
 
 const ROW: f32 = 48.0;
+/// A figure tile's height.
+const TILE: f32 = 84.0;
 const CHART: f32 = 120.0;
 /// Columns side by side from this width; one under the other below it.
 const THREE_COLUMNS: f32 = 900.0;
@@ -42,7 +44,7 @@ struct Key {
 
 /// What a top list holds.
 #[derive(Clone, Copy, PartialEq)]
-enum Kind {
+pub(super) enum Kind {
     Artist,
     Album,
     Track,
@@ -80,50 +82,36 @@ impl App {
             };
             text_left(ui.painter(), head.min + vec2(0.0, 50.0), &line, ty::LEAD, p.dim, head.width());
             ui.add_space(14.0);
-            self.period_chips(ui);
+            ui.horizontal(|ui| {
+                self.period_chips(ui);
+                ui.add_space(18.0);
+                ui.spacing_mut().item_spacing.x = 8.0;
+                if widgets::pill(ui, "Monthly recap", None, false).clicked() {
+                    acts.push(Action::OpenRecap { month: true });
+                }
+                if widgets::pill(ui, "Yearly recap", None, false).clicked() {
+                    acts.push(Action::OpenRecap { month: false });
+                }
+            });
             ui.add_space(18.0);
-            if st.plays + st.skipped == 0 {
+            if st.summary.is_empty() {
                 ui.add_space(20.0);
                 let hint = format!("Play something; what you hear {} adds up here.", self.stats_view.period.phrase());
                 widgets::empty_state(ui, "Nothing heard yet", &hint);
                 return;
             }
-            tiles(ui, &st, self.stats_view.period);
+            tiles(ui, &st.summary, self.stats_view.period);
             ui.add_space(22.0);
             chart(ui, &st.chart);
             ui.add_space(26.0);
             lists(ui, &self.stats_view.lists, acts);
             ui.add_space(26.0);
 
-            let lists = [
-                ("TOP ARTISTS", Kind::Artist, &st.top_artists),
-                ("TOP ALBUMS", Kind::Album, &st.top_albums),
-                ("TOP TRACKS", Kind::Track, &st.top_tracks),
-            ];
-            if ui.available_width() >= THREE_COLUMNS {
-                let gap = 28.0;
-                let width = (ui.available_width() - 2.0 * gap) / 3.0;
-                let top = ui.cursor().min;
-                let mut bottom = top.y;
-                for (i, (caption, kind, list)) in lists.into_iter().enumerate() {
-                    let rect = Rect::from_min_size(pos2(top.x + i as f32 * (width + gap), top.y), vec2(width, 0.0));
-                    let used = ui.scope_builder(UiBuilder::new().max_rect(rect.with_max_y(top.y + 10_000.0)), |ui| {
-                        ui.set_width(width);
-                        self.top_list(ui, caption, kind, list, acts);
-                    });
-                    bottom = bottom.max(used.response.rect.bottom());
-                }
-                ui.allocate_space(vec2(ui.available_width(), bottom - top.y));
-            } else {
-                for (caption, kind, list) in lists {
-                    self.top_list(ui, caption, kind, list, acts);
-                    ui.add_space(18.0);
-                }
-            }
-            if !st.new_artists.is_empty() {
+            self.top_lists(ui, [&st.summary.top_artists, &st.summary.top_albums, &st.summary.top_tracks], acts);
+            if !st.summary.new_artists.is_empty() {
                 ui.add_space(26.0);
-                let caption = format!("FIRST HEARD {} · {}", self.stats_view.period.phrase().to_uppercase(), st.new_artist_count);
-                self.top_list(ui, &caption, Kind::Artist, &st.new_artists, acts);
+                let caption = format!("FIRST HEARD {} · {}", self.stats_view.period.phrase().to_uppercase(), st.summary.new_artist_count);
+                self.top_list(ui, &caption, Kind::Artist, &st.summary.new_artists, acts);
             }
             if !st.year_ago.is_empty() {
                 ui.add_space(26.0);
@@ -131,6 +119,32 @@ impl App {
             }
             ui.add_space(30.0);
         });
+    }
+
+    /// The top artists, albums and tracks side by side, or one under the other when
+    /// narrow.
+    pub(super) fn top_lists(&mut self, ui: &mut Ui, [artists, albums, tracks]: [&[Ranked]; 3], acts: &mut Actions) {
+        let lists = [("TOP ARTISTS", Kind::Artist, artists), ("TOP ALBUMS", Kind::Album, albums), ("TOP TRACKS", Kind::Track, tracks)];
+        if ui.available_width() >= THREE_COLUMNS {
+            let gap = 28.0;
+            let width = (ui.available_width() - 2.0 * gap) / 3.0;
+            let top = ui.cursor().min;
+            let mut bottom = top.y;
+            for (i, (caption, kind, list)) in lists.into_iter().enumerate() {
+                let rect = Rect::from_min_size(pos2(top.x + i as f32 * (width + gap), top.y), vec2(width, 0.0));
+                let used = ui.scope_builder(UiBuilder::new().max_rect(rect.with_max_y(top.y + 10_000.0)), |ui| {
+                    ui.set_width(width);
+                    self.top_list(ui, caption, kind, list, acts);
+                });
+                bottom = bottom.max(used.response.rect.bottom());
+            }
+            ui.allocate_space(vec2(ui.available_width(), bottom - top.y));
+        } else {
+            for (caption, kind, list) in lists {
+                self.top_list(ui, caption, kind, list, acts);
+                ui.add_space(18.0);
+            }
+        }
     }
 
     fn period_chips(&mut self, ui: &mut Ui) {
@@ -145,7 +159,7 @@ impl App {
     }
 
     /// A caption and up to ten rows: rank, cover, name, and how often it was heard.
-    fn top_list(&mut self, ui: &mut Ui, caption: &str, kind: Kind, list: &[Ranked], acts: &mut Actions) {
+    pub(super) fn top_list(&mut self, ui: &mut Ui, caption: &str, kind: Kind, list: &[Ranked], acts: &mut Actions) {
         let p = colors();
         widgets::caption(ui, caption);
         ui.add_space(4.0);
@@ -279,8 +293,7 @@ fn lists(ui: &mut Ui, lists: &[(Smart, usize)], acts: &mut Actions) {
 }
 
 /// Time listened, tracks heard, artists, and new artists, as figures in a row.
-fn tiles(ui: &mut Ui, st: &Stats, period: Period) {
-    let p = colors();
+fn tiles(ui: &mut Ui, st: &Summary, period: Period) {
     let skipped = if st.skipped > 0 { format!("{} skipped", thousands(st.skipped as u64)) } else { "none skipped".into() };
     let mut figures = vec![
         ("TIME LISTENED", stats::duration(st.secs), String::new()),
@@ -290,21 +303,27 @@ fn tiles(ui: &mut Ui, st: &Stats, period: Period) {
     if period != Period::All {
         figures.push(("NEW ARTISTS", thousands(st.new_artist_count as u64), "first heard".into()));
     }
+    figure_tiles(ui, &figures);
+}
+
+/// Figures in a row of tiles: a caption, the figure, and a line under it if any.
+pub(super) fn figure_tiles(ui: &mut Ui, figures: &[(&str, String, String)]) {
+    let p = colors();
     let gap = 12.0;
     let width = ((ui.available_width() - gap * (figures.len() - 1) as f32) / figures.len() as f32).min(240.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
         for (caption, value, sub) in figures {
-            let (rect, _) = ui.allocate_exact_size(vec2(width, 84.0), Sense::hover());
+            let (rect, _) = ui.allocate_exact_size(vec2(width, TILE), Sense::hover());
             let corner = CornerRadius::same(radius::CONTROL);
             ui.painter().rect_filled(rect, corner, p.surface);
             ui.painter().rect_stroke(rect, corner, egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
             let x = rect.left() + 16.0;
             let inner = rect.width() - 32.0;
             text_left(ui.painter(), pos2(x, rect.top() + 20.0), caption, ty::OVERLINE, p.faint, inner);
-            text_left(ui.painter(), pos2(x, rect.top() + 46.0), &value, ty::SECTION_TITLE, p.text, inner);
+            text_left(ui.painter(), pos2(x, rect.top() + 46.0), value, ty::SECTION_TITLE, p.text, inner);
             if !sub.is_empty() {
-                text_left(ui.painter(), pos2(x, rect.top() + 68.0), &sub, ty::CAPTION, p.dim, inner);
+                text_left(ui.painter(), pos2(x, rect.top() + 68.0), sub, ty::CAPTION, p.dim, inner);
             }
         }
     });
@@ -312,7 +331,7 @@ fn tiles(ui: &mut Ui, st: &Stats, period: Period) {
 
 /// Listening by day or month as bars on a baseline; hovering one says when and how
 /// long.
-fn chart(ui: &mut Ui, bars: &[Bar]) {
+pub(super) fn chart(ui: &mut Ui, bars: &[Bar]) {
     let p = colors();
     widgets::caption(ui, "LISTENING");
     ui.add_space(6.0);

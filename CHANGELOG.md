@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Recap: a page for one calendar month or year of your play history: time listened and
+  how it compares to the one before, days you listened and the longest run of them,
+  your busiest day and the time of day you mostly listen, a chart, top artists, albums
+  and tracks, and the artists you first heard then. *Monthly recap* and *Yearly recap*
+  open it from Listening or `⌘K`; ‹ › step between months or years; its top 50 tracks
+  can be played or saved as a playlist
+- The highlight around a hovered genre or Discover card no longer loses its left edge
+  on the first card of a row
+
 ## 0.35.0 (2026-11-23)
 
 - Smarter shuffle: no artist twice in a row where the list allows it (nor right after

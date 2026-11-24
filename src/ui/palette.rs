@@ -175,6 +175,8 @@ impl App {
         for which in crate::ui::stats::Smart::ALL {
             all.push(Command::new("List", which.title(), move || vec![Action::OpenCollection(Coll::history(which))]));
         }
+        all.push(Command::new("Page", "Monthly recap", || vec![Action::OpenRecap { month: true }]));
+        all.push(Command::new("Page", "Yearly recap", || vec![Action::OpenRecap { month: false }]));
         if self.crate_playable() > 0 {
             all.push(Command::new("Crate", "Play the new ones in your Crate", || vec![Action::PlayCrate]));
         }

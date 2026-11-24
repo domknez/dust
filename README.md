@@ -107,6 +107,12 @@ and *Connect a Navidrome server*.
   Under *Made from your history* are four lists that open like playlists: *On
   repeat*, *Found lately*, *Not heard in a while* (liked or played often, not lately)
   and *Never skipped*; they're in the command palette too
+- **Recap:** *Monthly recap* and *Yearly recap* (on Listening, and in `⌘K`) sum up one
+  calendar month or year: how long you listened and how it compares to the one before,
+  how many days you listened and your longest run of days in a row, your busiest day,
+  the time of day you listen most, a chart, top artists, albums and tracks, and the
+  artists you first heard then. ‹ › step back and forward; *Play top tracks* and
+  *Save as playlist* take its 50 most played tracks
 - **Shuffle and repeat** (all or one) in the player bar; both are remembered between runs.
   Shuffle keeps the same artist from playing twice in a row where the list allows it,
   and, with the play history on, tends to bring up tracks you haven't heard for a while

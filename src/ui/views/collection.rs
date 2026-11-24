@@ -155,7 +155,8 @@ impl App {
             | View::Channel(_)
             | View::Lyrics
             | View::Crate
-            | View::Stats => Header::default(),
+            | View::Stats
+            | View::Recap(_) => Header::default(),
         }
     }
 
