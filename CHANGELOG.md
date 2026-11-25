@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.36.1 (2026-11-25)
+
 - Quitting (or restarting for an update) closes the AirPlay session properly, so the
   speaker doesn't hold on to it and the next start plays on it right away
 - AirPlay comes back within about a second after macOS briefly cuts dust off the local
