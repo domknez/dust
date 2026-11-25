@@ -26,9 +26,16 @@ use std::time::{Duration, Instant};
 const PUBLISH_EVERY: Duration = Duration::from_millis(250);
 /// Minimum time between automatic reconnects of a lost output.
 const RECOVER_EVERY: Duration = Duration::from_secs(3);
+/// The first tries again after a loss come sooner than [`RECOVER_EVERY`]: the
+/// usual loss is macOS's local-network privacy redoing its rules (whenever any
+/// app is installed or updated), which cuts the speaker off for well under a
+/// second.
+const FIRST_RETRIES: [Duration; 3] = [Duration::from_millis(300), Duration::from_millis(700), Duration::from_millis(1500)];
 /// How long a lost output is tried again (a Wi-Fi reconnect, a new address)
-/// before playing on this computer instead.
-const RECONNECT_FOR: Duration = Duration::from_secs(15);
+/// before playing on this computer instead. A speaker can be off the network for
+/// well over 15 s (seen: *No route to host* for a minute and more), and playing
+/// on in the room the listener isn't in is worse than a pause.
+const RECONNECT_FOR: Duration = Duration::from_secs(60);
 /// "Previous" restarts the track instead when past this point (seconds).
 const RESTART_THRESHOLD: f64 = 3.0;
 /// Consecutive unplayable tracks skipped before giving up.
@@ -68,6 +75,8 @@ struct Handoff {
 /// An output lost mid-playback, being set up again.
 struct Reconnect {
     since: Instant,
+    /// Tries made since the loss.
+    tries: usize,
     /// Where playback was when it was lost: it carries on from there.
     position: f64,
 }
@@ -177,7 +186,7 @@ impl Engine {
             was_playing = busy;
             if self.reconnect.is_some() {
                 // Waiting for the output to come back: commands still count.
-                match self.rx.recv_timeout(RECOVER_EVERY) {
+                match self.rx.recv_timeout(self.recover_gap()) {
                     Ok(cmd) => self.handle(cmd),
                     Err(RecvTimeoutError::Timeout) => {}
                     Err(RecvTimeoutError::Disconnected) => return,
@@ -224,6 +233,13 @@ impl Engine {
             Cmd::Heard(heard) => self.queue.set_heard(heard),
             Cmd::FlowNewOnly(on) => self.flow_new_only = on,
             Cmd::Output(o) => self.switch_output(o),
+            Cmd::Quit(done) => {
+                // Dropping the sink tears its session down (briefly, see the sink).
+                self.sink = None;
+                self.stream = None;
+                self.alive = false;
+                let _ = done.send(());
+            }
 
             Cmd::Play(tracks, index) => {
                 self.queue.play(tracks, index);
@@ -352,14 +368,15 @@ impl Engine {
         if !lost && self.reconnect.is_none() {
             return;
         }
-        if self.last_recover.is_some_and(|t| t.elapsed() < RECOVER_EVERY) {
+        if self.last_recover.is_some_and(|t| t.elapsed() < self.recover_gap()) {
             return;
         }
         self.last_recover = Some(Instant::now());
         let reconnect = self.reconnect.take().unwrap_or_else(|| {
             log_warn!("{}: connection lost, reconnecting", self.output.name());
-            Reconnect { since: Instant::now(), position: self.position() }
+            Reconnect { since: Instant::now(), tries: 0, position: self.position() }
         });
+        let reconnect = Reconnect { tries: reconnect.tries + 1, ..reconnect };
         self.sink = None;
         if self.stream.is_none() {
             return; // nothing playing: set up when something does
@@ -384,6 +401,12 @@ impl Engine {
             }
         }
         self.publish(true);
+    }
+
+    /// How long after the last try the next one comes: soon at first while
+    /// reconnecting, otherwise (a loss right after a reconnect, say) a while.
+    fn recover_gap(&self) -> Duration {
+        self.reconnect.as_ref().and_then(|r| FIRST_RETRIES.get(r.tries.saturating_sub(1))).copied().unwrap_or(RECOVER_EVERY)
     }
 
     /// Pick up at `position` on a new sink, paused if playback is.
@@ -1167,6 +1190,17 @@ mod tests {
     }
 
     #[test]
+    fn quitting_lets_go_of_the_output() {
+        let (mut e, _, _) = engine(FakeLibrary::default());
+        e.handle(Cmd::Play(vec![track(1, 60)], 0));
+        assert!(e.sink.is_some());
+        let (done, finished) = channel();
+        e.handle(Cmd::Quit(done));
+        assert!(e.sink.is_none() && !e.alive);
+        assert!(finished.try_recv().is_ok(), "the UI is told it's done");
+    }
+
+    #[test]
     fn lost_output_reconnects_and_keeps_playing() {
         use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
         let broken = Arc::new(AtomicBool::new(false));
@@ -1246,11 +1280,23 @@ mod tests {
         assert_eq!(tries.load(Ordering::Relaxed), 2, "rate limited");
         assert_eq!(lock(&e.status).position, 20.0);
 
-        // It comes back: the next try (a few seconds on) reconnects and plays on.
+        // The first tries again come quickly, then every few seconds.
+        assert_eq!(e.recover_gap(), FIRST_RETRIES[0]);
+        e.last_recover = Some(Instant::now() - FIRST_RETRIES[0]);
+        e.recover_output();
+        assert_eq!(tries.load(Ordering::Relaxed), 3);
+        assert_eq!(e.recover_gap(), FIRST_RETRIES[1]);
+        for _ in 1..FIRST_RETRIES.len() {
+            e.last_recover = Some(Instant::now() - RECOVER_EVERY);
+            e.recover_output();
+        }
+        assert_eq!(e.recover_gap(), RECOVER_EVERY);
+
+        // It comes back: the next try reconnects and plays on.
         unreachable.store(false, Ordering::Relaxed);
         e.last_recover = Some(Instant::now() - RECOVER_EVERY);
         e.recover_output();
-        assert_eq!(tries.load(Ordering::Relaxed), 3);
+        assert_eq!(tries.load(Ordering::Relaxed), 6);
         assert!((e.position() - 20.0).abs() < 1.0, "from the seek: {}", e.position());
         assert_eq!(e.output, speaker);
         assert!(e.reconnect.is_none() && e.sink.is_some() && e.playing);

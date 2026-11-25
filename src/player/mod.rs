@@ -85,6 +85,9 @@ pub enum Cmd {
     /// only*).
     FlowNewOnly(bool),
     Output(Output),
+    /// dust is quitting: let go of the output (an AirPlay speaker gets its
+    /// TEARDOWN, so the next start finds it free), say so on the sender and end.
+    Quit(Sender<()>),
 
     /// Replace the queue and play from an index.
     Play(Vec<Track>, usize),
@@ -212,6 +215,16 @@ impl PlayerHandle {
             .spawn(move || engine::Engine::new(rx, shared, ctx, volume).run())
             .expect("spawn player");
         Self { tx, status }
+    }
+
+    /// Have the player let go of its output before dust quits, waiting at most
+    /// `wait` for it: without this the process ends with an AirPlay session still
+    /// open, and the speaker may refuse or drop the next start's stream.
+    pub fn shut_down(&self, wait: std::time::Duration) {
+        let (done, finished) = mpsc::channel();
+        if self.tx.send(Cmd::Quit(done)).is_ok() && finished.recv_timeout(wait).is_err() {
+            log_warn!("player: output not let go of within {wait:?}");
+        }
     }
 
     pub fn send(&self, cmd: Cmd) {

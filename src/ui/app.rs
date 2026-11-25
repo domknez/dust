@@ -750,6 +750,9 @@ impl eframe::App for App {
         if let Some(client) = &self.client {
             self.save_queue_now(&client.queue_file());
         }
+        // An AirPlay speaker left with an open session may turn the next start
+        // (an update's relaunch, say) away; its goodbye takes well under this.
+        self.player.shut_down(std::time::Duration::from_secs(2));
         self.updates.apply_on_exit();
     }
 
