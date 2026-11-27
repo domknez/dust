@@ -57,6 +57,8 @@ pub enum Icon {
     ChevronRight,
     /// The Crate: an open box with records in it.
     Crate,
+    /// A box with an arrow out of its corner: opens a web page.
+    External,
 }
 
 fn p(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -323,6 +325,16 @@ pub fn paint(painter: &Painter, r: Rect, icon: Icon, color: Color32) {
             line(p(r, 0.16, 0.65), p(r, 0.84, 0.65));
             line(p(r, 0.38, 0.14), p(r, 0.38, 0.44));
             line(p(r, 0.58, 0.22), p(r, 0.58, 0.44));
+        }
+        Icon::External => {
+            // The box, open at the top right where the arrow leaves it.
+            line(p(r, 0.46, 0.2), p(r, 0.2, 0.2));
+            line(p(r, 0.2, 0.2), p(r, 0.2, 0.8));
+            line(p(r, 0.2, 0.8), p(r, 0.8, 0.8));
+            line(p(r, 0.8, 0.8), p(r, 0.8, 0.54));
+            line(p(r, 0.5, 0.5), p(r, 0.84, 0.16));
+            line(p(r, 0.58, 0.16), p(r, 0.84, 0.16));
+            line(p(r, 0.84, 0.16), p(r, 0.84, 0.42));
         }
         Icon::Note => {
             painter.circle_filled(p(r, 0.36, 0.72), w * 0.13, color);

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Artist pages show up to four genre tags next to the fan and release counts, looked
+  up on MusicBrainz by the artist's name (*Artist genres* in Settings turns it off)
+- A *Last.fm* button on artist pages opens the artist's Last.fm page in the browser
+
 ## 0.36.1 (2026-11-25)
 
 - Quitting (or restarting for an update) closes the AirPlay session properly, so the

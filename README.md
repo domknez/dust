@@ -125,7 +125,10 @@ and *Connect a Navidrome server*.
   any artist name to get there. *Mix* plays songs by the artist and artists like them.
   Hovering a release in the discography shows a play button that plays it in place of
   the queue. The discography's *Timeline* tab lists every release by year, each marked *heard* or
-  *not heard* from your play history, with how many you've heard
+  *not heard* from your play history, with how many you've heard. Up to four genre tags
+  sit next to the fan and release counts: looked up on MusicBrainz by the artist's name
+  (so two artists of the same name may get the same ones), once per artist while dust
+  runs. And *Last.fm* opens their page there in the browser
 - **Command palette:** `⌘K` (Ctrl+K elsewhere, or *Commands…* in the account menu):
   type to go to a page, a playlist or an artist you listen to, or to do something:
   like, add to a playlist or save the track playing to the Crate, play Flow by mood or
@@ -301,7 +304,8 @@ sections on the left:
 - **Features:** turn off the parts of dust you don't use: the **Crate** (with new
   releases going in it), the **play history** (no plays recorded; the history tab,
   Listening, the lists made from it and the new-to-you marks go too), **lyrics** and
-  **AirPlay** (no looking for speakers on the network). Turned off, a part is hidden
+  **AirPlay** (no looking for speakers on the network) and **artist genres** (no
+  MusicBrainz lookups). Turned off, a part is hidden
   everywhere: sidebar, panel tabs, menus, shortcuts and the command palette. What it
   saved is kept and comes back when it's turned on again
 - **Sidebar:** which pages the sidebar lists (Home and Search always)
@@ -447,6 +451,7 @@ src/
 │   ├── now_playing.rs media keys and the OS Now Playing widget
 │   ├── plays.rs       the play history (history.jsonl, next to the settings file)
 │   ├── stats.rs       what the play history adds up to (the Listening page)
+│   ├── genres.rs      artists' genres for their pages, kept by name for the session
 │   ├── release_watch.rs new releases of the artists followed and played (Deezer)
 │   ├── palette.rs     the command palette (⌘K)
 │   ├── crate_store.rs the Crate (crate.jsonl, a log of changes, next to the settings file)
@@ -457,6 +462,7 @@ src/
 │   └── style/         palette, type scale, metrics, icons — all visual constants live here
 ├── credentials.rs     each source's login in one OS keychain item
 ├── settings.rs        settings file
+├── musicbrainz.rs     artists' genres from MusicBrainz
 ├── update.rs          self-update from GitHub Releases
 └── login.rs           "Log in with Deezer" webview helper
 ```

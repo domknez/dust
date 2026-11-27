@@ -29,6 +29,7 @@ mod covers;
 mod crate_store;
 mod files;
 mod format;
+mod genres;
 mod history;
 mod import;
 mod library;

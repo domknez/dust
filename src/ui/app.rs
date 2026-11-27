@@ -156,6 +156,8 @@ pub struct App {
     pub(super) show_settings: bool,
     pub(super) settings_section: super::views::Section,
     pub(super) lyrics: super::views::LyricsState,
+    /// Artists' genres, for their pages.
+    pub(super) genres: super::genres::ArtistGenres,
     /// Queue row being dragged (index into the queue).
     pub(super) queue_drag: Option<usize>,
     pub(super) seek_drag: Option<f32>,
@@ -253,6 +255,7 @@ impl App {
             show_settings: false,
             settings_section: Default::default(),
             lyrics: Default::default(),
+            genres: Default::default(),
             queue_drag: None,
             seek_drag: None,
             volume_drag: None,

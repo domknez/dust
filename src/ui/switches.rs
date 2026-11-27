@@ -111,6 +111,7 @@ pub enum Switch {
     History,
     Lyrics,
     AirPlay,
+    Genres,
     Page(Page),
 }
 
@@ -142,6 +143,7 @@ impl App {
             Switch::History => self.prefs.history_on,
             Switch::Lyrics => self.prefs.lyrics,
             Switch::AirPlay => self.prefs.airplay,
+            Switch::Genres => self.prefs.genres,
             Switch::Page(page) => !self.prefs.hidden_pages.iter().any(|k| k == page.key()),
         }
     }
@@ -193,6 +195,7 @@ impl App {
             Switch::History => p.history_on = on,
             Switch::Lyrics => p.lyrics = on,
             Switch::AirPlay => p.airplay = on,
+            Switch::Genres => p.genres = on,
             Switch::Page(page) => {
                 p.hidden_pages.retain(|k| k != page.key());
                 if !on {

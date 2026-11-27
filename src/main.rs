@@ -18,6 +18,7 @@ mod icon;
 mod login;
 mod media;
 mod model;
+mod musicbrainz;
 mod output;
 mod player;
 mod settings;

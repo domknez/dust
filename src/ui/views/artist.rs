@@ -164,7 +164,12 @@ impl App {
             // A music server doesn't count fans.
             let meta =
                 if pg.fans > 0 { format!("{} FANS · {releases} RELEASES", thousands(pg.fans)) } else { format!("{releases} RELEASES") };
-            text_left(ui.painter(), pos2(tag.right() + 10.0, tag.center().y), &meta, ty::META, p.dim, x + width - tag.right() - 10.0);
+            let meta =
+                text_left(ui.painter(), pos2(tag.right() + 10.0, tag.center().y), &meta, ty::META, p.dim, x + width - tag.right() - 10.0);
+            if self.prefs.genres {
+                let genres = self.genres.of(&self.jobs, &pg.name);
+                genre_pills(ui.painter(), meta.right() + 14.0, tag.center().y, x + width, &genres);
+            }
         }
         let name = page.map_or(artist.name.as_str(), |pg| pg.name.as_str());
         text_left(ui.painter(), pos2(x, head.bottom() - 58.0), name, ty::ARTIST_NAME, p.text, width);
@@ -175,6 +180,7 @@ impl App {
         let top = self.browse.artist_page.ready().map_or(&[][..], |pg| &pg.top[..]);
         let has_top = !top.is_empty();
         let buttons = Rect::from_min_size(pos2(row.left(), row.center().y - 22.0), vec2(row.width(), 44.0));
+        let name = self.browse.artist_page.ready().map_or(artist.name.as_str(), |pg| pg.name.as_str());
         let what = Likeable::Artist(artist.id.clone());
         let following = self.library.likes.likes.contains(&what);
         let (follow, follow_icon) = if following { ("Following", Icon::Heart) } else { ("Follow", Icon::HeartOutline) };
@@ -184,7 +190,8 @@ impl App {
             + widgets::pill_width(ui, "Mix", true, false)
             + widgets::pill_width(ui, follow, true, false)
             + if self.prefs.crate_on { widgets::pill_width(ui, "Save", true, false) } else { 0.0 }
-            + 4.0 * ui.spacing().item_spacing.x;
+            + if name.is_empty() { 0.0 } else { widgets::pill_width(ui, "Last.fm", true, false) }
+            + 5.0 * ui.spacing().item_spacing.x;
         let narrow = full > buttons.width();
         ui.scope_builder(UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
             if has_top && widgets::pill(ui, "Play", Some(Icon::Play), true).clicked() {
@@ -209,7 +216,43 @@ impl App {
                 let thing = Thing::Artist { id: artist.id.clone(), name: artist.name.clone(), picture: artist.picture.clone() };
                 acts.push(Action::SaveToCrate(thing, String::new()));
             }
+            if !name.is_empty()
+                && widgets::pill_fit(ui, "Last.fm", Icon::External, narrow).on_hover_text("Open their page on Last.fm").clicked()
+            {
+                ui.ctx().open_url(egui::OpenUrl::new_tab(lastfm_page(name)));
+            }
         });
+    }
+}
+
+/// The artist's page on Last.fm: the name with spaces as `+` and anything else
+/// outside letters, digits and `-_.~` percent-encoded (as UTF-8).
+fn lastfm_page(name: &str) -> String {
+    let mut url = String::from("https://www.last.fm/music/");
+    for byte in name.trim().bytes() {
+        match byte {
+            b' ' => url.push('+'),
+            b if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) => url.push(b as char),
+            b => url.push_str(&format!("%{b:02X}")),
+        }
+    }
+    url
+}
+
+/// Genres as small outlined pills in a row from `left` (its middle at `y`), as
+/// many as fit before `right`.
+fn genre_pills(painter: &egui::Painter, left: f32, y: f32, right: f32, genres: &[String]) {
+    let p = colors();
+    let mut x = left;
+    for genre in genres {
+        let galley = painter.layout_no_wrap(genre.clone(), ty::META.font(), p.dim);
+        let pill = Rect::from_min_size(pos2(x, y - 9.0), vec2(galley.size().x + 16.0, 18.0));
+        if pill.right() > right {
+            break;
+        }
+        painter.rect_stroke(pill, CornerRadius::same(9), egui::Stroke::new(1.0, p.border), egui::StrokeKind::Inside);
+        painter.galley(pos2(pill.left() + 8.0, y - galley.size().y / 2.0), galley, p.dim);
+        x = pill.right() + 6.0;
     }
 }
 
@@ -403,6 +446,14 @@ mod tests {
     fn item(id: &str, kind: ReleaseKind, year: &str) -> Item {
         let release = ReleaseInfo::new(kind, year);
         Item { kind: ItemKind::Album, id: id.into(), title: id.into(), subtitle: release.subtitle(), picture: None, release: Some(release) }
+    }
+
+    #[test]
+    fn the_lastfm_page_is_named_as_lastfm_spells_it() {
+        assert_eq!(lastfm_page("Radiohead"), "https://www.last.fm/music/Radiohead");
+        assert_eq!(lastfm_page(" Nick Cave & The Bad Seeds "), "https://www.last.fm/music/Nick+Cave+%26+The+Bad+Seeds");
+        assert_eq!(lastfm_page("Björk"), "https://www.last.fm/music/Bj%C3%B6rk");
+        assert_eq!(lastfm_page("AC/DC+?"), "https://www.last.fm/music/AC%2FDC%2B%3F");
     }
 
     #[test]

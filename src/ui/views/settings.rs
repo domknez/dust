@@ -188,6 +188,7 @@ impl App {
         row(ui, acts, Switch::History, "Play history", sub);
         row(ui, acts, Switch::Lyrics, "Lyrics", "The lyrics page and its button");
         row(ui, acts, Switch::AirPlay, "AirPlay speakers", "Look for speakers on the network to play on");
+        row(ui, acts, Switch::Genres, "Artist genres", "Genre tags on artist pages, looked up on MusicBrainz");
     }
 
     /// Which pages the sidebar lists (Home and Search always).
